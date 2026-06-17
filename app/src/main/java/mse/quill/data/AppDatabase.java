@@ -4,21 +4,20 @@ import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
-public class appDatabase extends SQLiteOpenHelper {
+public class AppDatabase extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "quill.db";
     private static final int DATABASE_VERSION = 1;
+    private static volatile AppDatabase instance;
 
-    private static volatile appDatabase instance;
-
-    public static synchronized appDatabase getInstance(Context context) {
+    public static synchronized AppDatabase getInstance(Context context) {
         if (instance == null) {
-            instance = new appDatabase(context.getApplicationContext());
+            instance = new AppDatabase(context.getApplicationContext());
         }
         return instance;
     }
 
-    private appDatabase(Context context) {
+    private AppDatabase(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
     }
 
