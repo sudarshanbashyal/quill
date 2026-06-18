@@ -1,8 +1,10 @@
 package mse.quill.ui.notes.editor;
 
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.text.Editable;
 import android.text.Spannable;
+import android.text.style.ImageSpan;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.widget.EditText;
@@ -111,6 +113,48 @@ public class RichTextEditor {
                 s.setSpan(new UnderlineSpan(), cursor - 1, cursor,
                         Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
+    }
+
+    public void insertImage(Bitmap bitmap, String filePath, int editorWidth) {
+        // Scale bitmap to fit editor width
+        float scale = (float) editorWidth / bitmap.getWidth();
+        int scaledHeight = (int) (bitmap.getHeight() * scale);
+        Bitmap scaled = Bitmap.createScaledBitmap(bitmap, editorWidth, scaledHeight, true);
+
+        // Create the span
+        ImageSpan imageSpan = new ImageSpan(editText.getContext(), scaled,
+                ImageSpan.ALIGN_BASELINE);
+
+        // Insert a placeholder character to hold the span
+        Editable editable = editText.getText();
+        int cursor = editText.getSelectionStart();
+        if (cursor < 0) cursor = editable.length();
+
+        // Insert newline before if not at start of line
+        if (cursor > 0 && editable.charAt(cursor - 1) != '\n') {
+            editable.insert(cursor, "\n");
+            cursor++;
+        }
+
+        // Insert the image character
+        editable.insert(cursor, "\uFFFC"); // object replacement character
+        editable.setSpan(
+                imageSpan,
+                cursor,
+                cursor + 1,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+
+        // Insert newline after
+        editable.insert(cursor + 1, "\n");
+
+        // Store file path in a custom span for persistence later
+        editable.setSpan(
+                new ImagePathSpan(filePath),
+                cursor,
+                cursor + 1,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
     }
 
     // Serialise content for saving

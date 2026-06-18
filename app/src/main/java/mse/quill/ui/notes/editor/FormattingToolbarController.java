@@ -9,6 +9,7 @@ public class FormattingToolbarController {
         void onBoldToggled();
         void onItalicToggled();
         void onUnderlineToggled();
+        void onImageRequested();
     }
 
     private final Button boldButton;
@@ -19,6 +20,7 @@ public class FormattingToolbarController {
         boldButton = addButton(container, "B", listener::onBoldToggled);
         italicButton = addButton(container, "I", listener::onItalicToggled);
         underlineButton = addButton(container, "U", listener::onUnderlineToggled);
+        addButton(container, "📷", listener::onImageRequested);  // ← add this
     }
 
     public void updateState(boolean bold, boolean italic, boolean underline) {
