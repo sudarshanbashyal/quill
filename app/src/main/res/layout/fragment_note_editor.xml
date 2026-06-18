@@ -43,17 +43,11 @@
                 android:imeOptions="actionNext"
                 android:maxLines="2" />
 
-            <EditText
-                android:id="@+id/note_content"
+            <mse.quill.ui.notes.editor.NoteEditorView
+                android:id="@+id/note_editor_view"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:hint="Start writing..."
-                android:textSize="16sp"
-                android:background="@null"
-                android:inputType="textMultiLine|textNoSuggestions"
-                android:gravity="top"
-                android:minHeight="400dp" />
+                android:layout_marginTop="8dp" />
 
         </LinearLayout>
 

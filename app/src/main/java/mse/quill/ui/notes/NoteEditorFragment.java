@@ -7,8 +7,6 @@ import androidx.navigation.fragment.NavHostFragment;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -20,17 +18,17 @@ import mse.quill.R;
 import mse.quill.ui.notes.editor.FormattingToolbarController;
 import mse.quill.ui.notes.editor.ImageEmbedder;
 import mse.quill.ui.notes.editor.KeyboardInsetsHandler;
-import mse.quill.ui.notes.editor.RichTextEditor;
+import mse.quill.ui.notes.editor.NoteEditorView;
 
 public class NoteEditorFragment extends Fragment {
 
     private EditText noteTitle;
-    private EditText noteContent;
-    private RichTextEditor richTextEditor;
     private FormattingToolbarController toolbarController;
     private HorizontalScrollView formattingToolbar;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
+
+    private NoteEditorView noteEditorView;
 
     private ImageEmbedder imageEmbedder;
 
@@ -45,15 +43,15 @@ public class NoteEditorFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         noteTitle = view.findViewById(R.id.note_title);
-        noteContent = view.findViewById(R.id.note_content);
+        noteEditorView = view.findViewById(R.id.note_editor_view);
         formattingToolbar = view.findViewById(R.id.formatting_toolbar);
 
-        richTextEditor = new RichTextEditor(noteContent);
+        noteEditorView.setContentChangeListener(this::scheduleAutoSave);
 
         imageEmbedder = new ImageEmbedder(this, new ImageEmbedder.ImageResultListener() {
             @Override
             public void onImageReady(Bitmap bitmap, String filePath) {
-                richTextEditor.insertImage(bitmap, filePath, noteContent.getWidth());
+                noteEditorView.insertImageAfterFocused(filePath);
             }
 
             @Override
@@ -66,28 +64,16 @@ public class NoteEditorFragment extends Fragment {
                 view.findViewById(R.id.formatting_buttons),
                 new FormattingToolbarController.FormatListener() {
                     @Override public void onBoldToggled() {
-                        richTextEditor.toggleBold();
-                        toolbarController.updateState(
-                                richTextEditor.isBoldActive(),
-                                richTextEditor.isItalicActive(),
-                                richTextEditor.isUnderlineActive()
-                        );
+                        noteEditorView.applyBoldToFocused();
+                        updateToolbarState();
                     }
                     @Override public void onItalicToggled() {
-                        richTextEditor.toggleItalic();
-                        toolbarController.updateState(
-                                richTextEditor.isBoldActive(),
-                                richTextEditor.isItalicActive(),
-                                richTextEditor.isUnderlineActive()
-                        );
+                        noteEditorView.applyItalicToFocused();
+                        updateToolbarState();
                     }
                     @Override public void onUnderlineToggled() {
-                        richTextEditor.toggleUnderline();
-                        toolbarController.updateState(
-                                richTextEditor.isBoldActive(),
-                                richTextEditor.isItalicActive(),
-                                richTextEditor.isUnderlineActive()
-                        );
+                        noteEditorView.applyUnderlineToFocused();
+                        updateToolbarState();
                     }
 
                     @Override
@@ -98,7 +84,6 @@ public class NoteEditorFragment extends Fragment {
         );
 
         setupToolbar(view);
-        setupTextWatcher();
         setupKeyboardBehaviour(view);
     }
 
@@ -110,18 +95,7 @@ public class NoteEditorFragment extends Fragment {
         );
     }
 
-    private void setupTextWatcher() {
-        noteContent.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
 
-            @Override
-            public void afterTextChanged(Editable s) {
-                richTextEditor.applyActiveFormats(s);
-                scheduleAutoSave();
-            }
-        });
-    }
 
     private void setupKeyboardBehaviour(View view) {
         KeyboardInsetsHandler.attach(view, new KeyboardInsetsHandler.KeyboardListener() {
@@ -136,6 +110,14 @@ public class NoteEditorFragment extends Fragment {
                 formattingToolbar.setTranslationY(0);
             }
         });
+    }
+
+    private void updateToolbarState() {
+        toolbarController.updateState(
+                noteEditorView.isBoldActive(),
+                noteEditorView.isItalicActive(),
+                noteEditorView.isUnderlineActive()
+        );
     }
 
     private void scheduleAutoSave() {
