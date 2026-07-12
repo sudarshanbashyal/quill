@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer-array name="collection_color_palette">
+        <item>0xFFE57373</item>
+        <item>0xFFF06292</item>
+        <item>0xFFBA68C8</item>
+        <item>0xFF9575CD</item>
+        <item>0xFF64B5F6</item>
+        <item>0xFF4DB6AC</item>
+        <item>0xFF81C784</item>
+        <item>0xFFFFB74D</item>
+    </integer-array>
+</resources>

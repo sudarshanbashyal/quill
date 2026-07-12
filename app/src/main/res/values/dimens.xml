@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared spacing -->
+    <dimen name="spacing_xs">4dp</dimen>
+    <dimen name="spacing_sm">8dp</dimen>
+    <dimen name="spacing_md">16dp</dimen>
+    <dimen name="spacing_lg">24dp</dimen>
+
+    <!-- Cards -->
+    <dimen name="card_corner_radius">18dp</dimen>
+    <dimen name="card_elevation">0dp</dimen>
+
+    <!-- Home header -->
+    <dimen name="header_corner_radius">28dp</dimen>
+
+    <!-- Color swatch picker (CollectionDialogs) -->
+    <dimen name="swatch_size">36dp</dimen>
+    <dimen name="swatch_margin">8dp</dimen>
+    <dimen name="swatch_border_width">3dp</dimen>
+</resources>

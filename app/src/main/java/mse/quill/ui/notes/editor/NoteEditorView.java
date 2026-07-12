@@ -8,6 +8,9 @@ import android.widget.LinearLayout;
 import java.util.ArrayList;
 import java.util.List;
 
+import mse.quill.ui.notes.editor.model.ImageSegment;
+import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.segment.ImageSegmentView;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
@@ -111,6 +114,44 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
 
     public List<BaseSegmentView> getSegments() {
         return segments;
+    }
+
+    /** Replaces all current segments with the given persisted segments, in order. */
+    public void loadSegments(List<NoteSegment> loaded) {
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            removeSegment(i);
+        }
+
+        if (loaded == null || loaded.isEmpty()) {
+            addTextSegment(new SpannableStringBuilder(""), -1);
+            return;
+        }
+
+        for (NoteSegment segment : loaded) {
+            if (segment instanceof ImageSegment) {
+                addImageSegment(((ImageSegment) segment).filePath, segments.size());
+            } else if (segment instanceof TextSegment) {
+                addTextSegment(new SpannableStringBuilder(((TextSegment) segment).content), segments.size());
+            }
+        }
+    }
+
+    /** Snapshots the current segments (independent of the live views) for persistence. */
+    public List<NoteSegment> exportSegments() {
+        List<NoteSegment> exported = new ArrayList<>();
+        for (int i = 0; i < segments.size(); i++) {
+            BaseSegmentView view = segments.get(i);
+            NoteSegment segment;
+            if (view.getSegmentType() == NoteSegment.TYPE_IMAGE) {
+                segment = new ImageSegment((String) view.getSegmentData());
+            } else {
+                SpannableStringBuilder snapshot = new SpannableStringBuilder((CharSequence) view.getSegmentData());
+                segment = new TextSegment(snapshot);
+            }
+            segment.position = i;
+            exported.add(segment);
+        }
+        return exported;
     }
 
     // ── SegmentCallback ────────────────────────────────────────────────────

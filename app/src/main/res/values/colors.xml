@@ -1,10 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Brand -->
+    <color name="brand_purple">#7C6FEA</color>
+    <color name="brand_purple_dark">#5C4DD6</color>
+    <color name="brand_purple_light">#EFECFE</color>
+
+    <!-- Surfaces / backgrounds -->
+    <color name="app_background">#F8F7FC</color>
+    <color name="surface">#FFFFFFFF</color>
+
+    <!-- Text -->
+    <color name="text_primary">#1E1B2E</color>
+    <color name="text_secondary">#8B879C</color>
+    <color name="text_on_brand">#FFFFFFFF</color>
+
+    <!-- Home header gradient -->
+    <color name="header_gradient_start">#E8E3FC</color>
+    <color name="header_gradient_end">#D2C9FB</color>
+
+    <!-- Misc -->
+    <color name="uncategorized_gray">#9E9E9E</color>
+    <color name="divider">#EBE9F2</color>
+    <color name="uncategorized_card">#EDEBF2</color>
+    <color name="add_tile_background">@color/brand_purple_light</color>
 </resources>

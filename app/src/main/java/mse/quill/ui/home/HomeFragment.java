@@ -1,77 +1,191 @@
 package mse.quill.ui.home;
 
+import android.app.AlertDialog;
 import android.os.Bundle;
-
-import androidx.fragment.app.Fragment;
-import androidx.navigation.fragment.NavHostFragment;
-
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.navigation.fragment.NavHostFragment;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 import mse.quill.R;
+import mse.quill.data.CollectionRepository;
+import mse.quill.data.NoteRepository;
+import mse.quill.data.model.Collection;
+import mse.quill.data.model.Note;
+import mse.quill.ui.collections.CollectionDetailFragment;
+import mse.quill.ui.notes.NoteEditorFragment;
 
-/**
- * A simple {@link Fragment} subclass.
- * Use the {@link HomeFragment#newInstance} factory method to
- * create an instance of this fragment.
- */
 public class HomeFragment extends Fragment {
 
-    // TODO: Rename parameter arguments, choose names that match
-    // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
-    private static final String ARG_PARAM1 = "param1";
-    private static final String ARG_PARAM2 = "param2";
+    private NoteRepository noteRepository;
+    private CollectionRepository collectionRepository;
 
-    // TODO: Rename and change types of parameters
-    private String mParam1;
-    private String mParam2;
+    private HomeAdapter homeAdapter;
 
-    public HomeFragment() {
-        // Required empty public constructor
-    }
-
-    /**
-     * Use this factory method to create a new instance of
-     * this fragment using the provided parameters.
-     *
-     * @param param1 Parameter 1.
-     * @param param2 Parameter 2.
-     * @return A new instance of fragment HomeFragment.
-     */
-    // TODO: Rename and change types and number of parameters
-    public static HomeFragment newInstance(String param1, String param2) {
-        HomeFragment fragment = new HomeFragment();
-        Bundle args = new Bundle();
-        args.putString(ARG_PARAM1, param1);
-        args.putString(ARG_PARAM2, param2);
-        fragment.setArguments(args);
-        return fragment;
-    }
-
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        if (getArguments() != null) {
-            mParam1 = getArguments().getString(ARG_PARAM1);
-            mParam2 = getArguments().getString(ARG_PARAM2);
-        }
-    }
+    private List<Collection> allCollections = new ArrayList<>();
+    private List<Note> allNotes = new ArrayList<>();
+    private int uncategorizedCount = 0;
+    private String searchQuery = "";
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                             Bundle savedInstanceState) {
-        // Inflate the layout for this fragment
+                              Bundle savedInstanceState) {
         return inflater.inflate(R.layout.fragment_home, container, false);
     }
 
     @Override
-    public void onViewCreated(View view, Bundle savedInstanceState) {
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        noteRepository = new NoteRepository(requireContext());
+        collectionRepository = new CollectionRepository(requireContext());
+
+        homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
+            @Override public void onCollectionClicked(String collectionId, String displayName) {
+                openCollection(collectionId, displayName);
+            }
+
+            @Override public void onCollectionLongPressed(Collection collection) {
+                showManageCollectionDialog(collection);
+            }
+
+            @Override public void onAddCollectionClicked() {
+                CollectionDialogs.showCreateDialog(requireContext(), (name, color) ->
+                        collectionRepository.createCollection(name, color, id -> reloadCollections()));
+            }
+
+            @Override public void onNoteClicked(Note note) { openNote(note.id); }
+
+            @Override public void onNoteLongPressed(Note note) {
+                CollectionDialogs.showNoteActionsDialog(requireContext(), allCollections, note.collectionId,
+                        collectionId -> noteRepository.assignCollection(note.id, collectionId, HomeFragment.this::reloadAll),
+                        () -> noteRepository.deleteNote(note.id, HomeFragment.this::reloadAll));
+            }
+        });
+
+        GridLayoutManager layoutManager = new GridLayoutManager(requireContext(), 2);
+        layoutManager.setSpanSizeLookup(homeAdapter.spanSizeLookup());
+
+        RecyclerView recyclerView = view.findViewById(R.id.recycler_home);
+        recyclerView.setLayoutManager(layoutManager);
+        recyclerView.setAdapter(homeAdapter);
+
+        EditText searchInput = view.findViewById(R.id.search_input);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                searchQuery = s.toString().trim().toLowerCase(Locale.getDefault());
+                applyFilters();
+            }
+        });
+
         view.findViewById(R.id.fab_new_note).setOnClickListener(v ->
-                NavHostFragment.findNavController(this)
-                        .navigate(R.id.noteEditorFragment)
-        );
+                NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment));
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        reloadAll();
+    }
+
+    private void openNote(String noteId) {
+        Bundle args = new Bundle();
+        args.putString(NoteEditorFragment.ARG_NOTE_ID, noteId);
+        NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment, args);
+    }
+
+    private void openCollection(String collectionId, String displayName) {
+        Bundle args = new Bundle();
+        args.putString(CollectionDetailFragment.ARG_COLLECTION_ID, collectionId);
+        args.putString(CollectionDetailFragment.ARG_COLLECTION_NAME, displayName);
+        NavHostFragment.findNavController(this).navigate(R.id.collectionDetailFragment, args);
+    }
+
+    private void showManageCollectionDialog(Collection collection) {
+        CollectionDialogs.showManageDialog(requireContext(), collection, new CollectionDialogs.ManageListener() {
+            @Override public void onRename() {
+                CollectionDialogs.showRenameDialog(requireContext(), collection.name, newName ->
+                        collectionRepository.renameCollection(collection.id, newName, HomeFragment.this::reloadCollections));
+            }
+
+            @Override public void onChangeColor() {
+                CollectionDialogs.showColorPickerDialog(requireContext(), collection.color, newColor ->
+                        collectionRepository.recolorCollection(collection.id, newColor, HomeFragment.this::reloadCollections));
+            }
+
+            @Override public void onDelete() {
+                new AlertDialog.Builder(requireContext())
+                        .setTitle(getString(R.string.delete_collection_title_format, collection.name))
+                        .setMessage(R.string.delete_collection_message)
+                        .setPositiveButton(R.string.action_delete, (d, w) ->
+                                collectionRepository.deleteCollection(collection.id, HomeFragment.this::reloadAll))
+                        .setNegativeButton(R.string.action_cancel, null)
+                        .show();
+            }
+        });
+    }
+
+    private void reloadAll() {
+        reloadCollections();
+        reloadNotes();
+    }
+
+    private void reloadCollections() {
+        collectionRepository.loadCollections(collections -> {
+            if (!isAdded()) return;
+            allCollections = collections;
+            collectionRepository.countUncategorizedNotes(count -> {
+                if (!isAdded()) return;
+                uncategorizedCount = count;
+                applyFilters();
+            });
+        });
+    }
+
+    private void reloadNotes() {
+        noteRepository.loadNotes(null, notes -> {
+            if (!isAdded()) return;
+            allNotes = notes;
+            applyFilters();
+        });
+    }
+
+    private void applyFilters() {
+        if (searchQuery.isEmpty()) {
+            homeAdapter.submitCollections(allCollections, uncategorizedCount, true);
+            homeAdapter.submitNotes(allNotes);
+            return;
+        }
+
+        List<Collection> filteredCollections = new ArrayList<>();
+        for (Collection c : allCollections) {
+            if (c.name.toLowerCase(Locale.getDefault()).contains(searchQuery)) filteredCollections.add(c);
+        }
+        boolean uncategorizedMatches = getString(R.string.uncategorized)
+                .toLowerCase(Locale.getDefault()).contains(searchQuery);
+        homeAdapter.submitCollections(filteredCollections, uncategorizedCount, uncategorizedMatches);
+
+        List<Note> filteredNotes = new ArrayList<>();
+        for (Note n : allNotes) {
+            String title = n.title == null ? "" : n.title.toLowerCase(Locale.getDefault());
+            String preview = n.preview == null ? "" : n.preview.toLowerCase(Locale.getDefault());
+            if (title.contains(searchQuery) || preview.contains(searchQuery)) filteredNotes.add(n);
+        }
+        homeAdapter.submitNotes(filteredNotes);
     }
 }

@@ -1,8 +1,10 @@
 package mse.quill.data;
 
 import android.content.Context;
+import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.util.Log;
 
 public class AppDatabase extends SQLiteOpenHelper {
 
@@ -112,7 +114,16 @@ public class AppDatabase extends SQLiteOpenHelper {
 
         // ---------- FTS5 virtual table ----------
 
-        db.execSQL("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, content='notes', content_rowid='rowid')");        // ---------- Indexes (recommended for FK lookups) ----------
+        try {
+            db.execSQL("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, content='notes', content_rowid='rowid')");
+        } catch (SQLException e) {
+            // Some SQLite builds (notably some emulator system images) aren't compiled with the
+            // FTS5 module. Search isn't wired up to this table yet, so skip it rather than
+            // failing database creation entirely.
+            Log.w("AppDatabase", "fts5 unavailable, skipping notes_fts table", e);
+        }
+
+        // ---------- Indexes (recommended for FK lookups) ----------
 
         db.execSQL("CREATE INDEX idx_notes_collection_id ON notes(collection_id)");
         db.execSQL("CREATE INDEX idx_whiteboards_note_id ON whiteboards(note_id)");
