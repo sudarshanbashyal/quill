@@ -147,6 +147,7 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="24dp"
         android:contentDescription="New note"
+        app:srcCompat="@drawable/ic_add"
         app:backgroundTint="@color/text_primary"
         app:tint="@color/text_on_brand" />
 

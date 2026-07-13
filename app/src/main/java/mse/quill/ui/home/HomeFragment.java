@@ -100,27 +100,59 @@ public class HomeFragment extends Fragment {
         setupFabMenu(view);
     }
 
+    private static final long FAB_OPTIONS_ANIM_DURATION_MS = 180;
+
     private void setupFabMenu(View view) {
         View fabOptions = view.findViewById(R.id.fab_options);
         View fabOptionNote = view.findViewById(R.id.fab_option_note);
         View fabOptionCollection = view.findViewById(R.id.fab_option_collection);
+        int sweepDistance = getResources().getDimensionPixelSize(R.dimen.fab_option_sweep_distance);
 
         view.findViewById(R.id.fab_new_note).setOnClickListener(v -> {
             boolean expanded = fabOptions.getVisibility() == View.VISIBLE;
-            fabOptions.setVisibility(expanded ? View.GONE : View.VISIBLE);
+            if (expanded) {
+                collapseFabOptions(fabOptions, sweepDistance);
+            } else {
+                expandFabOptions(fabOptions, sweepDistance);
+            }
         });
 
         fabOptionNote.setOnClickListener(v -> {
-            fabOptions.setVisibility(View.GONE);
+            collapseFabOptions(fabOptions, sweepDistance);
             NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment);
         });
 
         fabOptionCollection.setOnClickListener(v -> {
-            fabOptions.setVisibility(View.GONE);
+            collapseFabOptions(fabOptions, sweepDistance);
             CollectionDialogs.showCreateDialog(requireContext(), name ->
                     collectionRepository.createCollection(
                             name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
         });
+    }
+
+    /** Sweeps the option buttons up from behind the FAB while fading them in. */
+    private void expandFabOptions(View fabOptions, int sweepDistance) {
+        fabOptions.animate().cancel();
+        fabOptions.setAlpha(0f);
+        fabOptions.setTranslationY(sweepDistance);
+        fabOptions.setVisibility(View.VISIBLE);
+        fabOptions.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(FAB_OPTIONS_ANIM_DURATION_MS)
+                .start();
+    }
+
+    /** Reverses the sweep — slides the option buttons back down behind the FAB while fading out. */
+    private void collapseFabOptions(View fabOptions, int sweepDistance) {
+        if (fabOptions.getVisibility() != View.VISIBLE) return;
+        fabOptions.animate().cancel();
+        fabOptions.animate()
+                .alpha(0f)
+                .translationY(sweepDistance)
+                .setDuration(FAB_OPTIONS_ANIM_DURATION_MS)
+                .withEndAction(() -> fabOptions.setVisibility(View.GONE))
+                .start();
     }
 
     @Override

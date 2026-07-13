@@ -33,6 +33,7 @@
 
     <!-- Home FAB expanding menu -->
     <dimen name="fab_option_radius">24dp</dimen>
+    <dimen name="fab_option_sweep_distance">40dp</dimen>
 
     <!-- Add-existing-notes dialog (AddExistingNotesDialog) -->
     <dimen name="note_picker_max_height">300dp</dimen>

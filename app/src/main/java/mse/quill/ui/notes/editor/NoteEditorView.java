@@ -63,6 +63,7 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
 
             // Update current segment with text before cursor
             textView.setText(before);
+            textView.clearBulletContinuation();
 
             // Insert image after current segment
             int insertAt = focusedIndex + 1;
@@ -82,6 +83,16 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         }
     }
 
+    /** Focuses the end of the last segment — used when the user taps empty space below the
+     *  content to keep writing, rather than having to hit an existing line precisely. */
+    public void focusEnd() {
+        if (segments.isEmpty()) return;
+        BaseSegmentView last = segments.get(segments.size() - 1);
+        if (last instanceof TextSegmentView) {
+            ((TextSegmentView) last).focusAtEnd();
+        }
+    }
+
     public void applyBoldToFocused() {
         TextSegmentView focused = getFocusedTextSegment();
         if (focused != null) focused.applyBold();
@@ -95,6 +106,16 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     public void applyUnderlineToFocused() {
         TextSegmentView focused = getFocusedTextSegment();
         if (focused != null) focused.applyUnderline();
+    }
+
+    public void applyHeadingToFocused(int level) {
+        TextSegmentView focused = getFocusedTextSegment();
+        if (focused != null) focused.applyHeading(level);
+    }
+
+    public void applyBulletListToFocused() {
+        TextSegmentView focused = getFocusedTextSegment();
+        if (focused != null) focused.applyBulletList();
     }
 
     public boolean isBoldActive() {

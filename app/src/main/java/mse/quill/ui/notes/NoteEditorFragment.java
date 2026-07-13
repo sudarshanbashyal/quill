@@ -85,6 +85,7 @@ public class NoteEditorFragment extends Fragment {
         pendingCollectionId = args != null ? args.getString(ARG_COLLECTION_ID) : null;
 
         noteEditorView.setContentChangeListener(this::scheduleAutoSave);
+        view.findViewById(R.id.note_editor_content).setOnClickListener(v -> noteEditorView.focusEnd());
         noteTitle.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -121,6 +122,18 @@ public class NoteEditorFragment extends Fragment {
                     @Override public void onUnderlineToggled() {
                         noteEditorView.applyUnderlineToFocused();
                         updateToolbarState();
+                    }
+
+                    @Override public void onHeading1Toggled() {
+                        noteEditorView.applyHeadingToFocused(1);
+                    }
+
+                    @Override public void onHeading2Toggled() {
+                        noteEditorView.applyHeadingToFocused(2);
+                    }
+
+                    @Override public void onBulletListToggled() {
+                        noteEditorView.applyBulletListToFocused();
                     }
 
                     @Override
