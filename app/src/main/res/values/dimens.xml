@@ -13,8 +13,27 @@
     <!-- Home header -->
     <dimen name="header_corner_radius">28dp</dimen>
 
-    <!-- Color swatch picker (CollectionDialogs) -->
+    <!-- Color swatch picker (TagPickerDialog) -->
     <dimen name="swatch_size">36dp</dimen>
     <dimen name="swatch_margin">8dp</dimen>
     <dimen name="swatch_border_width">3dp</dimen>
+
+    <!-- Tag chips (TagChipView) -->
+    <dimen name="chip_padding_horizontal">10dp</dimen>
+    <dimen name="chip_padding_vertical">4dp</dimen>
+    <dimen name="chip_corner_radius">999dp</dimen>
+    <dimen name="chip_spacing">6dp</dimen>
+    <dimen name="chip_max_width">120dp</dimen>
+
+    <!-- Tag picker dialog (TagPickerDialog) -->
+    <dimen name="tag_dot_size">14dp</dimen>
+
+    <!-- Pinned note cards (PinnedNoteCardView) -->
+    <dimen name="pinned_card_width">150dp</dimen>
+
+    <!-- Home FAB expanding menu -->
+    <dimen name="fab_option_radius">24dp</dimen>
+
+    <!-- Add-existing-notes dialog (AddExistingNotesDialog) -->
+    <dimen name="note_picker_max_height">300dp</dimen>
 </resources>

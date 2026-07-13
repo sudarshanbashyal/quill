@@ -8,6 +8,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -27,6 +29,7 @@ import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
 import mse.quill.ui.collections.CollectionDetailFragment;
 import mse.quill.ui.notes.NoteEditorFragment;
+import mse.quill.util.ColorUtils;
 
 public class HomeFragment extends Fragment {
 
@@ -34,10 +37,11 @@ public class HomeFragment extends Fragment {
     private CollectionRepository collectionRepository;
 
     private HomeAdapter homeAdapter;
+    private View pinnedSection;
+    private LinearLayout pinnedCardsContainer;
 
     private List<Collection> allCollections = new ArrayList<>();
     private List<Note> allNotes = new ArrayList<>();
-    private int uncategorizedCount = 0;
     private String searchQuery = "";
 
     @Override
@@ -62,16 +66,13 @@ public class HomeFragment extends Fragment {
                 showManageCollectionDialog(collection);
             }
 
-            @Override public void onAddCollectionClicked() {
-                CollectionDialogs.showCreateDialog(requireContext(), (name, color) ->
-                        collectionRepository.createCollection(name, color, id -> reloadCollections()));
-            }
-
             @Override public void onNoteClicked(Note note) { openNote(note.id); }
 
             @Override public void onNoteLongPressed(Note note) {
-                CollectionDialogs.showNoteActionsDialog(requireContext(), allCollections, note.collectionId,
+                boolean isPinned = note.pinnedAt != null;
+                CollectionDialogs.showNoteActionsDialog(requireContext(), allCollections, note.collectionId, isPinned,
                         collectionId -> noteRepository.assignCollection(note.id, collectionId, HomeFragment.this::reloadAll),
+                        () -> togglePin(note, isPinned),
                         () -> noteRepository.deleteNote(note.id, HomeFragment.this::reloadAll));
             }
         });
@@ -83,6 +84,9 @@ public class HomeFragment extends Fragment {
         recyclerView.setLayoutManager(layoutManager);
         recyclerView.setAdapter(homeAdapter);
 
+        pinnedSection = view.findViewById(R.id.pinned_section);
+        pinnedCardsContainer = view.findViewById(R.id.pinned_cards_container);
+
         EditText searchInput = view.findViewById(R.id.search_input);
         searchInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -93,8 +97,30 @@ public class HomeFragment extends Fragment {
             }
         });
 
-        view.findViewById(R.id.fab_new_note).setOnClickListener(v ->
-                NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment));
+        setupFabMenu(view);
+    }
+
+    private void setupFabMenu(View view) {
+        View fabOptions = view.findViewById(R.id.fab_options);
+        View fabOptionNote = view.findViewById(R.id.fab_option_note);
+        View fabOptionCollection = view.findViewById(R.id.fab_option_collection);
+
+        view.findViewById(R.id.fab_new_note).setOnClickListener(v -> {
+            boolean expanded = fabOptions.getVisibility() == View.VISIBLE;
+            fabOptions.setVisibility(expanded ? View.GONE : View.VISIBLE);
+        });
+
+        fabOptionNote.setOnClickListener(v -> {
+            fabOptions.setVisibility(View.GONE);
+            NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment);
+        });
+
+        fabOptionCollection.setOnClickListener(v -> {
+            fabOptions.setVisibility(View.GONE);
+            CollectionDialogs.showCreateDialog(requireContext(), name ->
+                    collectionRepository.createCollection(
+                            name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
+        });
     }
 
     @Override
@@ -123,11 +149,6 @@ public class HomeFragment extends Fragment {
                         collectionRepository.renameCollection(collection.id, newName, HomeFragment.this::reloadCollections));
             }
 
-            @Override public void onChangeColor() {
-                CollectionDialogs.showColorPickerDialog(requireContext(), collection.color, newColor ->
-                        collectionRepository.recolorCollection(collection.id, newColor, HomeFragment.this::reloadCollections));
-            }
-
             @Override public void onDelete() {
                 new AlertDialog.Builder(requireContext())
                         .setTitle(getString(R.string.delete_collection_title_format, collection.name))
@@ -140,20 +161,60 @@ public class HomeFragment extends Fragment {
         });
     }
 
+    private void togglePin(Note note, boolean isPinned) {
+        if (isPinned) {
+            noteRepository.unpinNote(note.id, this::reloadAll);
+            return;
+        }
+        noteRepository.pinNote(note.id, new NoteRepository.OnPinResult() {
+            @Override public void onPinned() { reloadAll(); }
+
+            @Override public void onLimitReached() {
+                if (isAdded()) {
+                    Toast.makeText(requireContext(), R.string.pin_limit_reached_message, Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+    }
+
     private void reloadAll() {
         reloadCollections();
         reloadNotes();
+        reloadPinnedNotes();
+    }
+
+    private void reloadPinnedNotes() {
+        noteRepository.loadPinnedNotes(notes -> {
+            if (!isAdded()) return;
+            renderPinnedSection(notes);
+        });
+    }
+
+    private void renderPinnedSection(List<Note> pinnedNotes) {
+        pinnedCardsContainer.removeAllViews();
+        pinnedSection.setVisibility(pinnedNotes.isEmpty() ? View.GONE : View.VISIBLE);
+
+        PinnedNoteCardView.Listener listener = new PinnedNoteCardView.Listener() {
+            @Override public void onClicked(Note note) { openNote(note.id); }
+
+            @Override public void onLongPressed(Note note) {
+                CollectionDialogs.showNoteActionsDialog(requireContext(), allCollections, note.collectionId, true,
+                        collectionId -> noteRepository.assignCollection(note.id, collectionId, HomeFragment.this::reloadAll),
+                        () -> togglePin(note, true),
+                        () -> noteRepository.deleteNote(note.id, HomeFragment.this::reloadAll));
+            }
+        };
+
+        for (Note note : pinnedNotes) {
+            pinnedCardsContainer.addView(PinnedNoteCardView.build(requireContext(), note, listener));
+        }
     }
 
     private void reloadCollections() {
         collectionRepository.loadCollections(collections -> {
             if (!isAdded()) return;
             allCollections = collections;
-            collectionRepository.countUncategorizedNotes(count -> {
-                if (!isAdded()) return;
-                uncategorizedCount = count;
-                applyFilters();
-            });
+            applyFilters();
         });
     }
 
@@ -167,7 +228,7 @@ public class HomeFragment extends Fragment {
 
     private void applyFilters() {
         if (searchQuery.isEmpty()) {
-            homeAdapter.submitCollections(allCollections, uncategorizedCount, true);
+            homeAdapter.submitCollections(allCollections);
             homeAdapter.submitNotes(allNotes);
             return;
         }
@@ -176,9 +237,7 @@ public class HomeFragment extends Fragment {
         for (Collection c : allCollections) {
             if (c.name.toLowerCase(Locale.getDefault()).contains(searchQuery)) filteredCollections.add(c);
         }
-        boolean uncategorizedMatches = getString(R.string.uncategorized)
-                .toLowerCase(Locale.getDefault()).contains(searchQuery);
-        homeAdapter.submitCollections(filteredCollections, uncategorizedCount, uncategorizedMatches);
+        homeAdapter.submitCollections(filteredCollections);
 
         List<Note> filteredNotes = new ArrayList<>();
         for (Note n : allNotes) {

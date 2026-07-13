@@ -24,6 +24,4 @@
     <!-- Misc -->
     <color name="uncategorized_gray">#9E9E9E</color>
     <color name="divider">#EBE9F2</color>
-    <color name="uncategorized_card">#EDEBF2</color>
-    <color name="add_tile_background">@color/brand_purple_light</color>
 </resources>

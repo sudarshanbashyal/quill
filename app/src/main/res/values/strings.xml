@@ -5,11 +5,12 @@
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
     <string name="search_hint">Search notes or collections…</string>
 
+    <string name="section_pinned_notes">Pinned Notes</string>
     <string name="section_collections">Collections</string>
     <string name="section_notes">Notes</string>
 
-    <string name="uncategorized">Uncategorized</string>
-    <string name="new_collection">New collection</string>
+    <string name="action_create_note">Create Note</string>
+    <string name="action_create_collection">Collection</string>
     <string name="notes_count_zero">No notes</string>
     <string name="updated_relative_format">Updated %s</string>
 
@@ -22,24 +23,32 @@
     <string name="empty_notes_in_collection">No notes in this collection yet</string>
 
     <string name="action_move_to_collection">Move to collection…</string>
+    <string name="action_remove_from_collection">Remove from collection</string>
     <string name="action_delete_note">Delete</string>
+    <string name="action_pin">Pin</string>
+    <string name="action_unpin">Unpin</string>
+    <string name="pin_limit_reached_message">You can only pin up to 3 notes</string>
     <string name="delete_note_title">Delete note?</string>
     <string name="delete_note_message">This note will be moved to trash.</string>
     <string name="delete_collection_title_format">Delete \"%s\"?</string>
     <string name="delete_collection_message">Notes in this collection will become Uncategorized.</string>
 
     <string name="action_rename">Rename</string>
-    <string name="action_change_color">Change color</string>
     <string name="action_delete">Delete</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_create">Create</string>
     <string name="action_save">Save</string>
+    <string name="action_done">Done</string>
+    <string name="action_add">Add</string>
+    <string name="action_add_tag">+ Add tag</string>
 
     <string name="dialog_new_collection_title">New collection</string>
     <string name="dialog_rename_collection_title">Rename collection</string>
-    <string name="dialog_change_color_title">Change color</string>
     <string name="collection_name_hint">Collection name</string>
+    <string name="dialog_tags_title">Tags</string>
+    <string name="new_tag_hint">New tag name</string>
+    <string name="dialog_add_existing_notes_title">Add existing notes</string>
 
     <string name="note_icon_glyph">📝</string>
-    <string name="untitled_note">Untitled</string>
+    <string name="untitled_note_with_date">Untitled Note - %s</string>
 </resources>

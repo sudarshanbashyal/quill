@@ -2,6 +2,7 @@ package mse.quill.ui.home;
 
 import android.text.format.DateUtils;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -10,8 +11,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 
-import mse.quill.R;
 import mse.quill.data.model.Note;
+import mse.quill.ui.tags.TagChipView;
+import mse.quill.util.NoteDisplayUtils;
 
 public class NotesAdapter extends RecyclerView.Adapter<NotesAdapter.NoteViewHolder> {
 
@@ -52,22 +54,21 @@ public class NotesAdapter extends RecyclerView.Adapter<NotesAdapter.NoteViewHold
     class NoteViewHolder extends RecyclerView.ViewHolder {
         private final TextView titleView;
         private final TextView timestampView;
+        private final LinearLayout tagsContainer;
 
         NoteViewHolder(@NonNull NoteRowView.Views views) {
             super(views.root);
             titleView = views.titleView;
             timestampView = views.timestampView;
+            tagsContainer = views.tagsContainer;
         }
 
         void bind(Note note) {
-            boolean hasTitle = note.title != null && !note.title.trim().isEmpty();
-            boolean hasPreview = note.preview != null && !note.preview.trim().isEmpty();
-
-            titleView.setText(hasTitle ? note.title.trim()
-                    : hasPreview ? note.preview.trim() : itemView.getContext().getString(R.string.untitled_note));
+            titleView.setText(NoteDisplayUtils.resolveTitle(itemView.getContext(), note));
 
             timestampView.setText(DateUtils.getRelativeTimeSpanString(
                     note.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS));
+            TagChipView.render(itemView.getContext(), tagsContainer, note.tags);
 
             itemView.setOnClickListener(v -> listener.onNoteClicked(note));
             itemView.setOnLongClickListener(v -> {

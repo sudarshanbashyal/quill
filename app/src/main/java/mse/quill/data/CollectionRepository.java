@@ -15,7 +15,6 @@ public class CollectionRepository {
 
     public interface OnCollectionCreated { void onCreated(String collectionId); }
     public interface OnCollectionsLoaded { void onLoaded(List<Collection> collections); }
-    public interface OnCountLoaded { void onLoaded(int count); }
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
@@ -47,16 +46,6 @@ public class CollectionRepository {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             ContentValues cv = new ContentValues();
             cv.put("name", newName);
-            db.update("collections", cv, "id = ?", new String[]{id});
-            if (onDone != null) executors.mainThread(onDone);
-        });
-    }
-
-    public void recolorCollection(String id, int newColor, Runnable onDone) {
-        executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
-            ContentValues cv = new ContentValues();
-            cv.put("color", newColor);
             db.update("collections", cv, "id = ?", new String[]{id});
             if (onDone != null) executors.mainThread(onDone);
         });
@@ -111,19 +100,4 @@ public class CollectionRepository {
         });
     }
 
-    public void countUncategorizedNotes(OnCountLoaded cb) {
-        executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
-            Cursor c = db.rawQuery(
-                    "SELECT COUNT(*) FROM notes WHERE collection_id IS NULL AND deleted_at IS NULL", null);
-            int count = 0;
-            try {
-                if (c.moveToFirst()) count = c.getInt(0);
-            } finally {
-                c.close();
-            }
-            int finalCount = count;
-            if (cb != null) executors.mainThread(() -> cb.onLoaded(finalCount));
-        });
-    }
 }

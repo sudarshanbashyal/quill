@@ -14,13 +14,17 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
 import androidx.appcompat.widget.Toolbar;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import mse.quill.R;
 import mse.quill.data.NoteRepository;
+import mse.quill.data.TagRepository;
+import mse.quill.data.model.Tag;
 import mse.quill.ui.notes.editor.FormattingToolbarController;
 import mse.quill.ui.notes.editor.ImageEmbedder;
 import mse.quill.ui.notes.editor.KeyboardInsetsHandler;
@@ -28,6 +32,8 @@ import mse.quill.ui.notes.editor.NoteEditorView;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.ui.tags.TagChipView;
+import mse.quill.ui.tags.TagPickerDialog;
 
 public class NoteEditorFragment extends Fragment {
 
@@ -45,10 +51,15 @@ public class NoteEditorFragment extends Fragment {
     private ImageEmbedder imageEmbedder;
 
     private NoteRepository noteRepository;
+    private TagRepository tagRepository;
     private String noteId;
     private String pendingCollectionId;
     private final AtomicBoolean isCreatingNote = new AtomicBoolean(false);
     private boolean suppressAutoSave = false;
+
+    private View tagRowScroll;
+    private LinearLayout tagRowContainer;
+    private List<Tag> currentTags = new ArrayList<>();
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -63,8 +74,11 @@ public class NoteEditorFragment extends Fragment {
         noteTitle = view.findViewById(R.id.note_title);
         noteEditorView = view.findViewById(R.id.note_editor_view);
         formattingToolbar = view.findViewById(R.id.formatting_toolbar);
+        tagRowScroll = view.findViewById(R.id.tag_row_scroll);
+        tagRowContainer = view.findViewById(R.id.tag_row_container);
 
         noteRepository = new NoteRepository(requireContext());
+        tagRepository = new TagRepository(requireContext());
 
         Bundle args = getArguments();
         noteId = args != null ? args.getString(ARG_NOTE_ID) : null;
@@ -164,6 +178,41 @@ public class NoteEditorFragment extends Fragment {
             noteEditorView.loadSegments(segments);
             suppressAutoSave = false;
         });
+        tagRepository.loadTagsForNote(noteId, tags -> {
+            if (!isAdded()) return;
+            currentTags = tags;
+            renderTagRow();
+        });
+    }
+
+    private void renderTagRow() {
+        if (noteId == null) {
+            tagRowScroll.setVisibility(View.GONE);
+            return;
+        }
+        tagRowScroll.setVisibility(View.VISIBLE);
+        tagRowContainer.removeAllViews();
+
+        for (Tag tag : currentTags) {
+            View chip = TagChipView.buildChip(requireContext(), tag);
+            chip.setOnClickListener(v -> openTagPicker());
+            tagRowContainer.addView(chip);
+        }
+
+        View addChip = TagChipView.buildAddChip(requireContext());
+        addChip.setOnClickListener(v -> openTagPicker());
+        tagRowContainer.addView(addChip);
+    }
+
+    private void openTagPicker() {
+        tagRepository.loadAllTags(allTags ->
+                TagPickerDialog.show(requireContext(), tagRepository, allTags, currentTags, tagIds ->
+                        tagRepository.setNoteTags(noteId, tagIds, () ->
+                                tagRepository.loadTagsForNote(noteId, tags -> {
+                                    if (!isAdded()) return;
+                                    currentTags = tags;
+                                    renderTagRow();
+                                }))));
     }
 
     private void scheduleAutoSave() {
@@ -207,6 +256,7 @@ public class NoteEditorFragment extends Fragment {
                 noteId = createdId;
                 isCreatingNote.set(false);
                 noteRepository.saveNote(noteId, title, segments, null);
+                if (isAdded()) renderTagRow();
             });
             return;
         }

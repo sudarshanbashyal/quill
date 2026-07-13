@@ -7,12 +7,16 @@ import android.database.sqlite.SQLiteDatabase;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 import mse.quill.data.model.Note;
+import mse.quill.data.model.Tag;
 import mse.quill.data.serialization.SpanSerializer;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
@@ -20,12 +24,12 @@ import mse.quill.ui.notes.editor.model.TextSegment;
 
 public class NoteRepository {
 
-    /** Pass this as the collection filter to loadNotes() to mean "no collection". */
-    public static final String UNCATEGORIZED = "";
+    public static final int MAX_PINNED_NOTES = 3;
 
     public interface OnNoteCreated { void onCreated(String noteId); }
     public interface OnNoteLoaded { void onLoaded(Note note, List<NoteSegment> segments); }
     public interface OnNotesLoaded { void onLoaded(List<Note> notes); }
+    public interface OnPinResult { void onPinned(); void onLimitReached(); }
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
@@ -109,11 +113,56 @@ public class NoteRepository {
         });
     }
 
-    /** filter: null = all notes, UNCATEGORIZED = notes with no collection, else a collection id. */
+    /** Pins the note, unless {@link #MAX_PINNED_NOTES} notes are already pinned. */
+    public void pinNote(String noteId, OnPinResult cb) {
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            Cursor c = db.rawQuery(
+                    "SELECT COUNT(*) FROM notes WHERE pinned_at IS NOT NULL AND deleted_at IS NULL AND id != ?",
+                    new String[]{noteId});
+            int pinnedCount = 0;
+            try {
+                if (c.moveToFirst()) pinnedCount = c.getInt(0);
+            } finally {
+                c.close();
+            }
+
+            if (pinnedCount >= MAX_PINNED_NOTES) {
+                if (cb != null) executors.mainThread(cb::onLimitReached);
+                return;
+            }
+
+            ContentValues cv = new ContentValues();
+            cv.put("pinned_at", System.currentTimeMillis());
+            db.update("notes", cv, "id = ?", new String[]{noteId});
+            if (cb != null) executors.mainThread(cb::onPinned);
+        });
+    }
+
+    public void unpinNote(String noteId, Runnable onDone) {
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            ContentValues cv = new ContentValues();
+            cv.putNull("pinned_at");
+            db.update("notes", cv, "id = ?", new String[]{noteId});
+            if (onDone != null) executors.mainThread(onDone);
+        });
+    }
+
+    /** filter: null = all notes, else a collection id. */
     public void loadNotes(String filter, OnNotesLoaded cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
-            List<Note> notes = getAllNotesSync(db, filter);
+            List<Note> notes = getAllNotesSync(db, filter, false);
+            if (cb != null) executors.mainThread(() -> cb.onLoaded(notes));
+        });
+    }
+
+    /** Up to {@link #MAX_PINNED_NOTES} pinned notes, most-recently-pinned first. */
+    public void loadPinnedNotes(OnNotesLoaded cb) {
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            List<Note> notes = getAllNotesSync(db, null, true);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(notes));
         });
     }
@@ -122,61 +171,97 @@ public class NoteRepository {
 
     private Note getNoteSync(SQLiteDatabase db, String noteId) {
         Cursor c = db.rawQuery(
-                "SELECT id, collection_id, title, created_at, updated_at, deleted_at " +
+                "SELECT id, collection_id, title, created_at, updated_at, deleted_at, pinned_at " +
                         "FROM notes WHERE id = ? AND deleted_at IS NULL",
                 new String[]{noteId});
         try {
             if (!c.moveToFirst()) return null;
-            Note note = new Note();
-            note.id = c.getString(0);
-            note.collectionId = c.isNull(1) ? null : c.getString(1);
-            note.title = c.getString(2);
-            note.createdAt = c.getLong(3);
-            note.updatedAt = c.getLong(4);
-            note.deletedAt = c.isNull(5) ? null : c.getLong(5);
-            return note;
+            return readNote(c);
         } finally {
             c.close();
         }
     }
 
-    private List<Note> getAllNotesSync(SQLiteDatabase db, String filter) {
+    private List<Note> getAllNotesSync(SQLiteDatabase db, String filter, boolean pinnedOnly) {
         StringBuilder sql = new StringBuilder(
-                "SELECT n.id, n.collection_id, n.title, n.created_at, n.updated_at, n.deleted_at, " +
+                "SELECT n.id, n.collection_id, n.title, n.created_at, n.updated_at, n.deleted_at, n.pinned_at, " +
                         "(SELECT s.text_content FROM note_segments s " +
                         " WHERE s.note_id = n.id AND s.type = " + NoteSegment.TYPE_TEXT +
                         " ORDER BY s.position ASC LIMIT 1) AS preview_blob " +
                         "FROM notes n WHERE n.deleted_at IS NULL");
 
         List<String> args = new ArrayList<>();
-        if (filter == null) {
-            // no extra filter — all notes
-        } else if (filter.equals(UNCATEGORIZED)) {
-            sql.append(" AND n.collection_id IS NULL");
-        } else {
+        if (filter != null) {
             sql.append(" AND n.collection_id = ?");
             args.add(filter);
         }
-        sql.append(" ORDER BY n.updated_at DESC");
+        if (pinnedOnly) {
+            sql.append(" AND n.pinned_at IS NOT NULL");
+        }
+        sql.append(pinnedOnly ? " ORDER BY n.pinned_at DESC" : " ORDER BY n.updated_at DESC");
+        if (pinnedOnly) {
+            sql.append(" LIMIT ").append(MAX_PINNED_NOTES);
+        }
 
         Cursor c = db.rawQuery(sql.toString(), args.toArray(new String[0]));
+        List<Note> notes = new ArrayList<>();
+        List<String> noteIds = new ArrayList<>();
         try {
-            List<Note> notes = new ArrayList<>();
             while (c.moveToNext()) {
-                Note note = new Note();
-                note.id = c.getString(0);
-                note.collectionId = c.isNull(1) ? null : c.getString(1);
-                note.title = c.getString(2);
-                note.createdAt = c.getLong(3);
-                note.updatedAt = c.getLong(4);
-                note.deletedAt = c.isNull(5) ? null : c.getLong(5);
-                note.preview = c.isNull(6) ? "" : SpanSerializer.fromBytes(c.getBlob(6)).toString().trim();
+                Note note = readNote(c);
+                note.preview = c.isNull(7) ? "" : SpanSerializer.fromBytes(c.getBlob(7)).toString().trim();
                 notes.add(note);
+                noteIds.add(note.id);
             }
-            return notes;
         } finally {
             c.close();
         }
+
+        Map<String, List<Tag>> tagsByNoteId = loadTagsForNoteIdsSync(db, noteIds);
+        for (Note note : notes) {
+            List<Tag> tags = tagsByNoteId.get(note.id);
+            if (tags != null) note.tags = tags;
+        }
+        return notes;
+    }
+
+    private static Note readNote(Cursor c) {
+        Note note = new Note();
+        note.id = c.getString(0);
+        note.collectionId = c.isNull(1) ? null : c.getString(1);
+        note.title = c.getString(2);
+        note.createdAt = c.getLong(3);
+        note.updatedAt = c.getLong(4);
+        note.deletedAt = c.isNull(5) ? null : c.getLong(5);
+        note.pinnedAt = c.isNull(6) ? null : c.getLong(6);
+        return note;
+    }
+
+    private Map<String, List<Tag>> loadTagsForNoteIdsSync(SQLiteDatabase db, List<String> noteIds) {
+        Map<String, List<Tag>> result = new HashMap<>();
+        if (noteIds.isEmpty()) return result;
+
+        String placeholders = String.join(",", Collections.nCopies(noteIds.size(), "?"));
+        Cursor c = db.rawQuery(
+                "SELECT nt.note_id, t.id, t.name, t.color, t.created_at FROM note_tags nt " +
+                        "JOIN tags t ON t.id = nt.tag_id " +
+                        "WHERE nt.note_id IN (" + placeholders + ") " +
+                        "ORDER BY t.name COLLATE NOCASE ASC",
+                noteIds.toArray(new String[0]));
+        try {
+            while (c.moveToNext()) {
+                String noteId = c.getString(0);
+                Tag tag = new Tag();
+                tag.id = c.getString(1);
+                tag.name = c.getString(2);
+                tag.color = c.getInt(3);
+                tag.createdAt = c.getLong(4);
+                result.computeIfAbsent(noteId, k -> new ArrayList<>()).add(tag);
+            }
+        } finally {
+            c.close();
+        }
+        return result;
     }
 
     private List<NoteSegment> getSegmentsSync(SQLiteDatabase db, String noteId) {

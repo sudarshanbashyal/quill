@@ -3,7 +3,6 @@ package mse.quill.ui.home;
 import android.content.Context;
 import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -22,21 +21,16 @@ final class CollectionCardView {
     static final class Views {
         final View root;
         final GradientDrawable background;
-        final View detailGroup;
         final TextView nameView;
         final TextView countView;
         final TextView updatedView;
-        final TextView addLabelView;
 
-        Views(View root, GradientDrawable background, View detailGroup, TextView nameView,
-              TextView countView, TextView updatedView, TextView addLabelView) {
+        Views(View root, GradientDrawable background, TextView nameView, TextView countView, TextView updatedView) {
             this.root = root;
             this.background = background;
-            this.detailGroup = detailGroup;
             this.nameView = nameView;
             this.countView = countView;
             this.updatedView = updatedView;
-            this.addLabelView = addLabelView;
         }
     }
 
@@ -62,16 +56,6 @@ final class CollectionCardView {
         root.setBackground(background);
         root.setClickable(true);
         root.setFocusable(true);
-
-        TextView addLabel = new TextView(context);
-        addLabel.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        addLabel.setGravity(Gravity.CENTER);
-        addLabel.setText(R.string.new_collection);
-        addLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        addLabel.setTypeface(addLabel.getTypeface(), android.graphics.Typeface.BOLD);
-        addLabel.setVisibility(View.GONE);
-        root.addView(addLabel);
 
         LinearLayout detailGroup = new LinearLayout(context);
         detailGroup.setLayoutParams(new FrameLayout.LayoutParams(
@@ -108,6 +92,6 @@ final class CollectionCardView {
         updated.setAlpha(0.7f);
         detailGroup.addView(updated);
 
-        return new Views(root, background, detailGroup, name, count, updated, addLabel);
+        return new Views(root, background, name, count, updated);
     }
 }

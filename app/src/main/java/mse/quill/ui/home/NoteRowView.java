@@ -31,28 +31,37 @@ final class NoteRowView {
         final View root;
         final TextView titleView;
         final TextView timestampView;
+        final LinearLayout tagsContainer;
 
-        Views(View root, TextView titleView, TextView timestampView) {
+        Views(View root, TextView titleView, TextView timestampView, LinearLayout tagsContainer) {
             this.root = root;
             this.titleView = titleView;
             this.timestampView = timestampView;
+            this.tagsContainer = tagsContainer;
         }
     }
 
     static Views build(Context context) {
         int spacingMd = dimen(context, R.dimen.spacing_md);
         int spacingSm = dimen(context, R.dimen.spacing_sm);
+        int spacingXs = dimen(context, R.dimen.spacing_xs);
         int iconWidth = (int) (32 * context.getResources().getDisplayMetrics().density);
 
-        LinearLayout row = new LinearLayout(context);
-        row.setLayoutParams(new RecyclerView.LayoutParams(
+        LinearLayout outer = new LinearLayout(context);
+        outer.setLayoutParams(new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setPadding(spacingMd, spacingSm, spacingMd, spacingSm);
+        outer.setClickable(true);
+        outer.setFocusable(true);
+        outer.setBackground(selectableItemBackground(context));
+
+        LinearLayout row = new LinearLayout(context);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(spacingMd, spacingSm, spacingMd, spacingSm);
-        row.setClickable(true);
-        row.setFocusable(true);
-        row.setBackground(selectableItemBackground(context));
+        outer.addView(row);
 
         TextView icon = new TextView(context);
         icon.setLayoutParams(new LinearLayout.LayoutParams(iconWidth, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -78,7 +87,17 @@ final class NoteRowView {
         timestamp.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         row.addView(timestamp);
 
-        return new Views(row, title, timestamp);
+        LinearLayout tagsContainer = new LinearLayout(context);
+        LinearLayout.LayoutParams tagsParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tagsParams.topMargin = spacingXs;
+        tagsParams.setMarginStart(iconWidth);
+        tagsContainer.setLayoutParams(tagsParams);
+        tagsContainer.setOrientation(LinearLayout.HORIZONTAL);
+        tagsContainer.setVisibility(View.GONE);
+        outer.addView(tagsContainer);
+
+        return new Views(outer, title, timestamp, tagsContainer);
     }
 
     static android.graphics.drawable.Drawable selectableItemBackground(Context context) {

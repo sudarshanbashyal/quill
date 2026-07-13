@@ -6,6 +6,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -18,12 +19,15 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
+import mse.quill.ui.tags.TagChipView;
 import mse.quill.util.ColorUtils;
+import mse.quill.util.NoteDisplayUtils;
 
 /**
- * Single adapter driving the whole Home scroll area: a "Collections" section header, a 2-column
- * grid of collection cards (Uncategorized + real collections + "+ New collection"), a "Notes"
- * section header, then a flat list of notes (or an empty-state row).
+ * Single adapter driving the Collections + Notes scroll area below Home's pinned-notes section
+ * and search bar: a "Collections" section header, a 2-column grid of collection cards, a "Notes"
+ * section header, then a flat list of notes (or an empty-state row). Creating a new collection is
+ * triggered from Home's expanding FAB, not from a card in this grid.
  *
  * All item views are built programmatically (see {@link NoteRowView}, {@link CollectionCardView})
  * rather than via XML layout + LayoutInflater: on this SDK, the first XML-attribute-derived
@@ -40,31 +44,23 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private static final int TYPE_NOTE = 2;
     private static final int TYPE_EMPTY_NOTES = 3;
 
-    private static final float PASTEL_WHITE_RATIO = 0.78f;
-
     public interface Listener {
-        /** collectionId is null for the Uncategorized tile. */
         void onCollectionClicked(String collectionId, String displayName);
         void onCollectionLongPressed(Collection collection);
-        void onAddCollectionClicked();
         void onNoteClicked(Note note);
         void onNoteLongPressed(Note note);
     }
 
     private final Listener listener;
     private List<Collection> collections = new ArrayList<>();
-    private int uncategorizedCount = 0;
-    private boolean showUncategorized = true;
     private List<Note> notes = new ArrayList<>();
 
     public HomeAdapter(Listener listener) {
         this.listener = listener;
     }
 
-    public void submitCollections(List<Collection> collections, int uncategorizedCount, boolean showUncategorized) {
+    public void submitCollections(List<Collection> collections) {
         this.collections = collections;
-        this.uncategorizedCount = uncategorizedCount;
-        this.showUncategorized = showUncategorized;
         notifyDataSetChanged();
     }
 
@@ -86,7 +82,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private static final int POS_COLLECTIONS_HEADER = 0;
 
     private int collectionsCount() {
-        return collections.size() + (showUncategorized ? 1 : 0) + 1; // + Add tile
+        return collections.size();
     }
 
     private int collectionsStart() { return POS_COLLECTIONS_HEADER + 1; }
@@ -169,14 +165,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     private void bindCollectionCard(CollectionCardViewHolder holder, int index) {
-        if (showUncategorized && index == 0) {
-            holder.bindUncategorized(uncategorizedCount, listener);
-        } else if (index == collectionsCount() - 1) {
-            holder.bindAdd(listener);
-        } else {
-            int collectionIndex = showUncategorized ? index - 1 : index;
-            holder.bindCollection(collections.get(collectionIndex), listener);
-        }
+        holder.bindCollection(collections.get(index), listener);
     }
 
     // ── ViewHolders ──────────────────────────────────────────────────────
@@ -194,20 +183,20 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     static class NoteRowViewHolder extends RecyclerView.ViewHolder {
         private final TextView titleView;
         private final TextView timestampView;
+        private final LinearLayout tagsContainer;
 
         NoteRowViewHolder(@NonNull NoteRowView.Views views) {
             super(views.root);
             titleView = views.titleView;
             timestampView = views.timestampView;
+            tagsContainer = views.tagsContainer;
         }
 
         void bind(Note note, Listener listener) {
-            boolean hasTitle = note.title != null && !note.title.trim().isEmpty();
-            boolean hasPreview = note.preview != null && !note.preview.trim().isEmpty();
-            titleView.setText(hasTitle ? note.title.trim()
-                    : hasPreview ? note.preview.trim() : itemView.getContext().getString(R.string.untitled_note));
+            titleView.setText(NoteDisplayUtils.resolveTitle(itemView.getContext(), note));
             timestampView.setText(DateUtils.getRelativeTimeSpanString(
                     note.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS));
+            TagChipView.render(itemView.getContext(), tagsContainer, note.tags);
 
             itemView.setOnClickListener(v -> listener.onNoteClicked(note));
             itemView.setOnLongClickListener(v -> {
@@ -219,62 +208,32 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class CollectionCardViewHolder extends RecyclerView.ViewHolder {
         private final android.graphics.drawable.GradientDrawable cardBackground;
-        private final View detailGroup;
         private final TextView nameView;
         private final TextView countView;
         private final TextView updatedView;
-        private final TextView addLabelView;
 
         CollectionCardViewHolder(@NonNull CollectionCardView.Views views) {
             super(views.root);
             cardBackground = views.background;
-            detailGroup = views.detailGroup;
             nameView = views.nameView;
             countView = views.countView;
             updatedView = views.updatedView;
-            addLabelView = views.addLabelView;
         }
 
         void bindCollection(Collection collection, Listener listener) {
-            showDetailViews(true);
             nameView.setText(collection.name);
             countView.setText(formatCount(itemView, collection.noteCount));
             updatedView.setText(itemView.getContext().getString(
                     R.string.updated_relative_format,
                     DateUtils.getRelativeTimeSpanString(
                             collection.lastActivityAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)));
-            cardBackground.setColor(ColorUtils.lighten(collection.color, PASTEL_WHITE_RATIO));
+            cardBackground.setColor(ColorUtils.lighten(collection.color, ColorUtils.PASTEL_CARD_WHITE_RATIO));
 
             itemView.setOnClickListener(v -> listener.onCollectionClicked(collection.id, collection.name));
             itemView.setOnLongClickListener(v -> {
                 listener.onCollectionLongPressed(collection);
                 return true;
             });
-        }
-
-        void bindUncategorized(int count, Listener listener) {
-            showDetailViews(true);
-            String name = itemView.getContext().getString(R.string.uncategorized);
-            nameView.setText(name);
-            countView.setText(formatCount(itemView, count));
-            updatedView.setText("");
-            cardBackground.setColor(itemView.getContext().getColor(R.color.uncategorized_card));
-
-            itemView.setOnClickListener(v -> listener.onCollectionClicked(null, name));
-            itemView.setOnLongClickListener(null);
-        }
-
-        void bindAdd(Listener listener) {
-            showDetailViews(false);
-            cardBackground.setColor(itemView.getContext().getColor(R.color.add_tile_background));
-
-            itemView.setOnClickListener(v -> listener.onAddCollectionClicked());
-            itemView.setOnLongClickListener(null);
-        }
-
-        private void showDetailViews(boolean show) {
-            detailGroup.setVisibility(show ? View.VISIBLE : View.GONE);
-            addLabelView.setVisibility(show ? View.GONE : View.VISIBLE);
         }
 
         private static String formatCount(View itemView, int count) {

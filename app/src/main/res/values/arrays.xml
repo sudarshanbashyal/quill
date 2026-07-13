@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <integer-array name="collection_color_palette">
+    <integer-array name="swatch_color_palette">
         <item>0xFFE57373</item>
         <item>0xFFF06292</item>
         <item>0xFFBA68C8</item>
