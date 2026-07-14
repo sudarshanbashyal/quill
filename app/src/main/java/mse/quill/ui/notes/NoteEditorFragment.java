@@ -25,10 +25,13 @@ import mse.quill.R;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
+import mse.quill.ui.notes.editor.AudioRecorder;
 import mse.quill.ui.notes.editor.FormattingToolbarController;
 import mse.quill.ui.notes.editor.ImageEmbedder;
 import mse.quill.ui.notes.editor.KeyboardInsetsHandler;
 import mse.quill.ui.notes.editor.NoteEditorView;
+import mse.quill.ui.notes.editor.RecordingDialog;
+import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
@@ -49,6 +52,9 @@ public class NoteEditorFragment extends Fragment {
     private NoteEditorView noteEditorView;
 
     private ImageEmbedder imageEmbedder;
+    private AudioRecorder audioRecorder;
+    private RecordingDialog recordingDialog;
+    private Runnable recordingTickRunnable;
 
     private NoteRepository noteRepository;
     private TagRepository tagRepository;
@@ -108,6 +114,36 @@ public class NoteEditorFragment extends Fragment {
             }
         });
 
+        audioRecorder = new AudioRecorder(this, new AudioRecorder.RecordingListener() {
+            @Override
+            public void onRecordingStarted() {
+                toolbarController.setRecordingState(true);
+                recordingDialog = new RecordingDialog(requireContext(), () -> audioRecorder.toggleRecording());
+                recordingDialog.show();
+                startRecordingTicker();
+            }
+
+            @Override
+            public void onRecordingFinished(String filePath, int durationMs) {
+                toolbarController.setRecordingState(false);
+                dismissRecordingDialog();
+                noteEditorView.insertAudioAfterFocused(filePath, durationMs);
+            }
+
+            @Override
+            public void onRecordingFailed() {
+                toolbarController.setRecordingState(false);
+                dismissRecordingDialog();
+                // TODO: show a snackbar "Could not record audio"
+            }
+
+            @Override
+            public void onPermissionDenied() {
+                toolbarController.setRecordingState(false);
+                // TODO: show a snackbar "Microphone permission is required to record audio"
+            }
+        });
+
         toolbarController = new FormattingToolbarController(
                 view.findViewById(R.id.formatting_buttons),
                 new FormattingToolbarController.FormatListener() {
@@ -139,6 +175,11 @@ public class NoteEditorFragment extends Fragment {
                     @Override
                     public void onImageRequested() {
                         showImageSourceDialog();
+                    }
+
+                    @Override
+                    public void onAudioRequested() {
+                        audioRecorder.toggleRecording();
                     }
                 }
         );
@@ -242,7 +283,40 @@ public class NoteEditorFragment extends Fragment {
             handler.removeCallbacks(saveRunnable);
             saveRunnable = null;
         }
+        audioRecorder.cancelIfRecording();
+        dismissRecordingDialog();
+        toolbarController.setRecordingState(false);
+        noteEditorView.stopAllAudioPlayback();
         autoSave();
+    }
+
+    /** Polls the in-progress recording's elapsed time and amplitude a few times a second to
+     *  drive the popup's timer and waveform while it's showing. */
+    private void startRecordingTicker() {
+        recordingTickRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (recordingDialog == null) return;
+                recordingDialog.update(audioRecorder.getElapsedMs(), audioRecorder.getMaxAmplitude());
+                handler.postDelayed(this, 100);
+            }
+        };
+        handler.post(recordingTickRunnable);
+    }
+
+    private void stopRecordingTicker() {
+        if (recordingTickRunnable != null) {
+            handler.removeCallbacks(recordingTickRunnable);
+            recordingTickRunnable = null;
+        }
+    }
+
+    private void dismissRecordingDialog() {
+        stopRecordingTicker();
+        if (recordingDialog != null) {
+            recordingDialog.dismiss();
+            recordingDialog = null;
+        }
     }
 
     private void showImageSourceDialog() {
@@ -285,6 +359,7 @@ public class NoteEditorFragment extends Fragment {
     private boolean hasRealContent(List<NoteSegment> segments) {
         for (NoteSegment segment : segments) {
             if (segment instanceof ImageSegment) return true;
+            if (segment instanceof AudioSegment) return true;
             if (segment instanceof TextSegment
                     && !((TextSegment) segment).content.toString().trim().isEmpty()) {
                 return true;

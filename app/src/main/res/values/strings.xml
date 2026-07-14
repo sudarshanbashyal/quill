@@ -51,4 +51,8 @@
 
     <string name="note_icon_glyph">📝</string>
     <string name="untitled_note_with_date">Untitled Note - %s</string>
+
+    <string name="recording_in_progress_title">Recording audio…</string>
+    <string name="recording_timer_placeholder">0:00</string>
+    <string name="action_stop_recording">Stop</string>
 </resources>
