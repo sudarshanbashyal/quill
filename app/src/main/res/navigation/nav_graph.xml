@@ -12,7 +12,30 @@
     <fragment
         android:id="@+id/noteEditorFragment"
         android:name="mse.quill.ui.notes.NoteEditorFragment"
-        android:label="Note" />
+        android:label="Note">
+        <argument
+            android:name="note_id"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="collection_id"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/collectionDetailFragment"
+        android:name="mse.quill.ui.collections.CollectionDetailFragment"
+        android:label="Collection">
+        <argument
+            android:name="collection_id"
+            app:argType="string" />
+        <argument
+            android:name="collection_name"
+            app:argType="string" />
+    </fragment>
 
     <!-- add other fragments here -->
 

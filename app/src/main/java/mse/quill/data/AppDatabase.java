@@ -1,13 +1,15 @@
 package mse.quill.data;
 
 import android.content.Context;
+import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.util.Log;
 
 public class AppDatabase extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "quill.db";
-    private static final int DATABASE_VERSION = 1;
+    private static final int DATABASE_VERSION = 2;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -52,6 +54,7 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "location_lat REAL, " +
                 "location_lng REAL, " +
                 "location_name TEXT, " +
+                "pinned_at INTEGER, " +
                 "FOREIGN KEY(collection_id) REFERENCES collections(id))");
 
         db.execSQL("CREATE TABLE whiteboards (" +
@@ -110,9 +113,31 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "created_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
+        db.execSQL("CREATE TABLE tags (" +
+                "id TEXT PRIMARY KEY, " +
+                "name TEXT, " +
+                "color INTEGER, " +
+                "created_at INTEGER)");
+
+        db.execSQL("CREATE TABLE note_tags (" +
+                "note_id TEXT NOT NULL, " +
+                "tag_id TEXT NOT NULL, " +
+                "PRIMARY KEY(note_id, tag_id), " +
+                "FOREIGN KEY(note_id) REFERENCES notes(id), " +
+                "FOREIGN KEY(tag_id) REFERENCES tags(id))");
+
         // ---------- FTS5 virtual table ----------
 
-        db.execSQL("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, content='notes', content_rowid='rowid')");        // ---------- Indexes (recommended for FK lookups) ----------
+        try {
+            db.execSQL("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, content='notes', content_rowid='rowid')");
+        } catch (SQLException e) {
+            // Some SQLite builds (notably some emulator system images) aren't compiled with the
+            // FTS5 module. Search isn't wired up to this table yet, so skip it rather than
+            // failing database creation entirely.
+            Log.w("AppDatabase", "fts5 unavailable, skipping notes_fts table", e);
+        }
+
+        // ---------- Indexes (recommended for FK lookups) ----------
 
         db.execSQL("CREATE INDEX idx_notes_collection_id ON notes(collection_id)");
         db.execSQL("CREATE INDEX idx_whiteboards_note_id ON whiteboards(note_id)");
@@ -120,6 +145,7 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_flashcards_note_id ON flashcards(note_id)");
         db.execSQL("CREATE INDEX idx_voice_memos_note_id ON voice_memos(note_id)");
         db.execSQL("CREATE INDEX idx_note_segments_note_id_position ON note_segments(note_id, position)");
+        db.execSQL("CREATE INDEX idx_note_tags_tag_id ON note_tags(tag_id)");
 
     }
 
@@ -128,6 +154,8 @@ public class AppDatabase extends SQLiteOpenHelper {
         // For development: simple destructive upgrade.
         // For production: write proper ALTER TABLE / migration steps per version.
         db.execSQL("DROP TABLE IF EXISTS notes_fts");
+        db.execSQL("DROP TABLE IF EXISTS note_tags");
+        db.execSQL("DROP TABLE IF EXISTS tags");
         db.execSQL("DROP TABLE IF EXISTS note_segments");
         db.execSQL("DROP TABLE IF EXISTS outbox");
         db.execSQL("DROP TABLE IF EXISTS voice_memos");

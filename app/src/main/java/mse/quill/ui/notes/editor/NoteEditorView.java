@@ -8,6 +8,9 @@ import android.widget.LinearLayout;
 import java.util.ArrayList;
 import java.util.List;
 
+import mse.quill.ui.notes.editor.model.ImageSegment;
+import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.segment.ImageSegmentView;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
@@ -60,6 +63,7 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
 
             // Update current segment with text before cursor
             textView.setText(before);
+            textView.clearBulletContinuation();
 
             // Insert image after current segment
             int insertAt = focusedIndex + 1;
@@ -79,6 +83,16 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         }
     }
 
+    /** Focuses the end of the last segment — used when the user taps empty space below the
+     *  content to keep writing, rather than having to hit an existing line precisely. */
+    public void focusEnd() {
+        if (segments.isEmpty()) return;
+        BaseSegmentView last = segments.get(segments.size() - 1);
+        if (last instanceof TextSegmentView) {
+            ((TextSegmentView) last).focusAtEnd();
+        }
+    }
+
     public void applyBoldToFocused() {
         TextSegmentView focused = getFocusedTextSegment();
         if (focused != null) focused.applyBold();
@@ -92,6 +106,16 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     public void applyUnderlineToFocused() {
         TextSegmentView focused = getFocusedTextSegment();
         if (focused != null) focused.applyUnderline();
+    }
+
+    public void applyHeadingToFocused(int level) {
+        TextSegmentView focused = getFocusedTextSegment();
+        if (focused != null) focused.applyHeading(level);
+    }
+
+    public void applyBulletListToFocused() {
+        TextSegmentView focused = getFocusedTextSegment();
+        if (focused != null) focused.applyBulletList();
     }
 
     public boolean isBoldActive() {
@@ -111,6 +135,44 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
 
     public List<BaseSegmentView> getSegments() {
         return segments;
+    }
+
+    /** Replaces all current segments with the given persisted segments, in order. */
+    public void loadSegments(List<NoteSegment> loaded) {
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            removeSegment(i);
+        }
+
+        if (loaded == null || loaded.isEmpty()) {
+            addTextSegment(new SpannableStringBuilder(""), -1);
+            return;
+        }
+
+        for (NoteSegment segment : loaded) {
+            if (segment instanceof ImageSegment) {
+                addImageSegment(((ImageSegment) segment).filePath, segments.size());
+            } else if (segment instanceof TextSegment) {
+                addTextSegment(new SpannableStringBuilder(((TextSegment) segment).content), segments.size());
+            }
+        }
+    }
+
+    /** Snapshots the current segments (independent of the live views) for persistence. */
+    public List<NoteSegment> exportSegments() {
+        List<NoteSegment> exported = new ArrayList<>();
+        for (int i = 0; i < segments.size(); i++) {
+            BaseSegmentView view = segments.get(i);
+            NoteSegment segment;
+            if (view.getSegmentType() == NoteSegment.TYPE_IMAGE) {
+                segment = new ImageSegment((String) view.getSegmentData());
+            } else {
+                SpannableStringBuilder snapshot = new SpannableStringBuilder((CharSequence) view.getSegmentData());
+                segment = new TextSegment(snapshot);
+            }
+            segment.position = i;
+            exported.add(segment);
+        }
+        return exported;
     }
 
     // ── SegmentCallback ────────────────────────────────────────────────────
