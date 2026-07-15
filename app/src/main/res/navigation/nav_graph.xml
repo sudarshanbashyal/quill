@@ -38,5 +38,11 @@
     </fragment>
 
     <!-- add other fragments here -->
-
+    <fragment
+        android:id="@+id/whiteboardFragment"
+        android:name="mse.quill.ui.whiteboard.WhiteboardFragment"
+        android:label="Whiteboard">
+        <argument android:name="note_id" app:argType="string" />
+        <argument android:name="whiteboard_id" app:argType="string" app:nullable="true" />
+    </fragment>
 </navigation>

@@ -65,4 +65,5 @@
     <string name="delete_image_message">This image will be removed from the note.</string>
     <string name="delete_audio_title">Delete audio?</string>
     <string name="delete_audio_message">This audio clip will be removed from the note.</string>
+    <string name="action_create_whiteboard">New Whiteboard</string>
 </resources>

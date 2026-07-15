@@ -138,6 +138,17 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
+        <TextView
+            android:id="@+id/fab_option_whiteboard"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_fab_option"
+            android:paddingHorizontal="@dimen/spacing_md"
+            android:paddingVertical="@dimen/spacing_sm"
+            android:text="@string/action_create_whiteboard"
+            android:textColor="@color/text_on_brand"
+            android:textSize="14sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
