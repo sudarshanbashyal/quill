@@ -9,11 +9,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.navigation.Navigation;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -21,6 +23,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 import mse.quill.R;
 import mse.quill.data.CollectionRepository;
@@ -106,6 +109,7 @@ public class HomeFragment extends Fragment {
         View fabOptions = view.findViewById(R.id.fab_options);
         View fabOptionNote = view.findViewById(R.id.fab_option_note);
         View fabOptionCollection = view.findViewById(R.id.fab_option_collection);
+        View fabOptionWhiteboard = view.findViewById(R.id.fab_option_whiteboard);
         int sweepDistance = getResources().getDimensionPixelSize(R.dimen.fab_option_sweep_distance);
 
         view.findViewById(R.id.fab_new_note).setOnClickListener(v -> {
@@ -127,6 +131,17 @@ public class HomeFragment extends Fragment {
             CollectionDialogs.showCreateDialog(requireContext(), name ->
                     collectionRepository.createCollection(
                             name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
+        });
+
+        fabOptionWhiteboard.setOnClickListener(v -> {
+            // Collapse the FAB menu first (however your existing code does this)
+            collapseFabOptions(fabOptions, sweepDistance); // reuse whatever method you already call for the other options
+
+            // Create a fresh note_id for a new whiteboard-first note
+            // (or however your app models a "whiteboard-only" note — adjust to your data flow)
+            Bundle args = new Bundle();
+            Navigation.findNavController(requireView())
+                    .navigate(R.id.whiteboardFragment, args);
         });
     }
 
