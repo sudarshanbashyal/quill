@@ -7,11 +7,13 @@ import androidx.navigation.fragment.NavHostFragment;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.tts.Voice;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -30,6 +32,7 @@ import mse.quill.ui.notes.editor.FormattingToolbarController;
 import mse.quill.ui.notes.editor.ImageEmbedder;
 import mse.quill.ui.notes.editor.KeyboardInsetsHandler;
 import mse.quill.ui.notes.editor.NoteEditorView;
+import mse.quill.ui.notes.editor.NoteReader;
 import mse.quill.ui.notes.editor.RecordingDialog;
 import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
@@ -37,6 +40,7 @@ import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.tags.TagPickerDialog;
+import mse.quill.util.NoteDisplayUtils;
 
 public class NoteEditorFragment extends Fragment {
 
@@ -44,6 +48,8 @@ public class NoteEditorFragment extends Fragment {
     public static final String ARG_COLLECTION_ID = "collection_id";
 
     private EditText noteTitle;
+    private Button readAloudButton;
+    private NoteReader noteReader;
     private FormattingToolbarController toolbarController;
     private HorizontalScrollView formattingToolbar;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -78,6 +84,7 @@ public class NoteEditorFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         noteTitle = view.findViewById(R.id.note_title);
+        readAloudButton = view.findViewById(R.id.read_aloud_button);
         noteEditorView = view.findViewById(R.id.note_editor_view);
         formattingToolbar = view.findViewById(R.id.formatting_toolbar);
         tagRowScroll = view.findViewById(R.id.tag_row_scroll);
@@ -90,16 +97,52 @@ public class NoteEditorFragment extends Fragment {
         noteId = args != null ? args.getString(ARG_NOTE_ID) : null;
         pendingCollectionId = args != null ? args.getString(ARG_COLLECTION_ID) : null;
 
-        noteEditorView.setContentChangeListener(this::scheduleAutoSave);
+        noteReader = new NoteReader(requireContext(), new NoteReader.ReadingListener() {
+            @Override public void onReadingStarted() {
+                readAloudButton.setText(R.string.action_stop_reading_glyph);
+            }
+            @Override public void onReadingFinished() {
+                readAloudButton.setText(R.string.action_read_aloud_glyph);
+            }
+            @Override public void onReadingFailed() {
+                readAloudButton.setText(R.string.action_read_aloud_glyph);
+                // TODO: show a snackbar "Could not read note aloud"
+            }
+        });
+        readAloudButton.setOnClickListener(v -> {
+            if (noteReader.isSpeaking()) {
+                noteReader.stop();
+                readAloudButton.setText(R.string.action_read_aloud_glyph);
+            } else {
+                noteReader.speak(buildSpokenText());
+            }
+        });
+        readAloudButton.setOnLongClickListener(v -> {
+            showVoicePickerDialog();
+            return true;
+        });
+
+        noteEditorView.setContentChangeListener(() -> {
+            scheduleAutoSave();
+            updateReadAloudVisibility();
+        });
         view.findViewById(R.id.note_editor_content).setOnClickListener(v -> noteEditorView.focusEnd());
         noteTitle.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) { scheduleAutoSave(); }
+            @Override public void afterTextChanged(Editable s) {
+                scheduleAutoSave();
+                updateReadAloudVisibility();
+            }
         });
 
         if (noteId != null) {
             loadExistingNote();
+        } else {
+            // Pre-filled default title, same format used elsewhere for untitled notes — also
+            // what makes the note (and its "add tag" option) exist immediately rather than only
+            // once the user has typed something themselves.
+            noteTitle.setText(NoteDisplayUtils.untitledWithDate(requireContext(), System.currentTimeMillis()));
         }
 
         imageEmbedder = new ImageEmbedder(this, new ImageEmbedder.ImageResultListener() {
@@ -190,7 +233,6 @@ public class NoteEditorFragment extends Fragment {
 
     private void setupToolbar(View view) {
         Toolbar toolbar = view.findViewById(R.id.toolbar);
-        toolbar.setTitle("New Note");
         toolbar.setNavigationOnClickListener(v ->
                 NavHostFragment.findNavController(this).navigateUp()
         );
@@ -231,6 +273,7 @@ public class NoteEditorFragment extends Fragment {
             }
             noteEditorView.loadSegments(segments);
             suppressAutoSave = false;
+            updateReadAloudVisibility();
         });
         tagRepository.loadTagsForNote(noteId, tags -> {
             if (!isAdded()) return;
@@ -287,7 +330,70 @@ public class NoteEditorFragment extends Fragment {
         dismissRecordingDialog();
         toolbarController.setRecordingState(false);
         noteEditorView.stopAllAudioPlayback();
+        noteReader.stop();
+        readAloudButton.setText(R.string.action_read_aloud_glyph);
         autoSave();
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        noteReader.shutdown();
+    }
+
+    /** Body text only — the title is often just the auto-generated "Untitled Note - <date>"
+     *  placeholder, which shouldn't be read aloud (and, since it's never actually empty, would
+     *  otherwise make the read-aloud button appear "has content" even for a genuinely blank note). */
+    private String buildSpokenText() {
+        return noteEditorView.getPlainText().trim();
+    }
+
+    /** The read-aloud button only makes sense when there's text to read — hides it otherwise,
+     *  and halts a reading in progress if its last bit of text just got deleted out from under it. */
+    private void updateReadAloudVisibility() {
+        boolean hasText = !buildSpokenText().isEmpty();
+        if (!hasText && noteReader.isSpeaking()) {
+            noteReader.stop();
+        }
+        readAloudButton.setVisibility(hasText ? View.VISIBLE : View.GONE);
+    }
+
+    /** Long-press on the read-aloud button — lets the user swap out the engine's default
+     *  ("robotic") voice for another one installed on the device. */
+    private void showVoicePickerDialog() {
+        List<Voice> voices = noteReader.getAvailableVoices();
+        if (voices.isEmpty()) return; // TTS engine not ready yet, or no voices for this locale
+
+        Voice current = noteReader.getCurrentVoice();
+        String[] labels = new String[voices.size()];
+        int checkedIndex = -1;
+        for (int i = 0; i < voices.size(); i++) {
+            Voice voice = voices.get(i);
+            labels[i] = describeVoice(voice);
+            if (current != null && voice.getName().equals(current.getName())) checkedIndex = i;
+        }
+
+        new android.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.dialog_choose_voice_title)
+                .setSingleChoiceItems(labels, checkedIndex, (dialog, which) -> {
+                    noteReader.setVoice(voices.get(which));
+                    dialog.dismiss();
+                })
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
+    }
+
+    private String describeVoice(Voice voice) {
+        String quality;
+        switch (voice.getQuality()) {
+            case Voice.QUALITY_VERY_HIGH: quality = "Very high"; break;
+            case Voice.QUALITY_HIGH: quality = "High"; break;
+            case Voice.QUALITY_NORMAL: quality = "Normal"; break;
+            case Voice.QUALITY_LOW: quality = "Low"; break;
+            default: quality = "Very low";
+        }
+        String suffix = voice.isNetworkConnectionRequired() ? " · needs internet" : "";
+        return voice.getName() + " (" + quality + suffix + ")";
     }
 
     /** Polls the in-progress recording's elapsed time and amplitude a few times a second to

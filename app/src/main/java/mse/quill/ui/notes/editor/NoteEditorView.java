@@ -227,6 +227,20 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         }
     }
 
+    /** Concatenates every text segment's plain text, in reading order — used by read-aloud,
+     *  which only cares about the note's words, not images/audio embeds or their formatting. */
+    public String getPlainText() {
+        StringBuilder sb = new StringBuilder();
+        for (BaseSegmentView view : segments) {
+            if (!(view instanceof TextSegmentView)) continue;
+            CharSequence text = ((TextSegmentView) view).getText();
+            if (text.length() == 0) continue;
+            if (sb.length() > 0) sb.append(". ");
+            sb.append(text);
+        }
+        return sb.toString();
+    }
+
     // ── SegmentCallback ────────────────────────────────────────────────────
 
     @Override
