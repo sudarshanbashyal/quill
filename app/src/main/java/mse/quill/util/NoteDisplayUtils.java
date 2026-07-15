@@ -18,7 +18,14 @@ public final class NoteDisplayUtils {
         boolean hasTitle = note.title != null && !note.title.trim().isEmpty();
         if (hasTitle) return note.title.trim();
 
-        String date = DateFormat.getMediumDateFormat(context).format(new Date(note.createdAt));
+        return untitledWithDate(context, note.createdAt);
+    }
+
+    /** "Untitled Note - <date>" for the given timestamp — shared by the display fallback above
+     *  and by the note editor, which pre-fills a brand new note's title field with this so it
+     *  reads the same whether or not the user ever types a title of their own. */
+    public static String untitledWithDate(Context context, long timestampMs) {
+        String date = DateFormat.getMediumDateFormat(context).format(new Date(timestampMs));
         return context.getString(R.string.untitled_note_with_date, date);
     }
 }

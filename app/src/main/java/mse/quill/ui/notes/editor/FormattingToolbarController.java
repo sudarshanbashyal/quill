@@ -13,11 +13,13 @@ public class FormattingToolbarController {
         void onHeading2Toggled();
         void onBulletListToggled();
         void onImageRequested();
+        void onAudioRequested();
     }
 
     private final Button boldButton;
     private final Button italicButton;
     private final Button underlineButton;
+    private final Button micButton;
 
     public FormattingToolbarController(LinearLayout container, FormatListener listener) {
         boldButton = addButton(container, "B", listener::onBoldToggled);
@@ -27,12 +29,20 @@ public class FormattingToolbarController {
         addButton(container, "H2", listener::onHeading2Toggled);
         addButton(container, "•≡", listener::onBulletListToggled);
         addButton(container, "📷", listener::onImageRequested);
+        micButton = addButton(container, "🎤", listener::onAudioRequested);
     }
 
     public void updateState(boolean bold, boolean italic, boolean underline) {
         boldButton.setAlpha(bold ? 1.0f : 0.5f);
         italicButton.setAlpha(italic ? 1.0f : 0.5f);
         underlineButton.setAlpha(underline ? 1.0f : 0.5f);
+    }
+
+    /** Reflects whether a recording is currently in progress on the mic button itself, since it
+     *  is also the control used to stop the recording. */
+    public void setRecordingState(boolean recording) {
+        micButton.setText(recording ? "⏹" : "🎤");
+        micButton.setAlpha(recording ? 1.0f : 0.5f);
     }
 
     private Button addButton(LinearLayout container, String label, Runnable action) {

@@ -6,6 +6,7 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
+import mse.quill.R;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 
 public class ImageSegmentView extends BaseSegmentView {
@@ -39,13 +40,25 @@ public class ImageSegmentView extends BaseSegmentView {
             if (callback != null) callback.onRequestSplitAt(this, 0);
         });
 
-        // Long press to delete
+        // Long press → confirm before deleting (there's no keyboard gesture for this, so it must
+        // not be a single accidental long-press away from losing the image).
         imageView.setOnLongClickListener(v -> {
-            if (callback != null) callback.onRequestDelete(this);
+            showDeleteConfirmation();
             return true;
         });
 
         addView(imageView);
+    }
+
+    private void showDeleteConfirmation() {
+        new android.app.AlertDialog.Builder(getContext())
+                .setTitle(R.string.delete_image_title)
+                .setMessage(R.string.delete_image_message)
+                .setPositiveButton(R.string.action_delete, (dialog, which) -> {
+                    if (callback != null) callback.onRequestDelete(this);
+                })
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
     }
 
     public String getFilePath() { return filePath; }

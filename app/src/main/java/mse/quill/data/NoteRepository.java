@@ -18,6 +18,7 @@ import java.util.UUID;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
 import mse.quill.data.serialization.SpanSerializer;
+import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
@@ -69,7 +70,7 @@ public class NoteRepository {
     public void saveNote(String noteId, String title, List<NoteSegment> segments, Runnable onSaved) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
-            Set<String> orphanedImagePaths;
+            Set<String> orphanedMediaPaths;
 
             db.beginTransaction();
             try {
@@ -78,14 +79,14 @@ public class NoteRepository {
                 cv.put("updated_at", System.currentTimeMillis());
                 db.update("notes", cv, "id = ?", new String[]{noteId});
 
-                orphanedImagePaths = replaceSegmentsSync(db, noteId, segments);
+                orphanedMediaPaths = replaceSegmentsSync(db, noteId, segments);
 
                 db.setTransactionSuccessful();
             } finally {
                 db.endTransaction();
             }
 
-            for (String path : orphanedImagePaths) {
+            for (String path : orphanedMediaPaths) {
                 new File(path).delete();
             }
 
@@ -266,7 +267,7 @@ public class NoteRepository {
 
     private List<NoteSegment> getSegmentsSync(SQLiteDatabase db, String noteId) {
         Cursor c = db.rawQuery(
-                "SELECT type, text_content, file_path, width FROM note_segments " +
+                "SELECT type, text_content, file_path, width, duration_ms FROM note_segments " +
                         "WHERE note_id = ? ORDER BY position ASC",
                 new String[]{noteId});
         try {
@@ -277,6 +278,9 @@ public class NoteRepository {
                     ImageSegment segment = new ImageSegment(c.getString(2));
                     if (!c.isNull(3)) segment.displayWidth = c.getInt(3);
                     segments.add(segment);
+                } else if (type == NoteSegment.TYPE_AUDIO) {
+                    int durationMs = c.isNull(4) ? 0 : c.getInt(4);
+                    segments.add(new AudioSegment(c.getString(2), durationMs));
                 } else {
                     segments.add(new TextSegment(SpanSerializer.fromBytes(c.getBlob(1))));
                 }
@@ -291,19 +295,19 @@ public class NoteRepository {
      *  Returns the file paths of image segments that existed before but are no longer
      *  referenced, so the caller can delete those files once the transaction has committed. */
     private Set<String> replaceSegmentsSync(SQLiteDatabase db, String noteId, List<NoteSegment> segments) {
-        Set<String> oldImagePaths = new HashSet<>();
+        Set<String> oldMediaPaths = new HashSet<>();
         Cursor c = db.rawQuery(
-                "SELECT file_path FROM note_segments WHERE note_id = ? AND type = ?",
-                new String[]{noteId, String.valueOf(NoteSegment.TYPE_IMAGE)});
+                "SELECT file_path FROM note_segments WHERE note_id = ? AND type IN (?, ?)",
+                new String[]{noteId, String.valueOf(NoteSegment.TYPE_IMAGE), String.valueOf(NoteSegment.TYPE_AUDIO)});
         try {
-            while (c.moveToNext()) oldImagePaths.add(c.getString(0));
+            while (c.moveToNext()) oldMediaPaths.add(c.getString(0));
         } finally {
             c.close();
         }
 
         db.delete("note_segments", "note_id = ?", new String[]{noteId});
 
-        Set<String> newImagePaths = new HashSet<>();
+        Set<String> newMediaPaths = new HashSet<>();
         long now = System.currentTimeMillis();
         int position = 0;
         for (NoteSegment segment : segments) {
@@ -318,18 +322,24 @@ public class NoteRepository {
                 cv.put("type", NoteSegment.TYPE_IMAGE);
                 cv.put("file_path", image.filePath);
                 cv.put("width", image.displayWidth);
-                newImagePaths.add(image.filePath);
+                newMediaPaths.add(image.filePath);
+            } else if (segment instanceof AudioSegment) {
+                AudioSegment audio = (AudioSegment) segment;
+                cv.put("type", NoteSegment.TYPE_AUDIO);
+                cv.put("file_path", audio.filePath);
+                cv.put("duration_ms", audio.durationMs);
+                newMediaPaths.add(audio.filePath);
             } else if (segment instanceof TextSegment) {
                 TextSegment text = (TextSegment) segment;
                 cv.put("type", NoteSegment.TYPE_TEXT);
                 cv.put("text_content", SpanSerializer.toBytes(text.content));
             } else {
-                continue; // unsupported segment type (e.g. future audio segments)
+                continue; // unsupported segment type
             }
             db.insert("note_segments", null, cv);
         }
 
-        oldImagePaths.removeAll(newImagePaths);
-        return oldImagePaths;
+        oldMediaPaths.removeAll(newMediaPaths);
+        return oldMediaPaths;
     }
 }

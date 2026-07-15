@@ -8,9 +8,11 @@ import android.widget.LinearLayout;
 import java.util.ArrayList;
 import java.util.List;
 
+import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.ui.notes.editor.segment.AudioSegmentView;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.segment.ImageSegmentView;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
@@ -78,6 +80,42 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         } else {
             // No focused text — append image + new text at end
             addImageSegment(filePath, segments.size());
+            addTextSegment(new SpannableStringBuilder(""), segments.size());
+            ((TextSegmentView) segments.get(segments.size() - 1)).focusAtStart();
+        }
+    }
+
+    public void insertAudioAfterFocused(String filePath, int durationMs) {
+        int focusedIndex = getFocusedSegmentIndex();
+
+        // If focused segment is a text segment, split it at cursor
+        if (focusedIndex >= 0 && segments.get(focusedIndex) instanceof TextSegmentView) {
+            TextSegmentView textView = (TextSegmentView) segments.get(focusedIndex);
+            android.widget.EditText editText = textView.getEditText();
+            int cursor = editText.getSelectionStart();
+
+            SpannableStringBuilder before = new SpannableStringBuilder(
+                    editText.getText().subSequence(0, cursor));
+            SpannableStringBuilder after = new SpannableStringBuilder(
+                    editText.getText().subSequence(cursor, editText.getText().length()));
+
+            // Update current segment with text before cursor
+            textView.setText(before);
+            textView.clearBulletContinuation();
+
+            // Insert audio after current segment
+            int insertAt = focusedIndex + 1;
+            addAudioSegment(filePath, durationMs, insertAt);
+
+            // Insert text segment after audio with remaining text
+            addTextSegment(after, insertAt + 1);
+
+            // Focus the new text segment after audio
+            ((TextSegmentView) segments.get(insertAt + 1)).focusAtStart();
+
+        } else {
+            // No focused text — append audio + new text at end
+            addAudioSegment(filePath, durationMs, segments.size());
             addTextSegment(new SpannableStringBuilder(""), segments.size());
             ((TextSegmentView) segments.get(segments.size() - 1)).focusAtStart();
         }
@@ -151,6 +189,9 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         for (NoteSegment segment : loaded) {
             if (segment instanceof ImageSegment) {
                 addImageSegment(((ImageSegment) segment).filePath, segments.size());
+            } else if (segment instanceof AudioSegment) {
+                AudioSegment audio = (AudioSegment) segment;
+                addAudioSegment(audio.filePath, audio.durationMs, segments.size());
             } else if (segment instanceof TextSegment) {
                 addTextSegment(new SpannableStringBuilder(((TextSegment) segment).content), segments.size());
             }
@@ -165,6 +206,9 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
             NoteSegment segment;
             if (view.getSegmentType() == NoteSegment.TYPE_IMAGE) {
                 segment = new ImageSegment((String) view.getSegmentData());
+            } else if (view.getSegmentType() == NoteSegment.TYPE_AUDIO) {
+                AudioSegmentView audioView = (AudioSegmentView) view;
+                segment = new AudioSegment(audioView.getFilePath(), audioView.getDurationMs());
             } else {
                 SpannableStringBuilder snapshot = new SpannableStringBuilder((CharSequence) view.getSegmentData());
                 segment = new TextSegment(snapshot);
@@ -173,6 +217,28 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
             exported.add(segment);
         }
         return exported;
+    }
+
+    /** Stops any audio segment currently playing back — used when the editor screen is no
+     *  longer visible so playback doesn't keep running behind it. */
+    public void stopAllAudioPlayback() {
+        for (BaseSegmentView view : segments) {
+            if (view instanceof AudioSegmentView) ((AudioSegmentView) view).stopIfPlaying();
+        }
+    }
+
+    /** Concatenates every text segment's plain text, in reading order — used by read-aloud,
+     *  which only cares about the note's words, not images/audio embeds or their formatting. */
+    public String getPlainText() {
+        StringBuilder sb = new StringBuilder();
+        for (BaseSegmentView view : segments) {
+            if (!(view instanceof TextSegmentView)) continue;
+            CharSequence text = ((TextSegmentView) view).getText();
+            if (text.length() == 0) continue;
+            if (sb.length() > 0) sb.append(". ");
+            sb.append(text);
+        }
+        return sb.toString();
     }
 
     // ── SegmentCallback ────────────────────────────────────────────────────
@@ -227,8 +293,8 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
 
             removeSegment(index);
 
-        } else if (previous instanceof ImageSegmentView) {
-            // Backspace at start of text after image — delete the image
+        } else if (previous instanceof ImageSegmentView || previous instanceof AudioSegmentView) {
+            // Backspace at start of text after image/audio — delete the embed
             onRequestDelete(previous);
         }
     }
@@ -253,6 +319,12 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         insertSegment(view, index);
     }
 
+    private void addAudioSegment(String filePath, int durationMs, int index) {
+        AudioSegmentView view = new AudioSegmentView(getContext(), filePath, durationMs);
+        view.setCallback(this);
+        insertSegment(view, index);
+    }
+
     private void insertSegment(BaseSegmentView view, int index) {
         if (index < 0 || index >= segments.size()) {
             segments.add(view);
@@ -265,6 +337,7 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
 
     private void removeSegment(int index) {
         BaseSegmentView view = segments.remove(index);
+        if (view instanceof AudioSegmentView) ((AudioSegmentView) view).stopIfPlaying();
         removeView(view);
     }
 
