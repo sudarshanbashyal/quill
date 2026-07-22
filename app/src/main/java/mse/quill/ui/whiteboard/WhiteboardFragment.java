@@ -28,6 +28,8 @@ import mse.quill.model.Whiteboard;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
 
@@ -68,7 +70,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private String        whiteboardId;
     private String        noteId;
     private Stroke        lastStroke; // enables single-level undo
-
+    private final Deque<String> undoStack = new ArrayDeque<>();
     // ── Fragment lifecycle ────────────────────────────────────────────────────
 
     @Override
@@ -118,7 +120,13 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         new Thread(() -> {
             List<Stroke> existing = strokeDao.getByWhiteboard(whiteboardId);
             requireActivity().runOnUiThread(() -> {
-                if (whiteboardView != null) whiteboardView.loadStrokes(existing);
+                if (whiteboardView == null) return;
+                whiteboardView.loadStrokes(existing);
+
+                // Rebuild the undo stack in the same order, so undo starts
+                // from the most recently drawn stroke even after reopening.
+                undoStack.clear();
+                for (Stroke s : existing) undoStack.push(s.id);
             });
         }).start();
     }
@@ -218,7 +226,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     @Override
     public void onStrokeComplete(Stroke stroke) {
         stroke.whiteboardId = whiteboardId;
-        lastStroke = stroke;
+        undoStack.push(stroke.id);
 
         // Save to SQLite on a background thread (never touch DB on the UI thread)
         new Thread(() -> strokeDao.insertStroke(stroke)).start();
@@ -227,12 +235,12 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     // ── Undo / Clear ──────────────────────────────────────────────────────────
 
     private void undoLastStroke() {
-        if (lastStroke == null) {
+        if (undoStack.isEmpty()) {
             Toast.makeText(requireContext(), "Nothing to undo", Toast.LENGTH_SHORT).show();
             return;
         }
-        String strokeId = lastStroke.id;
-        lastStroke = null;
+        String strokeId = undoStack.pop(); // removes and returns the top of the stack
+
 
         whiteboardView.removeStroke(strokeId);
         new Thread(() -> strokeDao.deleteStroke(strokeId)).start();
@@ -249,6 +257,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
     private void clearWhiteboard() {
         whiteboardView.clearAll();
+        undoStack.clear(); // nothing left to undo once everything is wiped
         new Thread(() -> strokeDao.deleteAllForWhiteboard(whiteboardId)).start();
     }
 
