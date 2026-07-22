@@ -12,6 +12,8 @@ import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.provider.MediaStore;
+import android.content.ContentValues;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -269,16 +271,34 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         Bitmap bitmap   = whiteboardView.exportToBitmap();
         String filename = "whiteboard_" + System.currentTimeMillis() + ".png";
-        File file = new File(
-                requireContext().getExternalFilesDir(Environment.DIRECTORY_PICTURES), filename);
+        android.content.ContentValues values = new android.content.ContentValues();
+        values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, filename);
+        values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+        // Save into Pictures/Quill so exports are grouped in their own album
+        values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,
+                Environment.DIRECTORY_PICTURES + "/Quill");
+        android.content.ContentResolver resolver = requireContext().getContentResolver();
+        android.net.Uri collection =
+                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+        android.net.Uri itemUri = resolver.insert(collection, values);
 
-        try (FileOutputStream fos = new FileOutputStream(file)) {
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+        if (itemUri == null) {
+            Log.e(TAG, "MediaStore insert returned null Uri");
+            Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try (java.io.OutputStream out = resolver.openOutputStream(itemUri)) {
+            if (out == null) throw new IOException("Could not open output stream");
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
             Toast.makeText(requireContext(),
-                    "Saved to Pictures/" + filename, Toast.LENGTH_LONG).show();
+                    "Saved to Pictures/Quill/" + filename, Toast.LENGTH_LONG).show();
         } catch (IOException e) {
             Log.e(TAG, "Export failed", e);
+            // Clean up the empty MediaStore entry if writing the bytes failed
+            resolver.delete(itemUri, null, null);
             Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
         }
+        Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
     }
 }
