@@ -142,6 +142,7 @@
             android:id="@+id/fab_option_whiteboard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
             android:background="@drawable/bg_fab_option"
             android:paddingHorizontal="@dimen/spacing_md"
             android:paddingVertical="@dimen/spacing_sm"
