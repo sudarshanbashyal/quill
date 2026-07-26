@@ -12,6 +12,8 @@ import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.provider.MediaStore;
+import android.content.ContentValues;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -28,6 +30,8 @@ import mse.quill.model.Whiteboard;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
 
@@ -68,7 +72,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private String        whiteboardId;
     private String        noteId;
     private Stroke        lastStroke; // enables single-level undo
-
+    private final Deque<String> undoStack = new ArrayDeque<>();
     // ── Fragment lifecycle ────────────────────────────────────────────────────
 
     @Override
@@ -118,7 +122,13 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         new Thread(() -> {
             List<Stroke> existing = strokeDao.getByWhiteboard(whiteboardId);
             requireActivity().runOnUiThread(() -> {
-                if (whiteboardView != null) whiteboardView.loadStrokes(existing);
+                if (whiteboardView == null) return;
+                whiteboardView.loadStrokes(existing);
+
+                // Rebuild the undo stack in the same order, so undo starts
+                // from the most recently drawn stroke even after reopening.
+                undoStack.clear();
+                for (Stroke s : existing) undoStack.push(s.id);
             });
         }).start();
     }
@@ -218,7 +228,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     @Override
     public void onStrokeComplete(Stroke stroke) {
         stroke.whiteboardId = whiteboardId;
-        lastStroke = stroke;
+        undoStack.push(stroke.id);
 
         // Save to SQLite on a background thread (never touch DB on the UI thread)
         new Thread(() -> strokeDao.insertStroke(stroke)).start();
@@ -227,12 +237,12 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     // ── Undo / Clear ──────────────────────────────────────────────────────────
 
     private void undoLastStroke() {
-        if (lastStroke == null) {
+        if (undoStack.isEmpty()) {
             Toast.makeText(requireContext(), "Nothing to undo", Toast.LENGTH_SHORT).show();
             return;
         }
-        String strokeId = lastStroke.id;
-        lastStroke = null;
+        String strokeId = undoStack.pop(); // removes and returns the top of the stack
+
 
         whiteboardView.removeStroke(strokeId);
         new Thread(() -> strokeDao.deleteStroke(strokeId)).start();
@@ -249,6 +259,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
     private void clearWhiteboard() {
         whiteboardView.clearAll();
+        undoStack.clear(); // nothing left to undo once everything is wiped
         new Thread(() -> strokeDao.deleteAllForWhiteboard(whiteboardId)).start();
     }
 
@@ -260,16 +271,34 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         Bitmap bitmap   = whiteboardView.exportToBitmap();
         String filename = "whiteboard_" + System.currentTimeMillis() + ".png";
-        File file = new File(
-                requireContext().getExternalFilesDir(Environment.DIRECTORY_PICTURES), filename);
+        android.content.ContentValues values = new android.content.ContentValues();
+        values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, filename);
+        values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+        // Save into Pictures/Quill so exports are grouped in their own album
+        values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,
+                Environment.DIRECTORY_PICTURES + "/Quill");
+        android.content.ContentResolver resolver = requireContext().getContentResolver();
+        android.net.Uri collection =
+                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+        android.net.Uri itemUri = resolver.insert(collection, values);
 
-        try (FileOutputStream fos = new FileOutputStream(file)) {
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+        if (itemUri == null) {
+            Log.e(TAG, "MediaStore insert returned null Uri");
+            Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try (java.io.OutputStream out = resolver.openOutputStream(itemUri)) {
+            if (out == null) throw new IOException("Could not open output stream");
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
             Toast.makeText(requireContext(),
-                    "Saved to Pictures/" + filename, Toast.LENGTH_LONG).show();
+                    "Saved to Pictures/Quill/" + filename, Toast.LENGTH_LONG).show();
         } catch (IOException e) {
             Log.e(TAG, "Export failed", e);
+            // Clean up the empty MediaStore entry if writing the bytes failed
+            resolver.delete(itemUri, null, null);
             Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
         }
+        Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
     }
 }
