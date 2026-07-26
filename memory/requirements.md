@@ -123,24 +123,67 @@ unshippable mess.
 
 ---
 
-## Epic D — Flashcards & Spaced Repetition (P2)
+## Epic D — Standardized Markdown Note Format, Q&A Segments & Flashcards (P2)
 
 **Why here**: independent of P2P — safe to build in parallel with Epic B/C by a second
 contributor. The `flashcards` table already has SM-2 columns (`interval`,
-`repetitions`, `easiness`, `next_review`) sitting unused; this epic is "just" wiring
-UI and scheduling logic onto a schema that's already designed for it.
+`repetitions`, `easiness`, `next_review`) sitting unused. Full design rationale lives in
+[note.md](note.md)'s "Planned: standardized Markdown note format, Q&A segments &
+flashcards" section — read that alongside this checklist, it explains the *why* behind
+each item below.
 
-- [ ] **Data layer**
+- [ ] **Decide storage scope** *(open — pending further discussion before starting)*
+  - [ ] **Minimal**: re-encode only `TextSegment` content as Markdown (swap
+        `SpanSerializer`'s HTML internals), keep the `note_segments` row-per-segment
+        model as-is
+  - [ ] **Full**: collapse each note into one Markdown document stored in the
+        currently-unused `notes.content_blob` column; every segment type becomes an
+        inline block; `note_segments`/`position` bookkeeping retired
+- [ ] **Markdown format & tooling**
+  - [ ] Adopt Markwon (`io.noties.markwon`) for parsing/rendering; use its plugin
+        system for the custom block types below instead of forking a parser
+  - [ ] Text formatting: `#`/`##` headings, `**bold**`, `*italic*`, `<u>underline</u>`
+        (raw HTML span — valid CommonMark), `- ` bullets (+ numbered lists as a bonus)
+  - [ ] Retire `SpanSerializer`'s zero-width heading markers and newline-collapsing
+        HTML workaround — the Markdown equivalents don't have HTML's ambiguity
+  - [ ] Image embed: native `![alt](path)`
+  - [ ] Audio embed: `<audio src="..." data-duration="...">`
+  - [ ] Whiteboard embed (also feeds Epic C's whiteboard-linking goal):
+        `<img src="thumb.png" data-quill-embed="whiteboard" data-quill-id="...">` —
+        degrades to a static picture outside Quill, tappable live preview inside it
+- [ ] **Segment identity — prerequisite fix, found during design review**
+  - [ ] `NoteEditorView.exportSegments()` never sets `NoteSegment.id`, so
+        `NoteRepository.replaceSegmentsSync` mints a fresh UUID for every segment on
+        every save (autosave fires every ~500ms). Anything that needs to reference "this
+        exact segment" across edits — the flashcard link below — breaks without this
+  - [ ] Give each `BaseSegmentView` a stable id, assigned once and round-tripped through
+        export/import instead of discarded on every save
+- [ ] **Q&A segment**
+  - [ ] New `NoteSegment.TYPE_QA` + `QASegmentView`: bordered two-field card, plain-text
+        Question / plain-text Answer (no rich text in v1) — not an inline cloze marker;
+        Q&A content should be visibly structured in the note, not hidden in prose
+  - [ ] Markdown form once the storage-scope decision lands: fenced
+        `` ```quill-qa:<flashcard-id> `` block
+- [ ] **Flashcard generation & sync**
   - [ ] `FlashcardRepository` (CRUD), following the existing callback-based async
         pattern used by `NoteRepository`/`TagRepository`
-- [ ] **Authoring**
-  - [ ] Manual flashcard creation (front/back) from within a note
-  - [ ] "Generate draft cards from this note" helper (e.g. heading + following text →
-        a draft card the user edits before saving) — reduces manual authoring friction
-- [ ] **Review flow**
-  - [ ] SM-2 scheduling: update `interval`/`repetitions`/`easiness`/`next_review` per
-        review answer
-  - [ ] Review session UI: due-today queue, flip card, rate recall
+  - [ ] `flashcards.source_segment_id` (nullable) linking a generated card back to its
+        source Q&A segment — depends on the segment-identity fix above
+  - [ ] Per-note sync mode, user-selectable, default **Manual**: "Sync Flashcards"
+        button (manual) vs. "Sync Automatically" (syncs on every note save)
+  - [ ] Sync logic: unlinked Q&A segments → create a flashcard; linked segments →
+        update `front`/`back` only, never touch SM-2 scheduling state; flashcards whose
+        source segment disappeared → flagged as orphaned, not silently deleted
+  - [ ] Automatic mode must not disrupt an in-progress review session — a session
+        snapshots its due-card queue at start; auto-sync writes to the table but never
+        mutates a card the user is actively looking at mid-session
+  - [ ] "Create/Sync Flashcards" entry point on the note screen, hidden when the note
+        has no Q&A segments, with concrete feedback ("3 created, 1 updated — View
+        flashcards") rather than a bare toast
+- [ ] **Review & study surfaces**
+  - [ ] Per-note flashcard list (manage/inspect what a specific note produced)
+  - [ ] Global review session screen — today's due cards across *all* notes (this is
+        what actually exercises SM-2 scheduling, not the per-note list)
 - [ ] **Reminders (background infrastructure, reusable beyond flashcards)**
   - [ ] Notification channel setup
   - [ ] WorkManager/AlarmManager job to notify when cards are due
@@ -153,11 +196,25 @@ UI and scheduling logic onto a schema that's already designed for it.
 **Why here**: quizzes need a content source, and flashcards are the natural one per
 the one-pager's own framing ("flashcards... and built-in quizzes"). Sequencing this
 after D avoids building a second, parallel content model for quiz questions.
+Deliberately avoids free-text answer grading and AI-generated content — see
+[note.md](note.md)'s "Planned: Quizzes" section for the reasoning; quizzes are built
+entirely from auto-gradable question types generated locally from the flashcard pool.
 
-- [ ] Quiz generation from a collection's/note's flashcards (multiple-choice using
-      other cards' answers as distractors, or plain recall)
-- [ ] Quiz-taking UI + scoring
-- [ ] Quiz history / score tracking (needs a new table — not yet in the schema)
+- [ ] **Data layer**
+  - [ ] `quiz_attempts(id, scope_type, scope_id, score, total, taken_at)` — new table,
+        not yet in the schema
+  - [ ] Optional `quiz_attempt_answers(attempt_id, flashcard_id, was_correct)` if
+        per-question review after a quiz is wanted
+- [ ] **Question generation** (all local, no AI, no free-text matching)
+  - [ ] MCQ via cross-card distractors: sample 3 wrong options from other flashcards'
+        `back` text in the same scope (same note; fall back to the same collection if
+        there aren't enough sibling cards)
+  - [ ] True/False fallback for scopes too small for a good MCQ (needs only 2 cards)
+  - [ ] Matching mode (later/optional): N questions + N shuffled answers to pair up
+- [ ] **Quiz-taking UX**
+  - [ ] Scope picker: quiz a single note, a whole collection, or a tag
+  - [ ] Quiz session UI + scoring, written to `quiz_attempts` on completion
+  - [ ] Quiz history screen (past attempts/scores per scope)
 
 ---
 
@@ -205,3 +262,11 @@ estimable, not more building.
 - Epic A's test suite should grow alongside B/C, not be written retroactively —
   encryption and sync bugs are exactly the kind that are painful to root-cause without
   tests that existed *before* the bug was introduced.
+- Epic D's whiteboard-embed convention is written to also serve Epic C/note.md's
+  "later I also want to embed/link whiteboards into notes" goal — one embed format,
+  not two — so don't design a separate whiteboard-linking mechanism inside Epic C.
+- Epic D's storage-scope decision (Minimal vs. Full) is intentionally left open in the
+  checklist above — do not start that work until it's resolved in discussion.
+- Epic E's MCQ distractor quality depends on a note/collection having enough
+  topically-related flashcards to draw plausible wrong answers from — very small or
+  very mixed-topic scopes may only ever qualify for True/False, not MCQ.

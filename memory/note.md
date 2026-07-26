@@ -16,6 +16,8 @@ ConstraintLayout, Navigation, RecyclerView only — see `app/build.gradle.kts`).
 Theming is pinned to light mode unconditionally (`AppCompatDelegate.MODE_NIGHT_NO` in
 `MainActivity`) — Quill does not follow the system dark-mode setting by design.
 
+Design source: the **MSE** Figma file — see [references.md](references.md).
+
 ## Navigation / screens
 
 Single Activity (`MainActivity`) hosting a `NavHostFragment` (`nav_graph.xml`):
@@ -134,6 +136,17 @@ not created in the DB until it actually has content (empty title *and* empty seg
 (soft-delete) rather than left as an empty row. Note creation guards against duplicate
 concurrent creation with an `AtomicBoolean` (`isCreatingNote`).
 
+**Segment identity is not currently stable across saves** — worth knowing before
+building anything that needs to reference "this exact segment" over time (e.g. linking
+a flashcard to the Q&A block that produced it; see "Planned" section below).
+`NoteEditorView.exportSegments()` always constructs fresh `TextSegment`/`ImageSegment`/
+`AudioSegment` instances without ever setting `NoteSegment.id`, so it's always `null`
+by the time `NoteRepository.replaceSegmentsSync` runs — which then always takes the
+`segment.id != null ? segment.id : UUID.randomUUID().toString()` fallback branch and
+mints a brand-new id for every segment, on every single save (i.e. every ~500ms of
+editing via autosave). Nothing today depends on a segment id surviving a save, so this
+has been harmless so far — but any future feature that does will need this fixed first.
+
 ## Whiteboard
 
 Custom-drawn `View` (`WhiteboardView`), not a canvas library — touch events become
@@ -157,6 +170,108 @@ Export renders the view into a `Bitmap` and writes it via `MediaStore` into
 unconditionally after the try/catch block, even on the success path — cosmetic (real
 success also shows its own "Saved to…" toast first) but worth fixing if that code is
 touched again.
+
+## Planned: standardized Markdown note format, Q&A segments & flashcards
+
+**Status: design agreed, not yet implemented.** Tracked in detail as Epic D in
+[requirements.md](requirements.md); this section is the "why/how" behind that epic.
+Recorded here ahead of the code existing so the reasoning isn't lost between design and
+build.
+
+**Motivation**: `SpanSerializer`'s HTML-based encoding (see above) works but needed two
+non-obvious workarounds (newline-collapsing, invisible heading markers) to get there.
+Markdown expresses the same things natively, is human-readable, and is the closest
+thing to a portable, cross-tool standard for notes (Obsidian, Joplin, Bear, GitHub, …).
+
+**Format mapping** (via [Markwon](https://noties.io/Markwon/), an Android Markdown
+library with a plugin/AST system suited to the custom block types below):
+
+| Content | Markdown form |
+|---|---|
+| Heading 1 / 2 | `# text` / `## text` |
+| Bold / italic | `**text**` / `*text*` |
+| Underline | `<u>text</u>` — raw inline HTML, valid per CommonMark |
+| Bullet / numbered list | `- item` / `1. item` |
+| Image | `![alt](path)` — native |
+| Audio | `<audio src="..." data-duration="...">` — real HTML5 tag, not invented syntax |
+| Whiteboard embed | `<img src="thumb.png" data-quill-embed="whiteboard" data-quill-id="...">` — a flattened PNG (`WhiteboardView.exportToBitmap()` already exists) wrapped so it degrades to a plain picture outside Quill but resolves to a tappable live preview inside it |
+| Q&A block | fenced block, e.g. `` ```quill-qa:fc_8f3a\nQ: ...\nA: ...\n``` `` — the `:fc_8f3a` suffix is the linked flashcard id once one exists |
+
+This retires both `SpanSerializer` workarounds outright: headings become their own
+literal, readable prefix instead of an invisible marker character, and Markdown's
+blank-line paragraph rule doesn't have HTML's newline-collapsing ambiguity.
+
+**Open decision** — how much of the storage layer this touches, still to be decided:
+- *Minimal*: keep `note_segments` rows as they are; only change what `TextSegment`
+  serializes to (Markdown bytes instead of HTML bytes). Smaller, lower-risk.
+- *Full*: collapse a whole note into one Markdown document, stored in `notes.
+  content_blob` — a column that **already exists in the schema and is completely
+  unused today** (nothing reads or writes it). Every segment becomes an inline block;
+  `note_segments.position` bookkeeping disappears since order falls out of the
+  document's line order. Bigger lift, but this is the version that produces an
+  actually-portable `.md` file per note.
+
+**Q&A segment**: a new `NoteSegment.TYPE_QA` / `QASegmentView`, alongside Image/Audio —
+a bordered two-field card (plain-text Question, plain-text Answer; no rich text in v1).
+Deliberately *not* an Anki-style inline cloze marker (`{{c1::text}}`) wrapped around
+arbitrary selected text — Q&A content is meant to be visibly structured in the note
+itself, not hidden inside prose.
+
+**Flashcard generation & sync**: "Create/Sync Flashcards" on the note screen turns every
+`TYPE_QA` segment into a row in the (already-existing, currently-unused) `flashcards`
+table. Requires the segment-identity fix noted above — flashcards link back via a new
+`flashcards.source_segment_id`, and that link is meaningless if segment ids don't
+survive a save. Two sync modes, user-selectable **per note** (default: Manual):
+- **Manual** — nothing happens until the user taps "Sync Flashcards."
+- **Automatic** — sync runs on note save, but must never touch a card the user is
+  actively reviewing: a review session snapshots its due-card queue at session start,
+  and auto-sync only writes to the table, never into an in-progress session's queue —
+  otherwise editing a note mid-review could rewrite the card someone's looking at.
+
+Re-syncing a note is an update, not a duplicate-generator: existing linked segments
+overwrite only `front`/`back` text on their flashcard, never the SM-2 scheduling state
+(`interval`/`repetitions`/`easiness`/`next_review`). A flashcard whose source segment
+disappeared (block deleted from the note) is left alone rather than silently deleted —
+someone's review progress shouldn't evaporate because a note got tidied up; surface it
+as orphaned instead and let the user decide.
+
+## Planned: Quizzes — scored, auto-graded, no free-text matching
+
+**Status: design agreed, not yet implemented.** Tracked as Epic E in
+[requirements.md](requirements.md).
+
+Two tempting approaches were deliberately rejected up front:
+- **Free-text typed answers graded by string match** — real answers vary too much
+  ("Personal Computer" vs. "PC" vs. "pc") to grade reliably by comparing strings alone.
+- **AI-generated distractors/questions** — quality is unpredictable and depends heavily
+  on what a given user's cards actually look like, and calling out to an AI (especially
+  a hosted one) undercuts the offline-first/privacy-conscious positioning the one-pager
+  leads with.
+
+Instead, quizzes are built entirely from **auto-gradable question types generated
+locally from the flashcard pool**, so no string matching or AI is ever required:
+- **MCQ via cross-card distractors** — for a card's question, sample 3 wrong-but-
+  plausible options from *other* flashcards' `back` text in the same scope (same note,
+  falling back to the same collection if there aren't enough sibling cards). Works well
+  because a deck is usually topically coherent already — the same trick Quizlet's Test
+  mode uses.
+- **True/False fallback** — show a Q/A pair straight, or swap in another card's answer,
+  ask correct/incorrect. Needs only 2 cards (vs. ~4 for a good MCQ), so it covers
+  notes/collections too small for MCQ.
+- **Matching mode** (later, optional) — N questions + N shuffled answers to pair up.
+
+**Flashcards and quizzes share one data model, not two.** `flashcards` stays the single
+source of truth for Q/A content (see the Epic D section above); two separate *modes*
+sit on top of it:
+- **Review** — spaced repetition, self-graded (Again/Hard/Good/Easy), private, drives
+  SM-2 scheduling. No matching problem here at all — the human is always the judge.
+- **Quiz** — user picks a scope (a note / a collection / a tag), the app auto-builds N
+  MCQ/True-False questions from that scope's flashcards, and tracks a score.
+
+New schema needed (none of this exists yet): something like
+`quiz_attempts(id, scope_type, scope_id, score, total, taken_at)`, optionally
+`quiz_attempt_answers(attempt_id, flashcard_id, was_correct)` if per-question review
+after a quiz is wanted.
 
 ## Conventions worth following
 
