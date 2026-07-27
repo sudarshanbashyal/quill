@@ -285,10 +285,19 @@ worth following". The items below are the migration itself; the convention outli
       dialogs (incl. the new `CollectionDialogs.inset()` wrapper), `AddExistingNotesDialog`,
       `RecordingDialog`, whiteboard dialogs, image/audio source pickers. All build clean and
       share the now-fixed `TextFieldUtils` path, but none have been seen running
-- [ ] **Design-fidelity follow-ups (not M3 blockers)** — home header gradient is weaker and
-      shorter than the Figma's (`#E8E3FC→#D2C9FB` + `wrap_content` vs. `#CCC6FA` at ~21% of
-      screen height); the `fragment_home.xml` / `fragment_collection_detail.xml` search
-      fields are still plain XML views rather than `TextInputLayout`
+- [x] **Home header gradient** — root cause was a silent XML namespace typo in
+      `bg_home_header.xml` (`.../res/android`, missing `apk/`), which made the shape paint
+      nothing at all; the gradient had never rendered. Fixed, colours re-sampled from the
+      Figma, and `header_min_height` added. See note.md for the full gotcha
+- [x] **Header/sheet layering** — the rounded edge now belongs to the content sheet
+      (`bg_content_sheet`, rounded top corners, negative overlap margin) curving over a
+      full-bleed gradient, instead of the header curving upwards
+- [x] **Playfair Display** bundled in `res/font/` and applied to the home greeting, matching
+      the Figma's display serif (variable font + `fontVariationSettings`, OFL licence in
+      `/licenses/`)
+- [x] **Search fields** — `fragment_home.xml` / `fragment_collection_detail.xml` now use
+      outlined `TextInputLayout` (static hint, inner id kept as `search_input` so no Java
+      changes); unused `bg_search_field.xml` deleted
 
 ---
 

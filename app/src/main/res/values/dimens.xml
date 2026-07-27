@@ -15,6 +15,14 @@
 
     <!-- Home header -->
     <dimen name="header_corner_radius">28dp</dimen>
+    <!-- Header gradient block. In the Figma it is 177dp tall but the content sheet starts at
+         120dp and covers the rest, so the visible band is 120dp — hence the height here and the
+         (negative) overlap below, which pulls the sheet up over the gradient's bottom edge. -->
+    <dimen name="header_min_height">176dp</dimen>
+    <dimen name="content_sheet_overlap">-56dp</dimen>
+
+    <!-- Search field (fragment_home / fragment_collection_detail) -->
+    <dimen name="search_corner_radius">12dp</dimen>
 
     <!-- Color swatch picker (TagPickerDialog) -->
     <dimen name="swatch_size">36dp</dimen>

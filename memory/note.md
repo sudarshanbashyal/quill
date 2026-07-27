@@ -337,22 +337,75 @@ they never went through the usual "style + Material widget" path.
 - Building Material widgets programmatically works fine, so the LayoutInflater bug that forces
   this codebase to build views in code (see `NoteRowView`) was *not* an obstacle to the
   migration.
+- **A drawable XML namespace typo fails completely silently.** `bg_home_header.xml` declared
+  `xmlns:android="http://schemas.android.com/res/android"` — missing the `apk/`. aapt reports
+  no error and the build is clean, but every `android:` attribute lands in an unrecognized
+  namespace, so the shape inflates with no shape type, no colour and no gradient and paints
+  *nothing*. The home header gradient had therefore never rendered. Worth grepping for if any
+  other drawable ever "just doesn't show up":
+  `grep -rl 'schemas.android.com/res/android' app/src/main/res/` (should return nothing).
 
 **Decision: the color-swatch picker stays custom.** Material 3 has no color-picker component,
 so `TagPickerDialog`'s grid of `GradientDrawable` circles would gain nothing but indirection
 from being wrapped in a Material widget. This is the one deliberate exception to "use MDC
 widgets" and it's documented in the class comment too.
 
+**Design-fidelity fixes done alongside the migration**:
+- **Home header gradient now actually renders** — see the namespace bug above; that was the
+  real reason it looked flat, not the colour values. Colours were also re-sampled from the
+  Figma (`#CAC3FA` at the top fading to `#EFECFD`, via `header_gradient_end`/`_start` — note
+  `angle=90` makes `_start` the *bottom* stop).
+- **The rounded edge belongs to the content sheet, not the header.** The header gradient is a
+  plain full-bleed rectangle (`bg_home_header`, no `<corners>`) that runs behind everything;
+  the content below sits on `bg_content_sheet`, which has rounded *top* corners and is pulled
+  up over the gradient's bottom edge by a negative `content_sheet_overlap` margin. That's how
+  the Figma layers it (gradient block 177dp tall, sheet starting at 120dp), and it curves the
+  right way round — giving the header itself rounded bottom corners curves the edge upwards,
+  which is wrong.
+- **Home greeting uses Playfair Display**, the display serif from the Figma — bundled under
+  `res/font/` (OFL, licence copy in `/licenses/`). Upstream ships only variable fonts, so
+  `font/playfair_display.xml` selects real weights with `fontVariationSettings` instead of
+  letting Android synthesise a fake bold off the 400 default. Needs API 26, which is minSdk.
+- **`app_background` is now white** (`#FFFFFF`, was `#F8F7FC`), matching the Figma's white
+  page. The old off-white sat almost on top of `surface_container` (`#F5F6FA`), so note rows
+  and collection cards barely separated from the background; on white they read as intended.
+- **Search fields** in `fragment_home.xml` and `fragment_collection_detail.xml` → outlined
+  `TextInputLayout` with `app:hintEnabled="false"` so the hint stays static placeholder text
+  inside the box (as the Figma draws it) rather than animating into a floating label. The
+  inner `TextInputEditText` kept the id `search_input`, so `HomeFragment` and
+  `CollectionDetailFragment`'s `findViewById` needed no change. In
+  `fragment_collection_detail.xml` the ConstraintLayout references had to move to the new
+  wrapper id `search_field` — ConstraintLayout can only constrain its own direct children.
+  `bg_search_field.xml` is now unused and deleted.
+
 **Remaining / not verified**:
-- Visual QA covered home, collection detail, note editor, the FAB + its expanding menu, and
-  the tag picker dialog. **Not** eyeballed: the create/rename-collection dialogs (including
-  the new `CollectionDialogs.inset()` wrapper), `AddExistingNotesDialog`, `RecordingDialog`,
-  the whiteboard dialogs, and the image/audio source pickers. All build clean and share the
-  now-fixed `TextFieldUtils` path, but they haven't been seen running.
-- Design-fidelity gaps that are *not* M3 issues and were deliberately left alone: the home
-  header gradient is `#E8E3FC→#D2C9FB` and `wrap_content`, where the Figma has a stronger
-  `#CCC6FA` filling ~21% of screen height; and the search fields in `fragment_home.xml` /
-  `fragment_collection_detail.xml` are still plain XML views rather than `TextInputLayout`.
+- Visual QA covered home (incl. the header and search field), collection detail, note editor,
+  the FAB + its expanding menu, and the tag picker dialog. **Not** eyeballed: the
+  create/rename-collection dialogs (including the new `CollectionDialogs.inset()` wrapper),
+  `AddExistingNotesDialog`, `RecordingDialog`, the whiteboard dialogs, and the image/audio
+  source pickers. All build clean and share the now-fixed `TextFieldUtils` path, but they
+  haven't been seen running.
+
+## Camera capture (FileProvider)
+
+`ImageEmbedder.openCamera()` writes the capture target into `getFilesDir()/images` and hands
+the camera app a `content://` URI for it via `FileProvider`. That needs three things wired
+together, and **the app had none of them** — tapping "Take photo" crashed outright:
+
+- `<provider android:name="androidx.core.content.FileProvider">` in `AndroidManifest.xml`,
+  authority `${applicationId}.fileprovider`. It must match what the Java builds
+  (`getPackageName() + ".fileprovider"`) or `FileProvider.getUriForFile` throws.
+- `res/xml/file_paths.xml` with a `<files-path>` covering `images/`. If the path isn't
+  covered, `getUriForFile` throws "Failed to find configured root that contains …".
+- `FLAG_GRANT_WRITE_URI_PERMISSION` on the intent, so the camera process can actually write
+  to the URI (without it the capture silently returns `RESULT_CANCELED`).
+  `FLAG_GRANT_READ_URI_PERMISSION` is also set — the read grant is implicit today but Android
+  logs that implicit grants for `ACTION_IMAGE_CAPTURE` end in Android 18.
+
+**Why it crashed rather than failing softly**: both `getUriForFile` failure modes throw
+`IllegalArgumentException`, but `openCamera()` only caught `IOException`, so it propagated to
+the UI thread. The catch now also handles `ActivityNotFoundException` (no camera app, common
+on bare emulator images) and routes it to `onImageFailed()` like every other failure.
 
 ## Conventions worth following
 

@@ -8,8 +8,11 @@
     <color name="brand_purple_dark">#5C4DD6</color>
     <color name="brand_purple_light">#EFECFE</color>
 
-    <!-- Surfaces / backgrounds -->
-    <color name="app_background">#F8F7FC</color>
+    <!-- Surfaces / backgrounds. The MSE Figma uses a white page throughout, with the tonal
+         surface_container below doing the work of separating rows/cards from it — so
+         app_background is white rather than the old off-white #F8F7FC, which sat too close to
+         surface_container for the cards to read. -->
+    <color name="app_background">#FFFFFFFF</color>
     <color name="surface">#FFFFFFFF</color>
     <!-- Tonal surface behind filled cards (note rows, collection cards) — sampled from the MSE
          Figma file's home/collection screens, which draw those as flat grey fills, not shadows. -->
@@ -20,9 +23,12 @@
     <color name="text_secondary">#8B879C</color>
     <color name="text_on_brand">#FFFFFFFF</color>
 
-    <!-- Home header gradient -->
-    <color name="header_gradient_start">#E8E3FC</color>
-    <color name="header_gradient_end">#D2C9FB</color>
+    <!-- Home header gradient. bg_home_header draws at angle=90, i.e. _start is the BOTTOM stop
+         and _end the TOP one. Both sampled down the left edge of the MSE Figma home frame, which
+         fades a saturated lavender at the top out to near-background by the time the content
+         starts. -->
+    <color name="header_gradient_start">#EFECFD</color>
+    <color name="header_gradient_end">#CAC3FA</color>
 
     <!-- Misc -->
     <color name="uncategorized_gray">#9E9E9E</color>
