@@ -1,11 +1,13 @@
 package mse.quill.ui.tags;
 
 import android.content.Context;
-import android.graphics.drawable.GradientDrawable;
+import android.content.res.ColorStateList;
 import android.util.TypedValue;
 import android.view.View;
 import android.widget.LinearLayout;
-import android.widget.TextView;
+
+import com.google.android.material.chip.Chip;
+import com.google.android.material.shape.RelativeCornerSize;
 
 import java.util.List;
 
@@ -13,7 +15,11 @@ import mse.quill.R;
 import mse.quill.data.model.Tag;
 import mse.quill.util.ColorUtils;
 
-/** Renders a note's tags as small pastel pill chips — reused on note rows, pinned cards, and the editor. */
+/**
+ * Renders a note's tags as small pastel pill chips — reused on note rows, pinned cards, and the
+ * editor. POC for migrating hand-rolled pill views onto Material 3's {@link Chip} instead of a
+ * manually drawn {@code GradientDrawable}.
+ */
 public final class TagChipView {
 
     private static final float CHIP_BACKGROUND_WHITE_RATIO = 0.82f;
@@ -32,49 +38,50 @@ public final class TagChipView {
     }
 
     /** A single tag's pill chip — exposed for the note editor's editable tag row. */
-    public static TextView buildChip(Context context, Tag tag) {
-        int paddingH = dimen(context, R.dimen.chip_padding_horizontal);
-        int paddingV = dimen(context, R.dimen.chip_padding_vertical);
-        int cornerRadius = dimen(context, R.dimen.chip_corner_radius);
-        int marginEnd = dimen(context, R.dimen.chip_spacing);
-
-        GradientDrawable background = new GradientDrawable();
-        background.setShape(GradientDrawable.RECTANGLE);
-        background.setCornerRadius(cornerRadius);
-        background.setColor(ColorUtils.lighten(tag.color, CHIP_BACKGROUND_WHITE_RATIO));
-
-        TextView chip = new TextView(context);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMarginEnd(marginEnd);
-        chip.setLayoutParams(params);
-        chip.setPadding(paddingH, paddingV, paddingH, paddingV);
-        chip.setBackground(background);
-        chip.setMaxWidth(dimen(context, R.dimen.chip_max_width));
-        chip.setMaxLines(1);
-        chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
+    public static Chip buildChip(Context context, Tag tag) {
+        Chip chip = baseChip(context);
+        chip.setChipBackgroundColor(
+                ColorStateList.valueOf(ColorUtils.lighten(tag.color, CHIP_BACKGROUND_WHITE_RATIO)));
         chip.setText(tag.name);
         chip.setTextColor(tag.color);
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMarginEnd(dimen(context, R.dimen.chip_spacing));
+        chip.setLayoutParams(params);
         return chip;
     }
 
     /** The "+ Add tag" affordance chip shown in the note editor's editable tag row. */
-    public static TextView buildAddChip(Context context) {
-        int paddingH = dimen(context, R.dimen.chip_padding_horizontal);
-        int paddingV = dimen(context, R.dimen.chip_padding_vertical);
-        int cornerRadius = dimen(context, R.dimen.chip_corner_radius);
-
-        GradientDrawable background = new GradientDrawable();
-        background.setShape(GradientDrawable.RECTANGLE);
-        background.setCornerRadius(cornerRadius);
-        background.setColor(context.getColor(R.color.divider));
-
-        TextView chip = new TextView(context);
-        chip.setPadding(paddingH, paddingV, paddingH, paddingV);
-        chip.setBackground(background);
+    public static Chip buildAddChip(Context context) {
+        Chip chip = baseChip(context);
+        chip.setChipBackgroundColor(ColorStateList.valueOf(context.getColor(R.color.divider)));
         chip.setText(R.string.action_add_tag);
         chip.setTextColor(context.getColor(R.color.text_secondary));
+        return chip;
+    }
+
+    /** Shared pill styling: no icon/checkmark, tight touch target, same corner/padding as before. */
+    private static Chip baseChip(Context context) {
+        Chip chip = new Chip(context);
+        chip.setCheckable(false);
+        chip.setEnsureMinTouchTargetSize(false);
+        chip.setChipIconVisible(false);
+        chip.setCheckedIconVisible(false);
+        chip.setCloseIconVisible(false);
+        chip.setChipStrokeWidth(0f);
+        // Pill shape via a relative (half-height) corner size rather than the deprecated
+        // setChipCornerRadius + a 999dp sentinel — this stays a pill at any chip height.
+        chip.setShapeAppearanceModel(chip.getShapeAppearanceModel().toBuilder()
+                .setAllCornerSizes(new RelativeCornerSize(0.5f))
+                .build());
+        chip.setChipMinHeightResource(R.dimen.chip_min_height);
+        chip.setChipStartPadding(dimen(context, R.dimen.chip_padding_horizontal));
+        chip.setChipEndPadding(dimen(context, R.dimen.chip_padding_horizontal));
+        chip.setTextStartPadding(0f);
+        chip.setTextEndPadding(0f);
+        chip.setMaxWidth(dimen(context, R.dimen.chip_max_width));
+        chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         return chip;
     }

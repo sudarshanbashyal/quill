@@ -10,6 +10,8 @@ import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.card.MaterialCardView;
+
 import mse.quill.R;
 
 /**
@@ -21,7 +23,12 @@ import mse.quill.R;
  * content (see HomeAdapter's history/comments). Building views with `new View(context)` +
  * explicit LayoutParams objects (as CollectionDialogs's color swatch picker and
  * FormattingToolbarController already do successfully elsewhere in this codebase) sidesteps that
- * codepath entirely.
+ * codepath entirely. Material 3 widgets are constructed the same way — programmatically — so the
+ * migration off hand-drawn GradientDrawables didn't have to reintroduce the inflater.
+ *
+ * The root is a filled {@link MaterialCardView}: the MSE Figma file draws note rows as flat grey
+ * rounded rows, so elevation stays at 0 and the tonal fill does the work. Ripple comes from the
+ * card itself once it's clickable, replacing the old ?attr/selectableItemBackground.
  */
 final class NoteRowView {
 
@@ -47,14 +54,20 @@ final class NoteRowView {
         int spacingXs = dimen(context, R.dimen.spacing_xs);
         int iconWidth = (int) (32 * context.getResources().getDisplayMetrics().density);
 
+        MaterialCardView card = new MaterialCardView(context);
+        RecyclerView.LayoutParams cardParams = new RecyclerView.LayoutParams(
+                RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
+        cardParams.setMargins(spacingMd, spacingXs, spacingMd, spacingXs);
+        card.setLayoutParams(cardParams);
+        applyFlatCardStyle(card, R.dimen.note_row_corner_radius);
+        card.setCardBackgroundColor(context.getColor(R.color.surface_container));
+
         LinearLayout outer = new LinearLayout(context);
-        outer.setLayoutParams(new RecyclerView.LayoutParams(
-                RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
+        outer.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setPadding(spacingMd, spacingSm, spacingMd, spacingSm);
-        outer.setClickable(true);
-        outer.setFocusable(true);
-        outer.setBackground(selectableItemBackground(context));
+        outer.setPadding(spacingSm, spacingSm, spacingMd, spacingSm);
+        card.addView(outer);
 
         LinearLayout row = new LinearLayout(context);
         row.setLayoutParams(new LinearLayout.LayoutParams(
@@ -97,13 +110,23 @@ final class NoteRowView {
         tagsContainer.setVisibility(View.GONE);
         outer.addView(tagsContainer);
 
-        return new Views(outer, title, timestamp, tagsContainer);
+        return new Views(card, title, timestamp, tagsContainer);
     }
 
-    static android.graphics.drawable.Drawable selectableItemBackground(Context context) {
-        TypedValue outValue = new TypedValue();
-        context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
-        return context.getDrawable(outValue.resourceId);
+    /**
+     * Shared setup for the app's flat card look. The M3 theme's default materialCardViewStyle is
+     * the *outlined* one, so stroke and elevation are zeroed explicitly rather than inherited —
+     * that keeps these cards looking identical regardless of which default the MDC version ships.
+     * Clickable/focusable is what makes MaterialCardView install its ripple foreground.
+     */
+    static void applyFlatCardStyle(MaterialCardView card, int cornerRadiusRes) {
+        Context context = card.getContext();
+        card.setRadius(dimen(context, cornerRadiusRes));
+        card.setCardElevation(0f);
+        card.setStrokeWidth(0);
+        card.setRippleColorResource(R.color.brand_purple_light);
+        card.setClickable(true);
+        card.setFocusable(true);
     }
 
     static int dimen(Context context, int dimenRes) {

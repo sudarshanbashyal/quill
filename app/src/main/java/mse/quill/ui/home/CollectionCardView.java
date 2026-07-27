@@ -1,33 +1,35 @@
 package mse.quill.ui.home;
 
 import android.content.Context;
-import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.card.MaterialCardView;
+
 import mse.quill.R;
 
-/** Builds a collection-grid card entirely in code — see NoteRowView for why. */
+/**
+ * Builds a collection-grid card entirely in code — see NoteRowView for why, and for the shared
+ * flat-card styling these cards get instead of a hand-drawn GradientDrawable.
+ */
 final class CollectionCardView {
 
     private CollectionCardView() {}
 
     static final class Views {
-        final View root;
-        final GradientDrawable background;
+        /** Exposed so the adapter can retint the fill per collection via setCardBackgroundColor. */
+        final MaterialCardView root;
         final TextView nameView;
         final TextView countView;
         final TextView updatedView;
 
-        Views(View root, GradientDrawable background, TextView nameView, TextView countView, TextView updatedView) {
+        Views(MaterialCardView root, TextView nameView, TextView countView, TextView updatedView) {
             this.root = root;
-            this.background = background;
             this.nameView = nameView;
             this.countView = countView;
             this.updatedView = updatedView;
@@ -38,29 +40,22 @@ final class CollectionCardView {
         int spacingSm = NoteRowView.dimen(context, R.dimen.spacing_sm);
         int spacingXs = NoteRowView.dimen(context, R.dimen.spacing_xs);
         int spacingMd = NoteRowView.dimen(context, R.dimen.spacing_md);
-        int cornerRadius = NoteRowView.dimen(context, R.dimen.card_corner_radius);
         int minHeight = (int) (110 * context.getResources().getDisplayMetrics().density);
 
-        GradientDrawable background = new GradientDrawable();
-        background.setShape(GradientDrawable.RECTANGLE);
-        background.setCornerRadius(cornerRadius);
-        background.setColor(context.getColor(R.color.surface));
-
-        FrameLayout root = new FrameLayout(context);
+        MaterialCardView root = new MaterialCardView(context);
         RecyclerView.LayoutParams rootParams = new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
         rootParams.setMargins(spacingSm, spacingSm, spacingSm, spacingSm);
         root.setLayoutParams(rootParams);
         root.setMinimumHeight(minHeight);
-        root.setPadding(spacingMd, spacingMd, spacingMd, spacingMd);
-        root.setBackground(background);
-        root.setClickable(true);
-        root.setFocusable(true);
+        NoteRowView.applyFlatCardStyle(root, R.dimen.card_corner_radius);
+        root.setCardBackgroundColor(context.getColor(R.color.surface_container));
 
         LinearLayout detailGroup = new LinearLayout(context);
-        detailGroup.setLayoutParams(new FrameLayout.LayoutParams(
+        detailGroup.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         detailGroup.setOrientation(LinearLayout.VERTICAL);
+        detailGroup.setPadding(spacingMd, spacingMd, spacingMd, spacingMd);
         root.addView(detailGroup);
 
         TextView name = new TextView(context);
@@ -92,6 +87,6 @@ final class CollectionCardView {
         updated.setAlpha(0.7f);
         detailGroup.addView(updated);
 
-        return new Views(root, background, name, count, updated);
+        return new Views(root, name, count, updated);
     }
 }

@@ -273,8 +273,103 @@ New schema needed (none of this exists yet): something like
 `quiz_attempt_answers(attempt_id, flashcard_id, was_correct)` if per-question review
 after a quiz is wanted.
 
+## Material 3 UI migration
+
+**Status: largely done.** Theme, cards, chips, dialogs, buttons, checkboxes and text fields
+are all on real Material 3 components. Tracked as Epic H in [requirements.md](requirements.md).
+
+**Material 3 is now the standard for all UI in this app** — see "Conventions worth following"
+below. Anything new that renders should be an MDC widget, not a hand-drawn `GradientDrawable`
+and not a framework/AppCompat widget.
+
+**Motivation**: the app's theme (`Theme.Quill` in `values/themes.xml`) already extended
+`Theme.MaterialComponents.*` and used the `com.google.android.material` dependency
+(already at `1.10.0`, which supports Material 3 — no version bump needed), but an
+actual code audit found only **one** real Material widget in use anywhere
+(`FloatingActionButton` in `fragment_home.xml`). Everything that visually looks like a
+Material component — note-row cards, collection cards, pinned-note cards, tag chip
+pills — is hand-rolled: a plain `View`/`TextView` plus a manually constructed
+`GradientDrawable` for fill/corners, manual elevation, no ripple. This is downstream of
+the inflater workaround below — those views are built in Java rather than XML, so
+they never went through the usual "style + Material widget" path.
+
+**What's done**:
+- `themes.xml`: `Theme.Quill` extends `Theme.Material3.Light.NoActionBar`. The existing
+  8-color palette (`colors.xml`) remapped onto M3 roles (`colorPrimaryContainer`/
+  `colorOnPrimaryContainer` etc., using `brand_purple_light`/`text_primary` for the
+  container roles that didn't exist as a concept in the old theme). M3 dropped
+  `colorPrimaryVariant`, so the status bar color is a direct `@color/brand_purple_dark`
+  reference instead of `?attr/colorPrimaryVariant`.
+- `TagChipView` → `com.google.android.material.chip.Chip`, non-checkable with
+  icons/checkmark hidden and `setEnsureMinTouchTargetSize(false)` so it doesn't balloon
+  past the old pill's footprint. Pill shape comes from a `RelativeCornerSize(0.5f)` on the
+  shape appearance model, *not* the deprecated `setChipCornerRadius` + a 999dp sentinel
+  dimen (that dimen is gone).
+- `NoteRowView`, `CollectionCardView`, `PinnedNoteCardView` → `MaterialCardView`, via the
+  shared `NoteRowView.applyFlatCardStyle(card, cornerRadiusRes)`. Ripple now comes from the
+  card being clickable, which replaced `?attr/selectableItemBackground` on note rows.
+  `HomeAdapter`'s collection holder retints with `setCardBackgroundColor` instead of poking
+  a retained `GradientDrawable`.
+- **All 13 dialog sites** → `MaterialAlertDialogBuilder`. Most were using the *framework*
+  `android.app.AlertDialog`, which ignores app theming outright — that's why dialogs stayed
+  visibly Material 2 (square corners, ALL-CAPS buttons) even after the theme was switched.
+  This was the single highest-impact change of the migration.
+- Dialog widgets that are built in code: `Button` → `MaterialButton`, `CheckBox` →
+  `MaterialCheckBox`, `EditText` → outlined `TextInputLayout` via the new
+  `util/TextFieldUtils.outlinedField(context, hintRes)`.
+
+**Non-obvious things learned doing it** — worth not rediscovering:
+- The M3 theme's default `materialCardViewStyle` is the *outlined* one, so
+  `applyFlatCardStyle` zeroes stroke and elevation explicitly rather than inheriting. The
+  MSE Figma draws every card as a flat grey/pastel fill with no shadow, hence
+  `surface_container` `#F5F6FA` (sampled from the design) and elevation 0 everywhere.
+- `TextInputLayout` **is a `LinearLayout`** and casts its child's params in `addView()`.
+  Giving the `TextInputEditText` plain `ViewGroup.LayoutParams` compiles fine and crashes at
+  runtime with `ClassCastException`. It must get `LinearLayout.LayoutParams`. This actually
+  shipped and crashed the app on the emulator before being caught — build-verification alone
+  would have missed it.
+- `TextInputLayout`'s no-arg constructor gives the *filled* (underlined, Material-2-looking)
+  variant. The outlined one needs an explicit defStyleAttr:
+  `new TextInputLayout(context, null, com.google.android.material.R.attr.textInputOutlinedStyle)`.
+- The child `TextInputEditText` must be constructed from `layout.getContext()`, not the outer
+  context — TextInputLayout wraps its own themed context and the box styling is silently lost
+  otherwise.
+- Building Material widgets programmatically works fine, so the LayoutInflater bug that forces
+  this codebase to build views in code (see `NoteRowView`) was *not* an obstacle to the
+  migration.
+
+**Decision: the color-swatch picker stays custom.** Material 3 has no color-picker component,
+so `TagPickerDialog`'s grid of `GradientDrawable` circles would gain nothing but indirection
+from being wrapped in a Material widget. This is the one deliberate exception to "use MDC
+widgets" and it's documented in the class comment too.
+
+**Remaining / not verified**:
+- Visual QA covered home, collection detail, note editor, the FAB + its expanding menu, and
+  the tag picker dialog. **Not** eyeballed: the create/rename-collection dialogs (including
+  the new `CollectionDialogs.inset()` wrapper), `AddExistingNotesDialog`, `RecordingDialog`,
+  the whiteboard dialogs, and the image/audio source pickers. All build clean and share the
+  now-fixed `TextFieldUtils` path, but they haven't been seen running.
+- Design-fidelity gaps that are *not* M3 issues and were deliberately left alone: the home
+  header gradient is `#E8E3FC→#D2C9FB` and `wrap_content`, where the Figma has a stronger
+  `#CCC6FA` filling ~21% of screen height; and the search fields in `fragment_home.xml` /
+  `fragment_collection_detail.xml` are still plain XML views rather than `TextInputLayout`.
+
 ## Conventions worth following
 
+- **All UI is Material 3 — no exceptions without a recorded reason.** Every new or edited
+  view uses a `com.google.android.material.*` widget rather than a framework/AppCompat one
+  or a hand-drawn `GradientDrawable`. Concretely:
+  - cards/surfaces → `MaterialCardView` (via `NoteRowView.applyFlatCardStyle`)
+  - dialogs → `MaterialAlertDialogBuilder`, never `android.app.AlertDialog` or
+    `androidx.appcompat.app.AlertDialog` (the framework one ignores the app theme entirely)
+  - text input → `TextFieldUtils.outlinedField(...)`
+  - buttons → `MaterialButton`; checkboxes → `MaterialCheckBox`; pills/tags → `Chip`
+  - colors come from the M3 role attrs (`?attr/colorPrimaryContainer`, `colorSurface`, …)
+    or a named color in `colors.xml` — not a literal hex in Java
+  The one standing exception is the color-swatch picker (no M3 equivalent exists); if
+  another exception is needed, write down why next to it like that one is.
+  The rich-text body in `TextSegmentView` also stays a plain `EditText` — it's an editing
+  surface, not a form field, and boxing it would be wrong.
 - New DB-backed features: add a `data/XRepository.java` following the existing
   callback-based async pattern (`OnXLoaded` functional interfaces), route all I/O
   through `AppExecutors.diskIO()` — don't introduce a second ad hoc threading pattern

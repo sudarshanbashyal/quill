@@ -207,14 +207,14 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static class CollectionCardViewHolder extends RecyclerView.ViewHolder {
-        private final android.graphics.drawable.GradientDrawable cardBackground;
+        private final com.google.android.material.card.MaterialCardView card;
         private final TextView nameView;
         private final TextView countView;
         private final TextView updatedView;
 
         CollectionCardViewHolder(@NonNull CollectionCardView.Views views) {
             super(views.root);
-            cardBackground = views.background;
+            card = views.root;
             nameView = views.nameView;
             countView = views.countView;
             updatedView = views.updatedView;
@@ -227,7 +227,8 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     R.string.updated_relative_format,
                     DateUtils.getRelativeTimeSpanString(
                             collection.lastActivityAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)));
-            cardBackground.setColor(ColorUtils.lighten(collection.color, ColorUtils.PASTEL_CARD_WHITE_RATIO));
+            card.setCardBackgroundColor(
+                    ColorUtils.lighten(collection.color, ColorUtils.PASTEL_CARD_WHITE_RATIO));
 
             itemView.setOnClickListener(v -> listener.onCollectionClicked(collection.id, collection.name));
             itemView.setOnLongClickListener(v -> {

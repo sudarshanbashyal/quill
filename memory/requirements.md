@@ -254,6 +254,44 @@ estimable, not more building.
 
 ---
 
+## Epic H — Material 3 UI Migration (P2, independent, low risk)
+
+**Why here**: independent of every other epic — pure UI/theming work, safe filler or a
+parallel track. Full rationale, what's done, and the non-obvious MDC gotchas hit along the
+way live in [note.md](note.md)'s "Material 3 UI migration" section; read that alongside
+this checklist.
+
+**Material 3 is now the project-wide standard for all UI** — see note.md's "Conventions
+worth following". The items below are the migration itself; the convention outlives it.
+
+- [x] **Theme + color roles** — `Theme.Quill` extends `Theme.Material3.Light.NoActionBar`;
+      existing palette remapped onto M3 color roles
+      (`colorPrimaryContainer`/`colorOnPrimaryContainer`/etc.)
+- [x] **Chips** — `TagChipView`'s two pills build a real
+      `com.google.android.material.chip.Chip` instead of `TextView` + `GradientDrawable`
+- [x] **Cards** — `NoteRowView`, `CollectionCardView`, `PinnedNoteCardView` all →
+      `MaterialCardView` via the shared `NoteRowView.applyFlatCardStyle`
+- [x] **Dialogs** — all 13 sites → `MaterialAlertDialogBuilder` (most were on the
+      framework `android.app.AlertDialog`, which ignored the app theme entirely — this is
+      why dialogs still looked Material 2 after the theme switch)
+- [x] **Dialog widgets** — `MaterialButton`, `MaterialCheckBox`, and outlined
+      `TextInputLayout` via the new `util/TextFieldUtils`
+- [x] **Color-swatch picker decision** — stays custom; M3 has no color-picker component
+- [x] **FAB under the new theme** — confirmed on-device; picks up M3's rounded-square shape
+- [x] **Visual QA** — home, collection detail, note editor, FAB + expanding menu, tag
+      picker dialog. Caught a real runtime crash (`TextInputLayout` child needs
+      `LinearLayout.LayoutParams`) that the build had not
+- [ ] **Finish visual QA on the untouched-by-eye screens** — create/rename-collection
+      dialogs (incl. the new `CollectionDialogs.inset()` wrapper), `AddExistingNotesDialog`,
+      `RecordingDialog`, whiteboard dialogs, image/audio source pickers. All build clean and
+      share the now-fixed `TextFieldUtils` path, but none have been seen running
+- [ ] **Design-fidelity follow-ups (not M3 blockers)** — home header gradient is weaker and
+      shorter than the Figma's (`#E8E3FC→#D2C9FB` + `wrap_content` vs. `#CCC6FA` at ~21% of
+      screen height); the `fragment_home.xml` / `fragment_collection_detail.xml` search
+      fields are still plain XML views rather than `TextInputLayout`
+
+---
+
 ## Cross-cutting notes
 
 - Epics B and C both touch `notes`/`note_segments` at rest — coordinate schema changes

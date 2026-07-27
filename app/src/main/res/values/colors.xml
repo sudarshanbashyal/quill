@@ -11,6 +11,9 @@
     <!-- Surfaces / backgrounds -->
     <color name="app_background">#F8F7FC</color>
     <color name="surface">#FFFFFFFF</color>
+    <!-- Tonal surface behind filled cards (note rows, collection cards) — sampled from the MSE
+         Figma file's home/collection screens, which draw those as flat grey fills, not shadows. -->
+    <color name="surface_container">#F5F6FA</color>
 
     <!-- Text -->
     <color name="text_primary">#1E1B2E</color>
