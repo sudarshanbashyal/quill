@@ -1,6 +1,6 @@
 package mse.quill.ui.home;
 
-import android.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -197,7 +197,7 @@ public class HomeFragment extends Fragment {
             }
 
             @Override public void onDelete() {
-                new AlertDialog.Builder(requireContext())
+                new MaterialAlertDialogBuilder(requireContext())
                         .setTitle(getString(R.string.delete_collection_title_format, collection.name))
                         .setMessage(R.string.delete_collection_message)
                         .setPositiveButton(R.string.action_delete, (d, w) ->

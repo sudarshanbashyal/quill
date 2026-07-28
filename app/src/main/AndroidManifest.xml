@@ -22,6 +22,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Required by ImageEmbedder.openCamera(): it hands the camera app a content:// URI
+             for a file in getFilesDir()/images. The authority must match what that code builds
+             (getPackageName() + ".fileprovider"). Without this declaration
+             FileProvider.getUriForFile throws IllegalArgumentException ("Couldn't find
+             meta-data for provider with authority ...") — which is not an IOException, so
+             openCamera()'s catch does not cover it and the app crashes outright. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

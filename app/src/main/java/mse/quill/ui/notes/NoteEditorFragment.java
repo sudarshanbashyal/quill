@@ -373,7 +373,7 @@ public class NoteEditorFragment extends Fragment {
             if (current != null && voice.getName().equals(current.getName())) checkedIndex = i;
         }
 
-        new android.app.AlertDialog.Builder(requireContext())
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.dialog_choose_voice_title)
                 .setSingleChoiceItems(labels, checkedIndex, (dialog, which) -> {
                     noteReader.setVoice(voices.get(which));
@@ -426,7 +426,7 @@ public class NoteEditorFragment extends Fragment {
     }
 
     private void showImageSourceDialog() {
-        new android.app.AlertDialog.Builder(requireContext())
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setTitle("Insert image")
                 .setItems(new String[]{"Take photo", "Choose from gallery"}, (dialog, which) -> {
                     if (which == 0) imageEmbedder.openCamera();

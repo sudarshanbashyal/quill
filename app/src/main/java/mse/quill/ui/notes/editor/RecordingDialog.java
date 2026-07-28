@@ -1,11 +1,14 @@
 package mse.quill.ui.notes.editor;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.view.Gravity;
-import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import androidx.appcompat.app.AlertDialog;
+
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.Locale;
 
@@ -55,9 +58,8 @@ public class RecordingDialog {
         waveformView.setLayoutParams(waveParams);
         content.addView(waveformView);
 
-        Button stopButton = new Button(context);
+        MaterialButton stopButton = new MaterialButton(context);
         stopButton.setText(R.string.action_stop_recording);
-        stopButton.setAllCaps(false);
         LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         stopParams.topMargin = padLg;
@@ -65,7 +67,7 @@ public class RecordingDialog {
         stopButton.setOnClickListener(v -> listener.onStopRequested());
         content.addView(stopButton);
 
-        dialog = new AlertDialog.Builder(context)
+        dialog = new MaterialAlertDialogBuilder(context)
                 .setView(content)
                 .setCancelable(false)
                 .create();

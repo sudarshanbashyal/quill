@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The page content sits on this sheet, which overlaps the bottom of the home header's
+     gradient and curves *over* it. In the MSE Figma the rounded edge belongs to this sheet
+     (its top corners), not to the header — the header gradient itself is a plain full-bleed
+     rectangle that simply runs behind. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface" />
+    <corners
+        android:topLeftRadius="@dimen/header_corner_radius"
+        android:topRightRadius="@dimen/header_corner_radius" />
+</shape>

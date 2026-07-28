@@ -66,7 +66,7 @@ public class AudioSegmentView extends BaseSegmentView {
     }
 
     private void showDeleteConfirmation() {
-        new android.app.AlertDialog.Builder(getContext())
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(getContext())
                 .setTitle(R.string.delete_audio_title)
                 .setMessage(R.string.delete_audio_message)
                 .setPositiveButton(R.string.action_delete, (dialog, which) -> {
