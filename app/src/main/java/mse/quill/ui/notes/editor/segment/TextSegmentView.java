@@ -14,24 +14,26 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
+
+import mse.quill.ui.notes.editor.model.HeadingMarker;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 
 public class TextSegmentView extends BaseSegmentView {
 
-    /** Heading level is marked with an invisible zero-width-space text prefix rather than a
-     *  size-only span: Html.toHtml (used by SpanSerializer) has no idea how to serialize a
-     *  RelativeSizeSpan, so anything represented purely as a span would silently vanish on
-     *  save. The marker survives any text round-trip for free (and is invisible, unlike a
-     *  literal "# "); the RelativeSizeSpan/bold styling is always re-derived from it (see
-     *  {@link #restyleHeadingLine}), both after edits and after loading. H1's marker is a prefix
-     *  of H2's, so detection always checks the longer marker first. */
-    private static final String HEADING_1_PREFIX = "​";
-    private static final String HEADING_2_PREFIX = "​​";
     private static final float HEADING_1_SCALE = 1.6f;
     private static final float HEADING_2_SCALE = 1.3f;
     private static final int BULLET_GAP_WIDTH = 24;
 
     private final EditText editText;
+
+    /** The heading size/bold spans this view applied, held by identity so a restyle removes only
+     *  its own derived styling and never the user's. Cleared with the content in {@link #setText}. */
+    private final Set<Object> derivedHeadingSpans =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+
     private boolean isBoldActive = false;
     private boolean isItalicActive = false;
     private boolean isUnderlineActive = false;
@@ -44,7 +46,7 @@ public class TextSegmentView extends BaseSegmentView {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        editText = new EditText(context);
+        editText = new SelectionAwareEditText(context);
         editText.setLayoutParams(new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -64,6 +66,8 @@ public class TextSegmentView extends BaseSegmentView {
     }
 
     public void setText(Spannable text) {
+        // The old spans go with the old content; keeping them would leak an entry per load.
+        derivedHeadingSpans.clear();
         editText.setText(text);
         restyleAllHeadings();
     }
@@ -171,9 +175,9 @@ public class TextSegmentView extends BaseSegmentView {
         int lineEnd = findLineEnd(text, cursor);
         String line = text.subSequence(lineStart, lineEnd).toString();
 
-        int currentLevel = detectHeadingLevel(line);
-        int currentMarkerLen = markerLength(currentLevel);
-        String newPrefix = level == 1 ? HEADING_1_PREFIX : HEADING_2_PREFIX;
+        int currentLevel = HeadingMarker.levelOf(line);
+        int currentMarkerLen = HeadingMarker.length(currentLevel);
+        String newPrefix = HeadingMarker.forLevel(level);
 
         int newCursor;
         if (currentLevel == level) {
@@ -195,9 +199,9 @@ public class TextSegmentView extends BaseSegmentView {
         restyleCurrentLineHeading();
     }
 
-    /** Toggles a bullet on the line the cursor is in. Unlike headings, BulletSpan is one of the
-     *  span types Html.toHtml/fromHtml (SpanSerializer) already round-trips natively, so no text
-     *  marker is needed here — same trust level this file already extends to bold/italic/underline.
+    /** Toggles a bullet on the line the cursor is in. Unlike headings, a bullet needs no text
+     *  marker: MarkdownSerializer reads the BulletSpan directly when writing the line's "- "
+     *  prefix — the same trust this file already extends to bold/italic/underline.
      *  While active, {@link #continueBulletListIfActive()} keeps propagating the bullet onto
      *  whatever line the cursor is on (including new lines created by pressing Enter) until the
      *  user toggles it off again or applies a heading. */
@@ -269,48 +273,50 @@ public class TextSegmentView extends BaseSegmentView {
     /** Recomputes heading RelativeSizeSpan/bold styling for one line from its marker prefix —
      *  the prefix (not the spans) is the source of truth. The companion bold span is a plain
      *  StyleSpan (not a custom subclass — subclassing a platform Parcelable span type risked
-     *  interacting badly with Android's own span handling during selection/IME operations); it's
-     *  identified for removal by exactly matching this line's bounds rather than by type, so it
-     *  won't be confused with a StyleSpan(BOLD) the user applied manually over a different range. */
+     *  interacting badly with Android's own span handling during selection/IME operations), so
+     *  the spans this method created are tracked by identity in {@link #derivedHeadingSpans} and
+     *  only those are removed. Recognising them by their bounds instead used to be enough, until
+     *  it wasn't: the first character typed on any line produces a user bold span covering
+     *  exactly [lineStart, lineEnd), which is indistinguishable from heading styling by bounds
+     *  alone — so active-bold typing lost its first character on every new line. */
     private void restyleHeadingLine(Editable text, int lineStart, int lineEnd) {
-        for (RelativeSizeSpan span : text.getSpans(lineStart, lineEnd, RelativeSizeSpan.class)) {
-            text.removeSpan(span);
-        }
-        for (StyleSpan span : text.getSpans(lineStart, lineEnd, StyleSpan.class)) {
-            if (span.getStyle() == Typeface.BOLD
-                    && text.getSpanStart(span) == lineStart
-                    && text.getSpanEnd(span) == lineEnd) {
-                text.removeSpan(span);
-            }
+        for (Object span : text.getSpans(lineStart, lineEnd, Object.class)) {
+            if (derivedHeadingSpans.remove(span)) text.removeSpan(span);
         }
 
         String line = text.subSequence(lineStart, lineEnd).toString();
-        int level = detectHeadingLevel(line);
-        if (level == 1) {
-            text.setSpan(new RelativeSizeSpan(HEADING_1_SCALE), lineStart, lineEnd,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-            text.setSpan(new StyleSpan(Typeface.BOLD), lineStart, lineEnd,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-        } else if (level == 2) {
-            text.setSpan(new RelativeSizeSpan(HEADING_2_SCALE), lineStart, lineEnd,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-            text.setSpan(new StyleSpan(Typeface.BOLD), lineStart, lineEnd,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
+        int level = HeadingMarker.levelOf(line);
+        if (level == HeadingMarker.NONE) return;
+
+        float scale = level == HeadingMarker.H1 ? HEADING_1_SCALE : HEADING_2_SCALE;
+        applyDerivedSpan(text, new RelativeSizeSpan(scale), lineStart, lineEnd);
+        applyDerivedSpan(text, new StyleSpan(Typeface.BOLD), lineStart, lineEnd);
     }
 
-    /** 0 = not a heading, else the heading level — checks the longer (H2) marker first since it
-     *  starts with H1's marker. */
-    private static int detectHeadingLevel(String line) {
-        if (line.startsWith(HEADING_2_PREFIX)) return 2;
-        if (line.startsWith(HEADING_1_PREFIX)) return 1;
-        return 0;
+    private void applyDerivedSpan(Editable text, Object span, int lineStart, int lineEnd) {
+        derivedHeadingSpans.add(span);
+        text.setSpan(span, lineStart, lineEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
-    private static int markerLength(int level) {
-        if (level == 1) return HEADING_1_PREFIX.length();
-        if (level == 2) return HEADING_2_PREFIX.length();
-        return 0;
+    /** Heading level of the line the caret is in, or {@link HeadingMarker#NONE} — drives the
+     *  toolbar's H1/H2 active markers, which unlike bold/italic/underline are a property of the
+     *  current line rather than a pending typing mode. */
+    public int currentHeadingLevel() {
+        Editable text = editText.getText();
+        int cursor = editText.getSelectionStart();
+        if (cursor < 0) return HeadingMarker.NONE;
+        return HeadingMarker.levelOf(text, findLineStart(text, cursor), findLineEnd(text, cursor));
+    }
+
+    /** Whether the line the caret is in is bulleted. Read from the span rather than from
+     *  {@link #isBulletListActive}, which only tracks whether continuation is armed for typing. */
+    public boolean isBulletActive() {
+        Editable text = editText.getText();
+        int cursor = editText.getSelectionStart();
+        if (cursor < 0) return false;
+        int lineStart = findLineStart(text, cursor);
+        int lineEnd = findLineEnd(text, cursor);
+        return text.getSpans(lineStart, lineEnd, BulletSpan.class).length > 0;
     }
 
     private static int findLineStart(CharSequence text, int cursor) {
@@ -375,6 +381,22 @@ public class TextSegmentView extends BaseSegmentView {
                 if (callback != null) callback.onContentChanged();
             }
         });
+    }
+
+    /** Reports caret moves. The toolbar's H1/H2/bullet markers describe the line the caret is in,
+     *  so they go stale on a plain EditText, which only reports text changes — tapping from a
+     *  heading into body text would leave H1 lit. */
+    private class SelectionAwareEditText extends EditText {
+        SelectionAwareEditText(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onSelectionChanged(int selStart, int selEnd) {
+            super.onSelectionChanged(selStart, selEnd);
+            // Fires during the superclass constructor, before `callback` can possibly be set.
+            if (callback != null) callback.onSelectionChanged();
+        }
     }
 
     @Override

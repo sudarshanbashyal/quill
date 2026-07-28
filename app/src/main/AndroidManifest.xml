@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Only for saving an image out to the gallery below API 29. From 29 on, scoped storage
+         lets an app add its own entries to MediaStore without asking. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application

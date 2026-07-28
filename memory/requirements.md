@@ -36,23 +36,36 @@ top of it. All three are hard to debug on an SQLite layer with a destructive
 costs little (small codebase); fixing it after Epic C lands costs a lot (sync bugs
 masquerading as migration bugs).
 
-- [ ] **Safe schema migrations**
+- [ ] **Safe schema migrations** — *more urgent since 2026-07-28: the schema moved to v3
+      for the Markdown migration and the destructive `onUpgrade` duly wiped every
+      existing note on next launch. That was accepted as dev-stage policy at the time,
+      but it will not be acceptable once anyone else installs this.*
   - [ ] Replace `AppDatabase.onUpgrade`'s drop-and-recreate with real `ALTER TABLE` /
         versioned migration steps
-  - [ ] Add a migration test: seed a v1-shaped DB with data, run the upgrade, assert
+  - [ ] Add a migration test: seed an older-shaped DB with data, run the upgrade, assert
         rows survive
 - [ ] **Unify background DB access**
   - [ ] Port `StrokeDao` / `WhiteboardDao` / `WhiteboardFragment` off ad hoc
         `new Thread(...)` calls onto the shared `AppExecutors.diskIO()` used by the
         other repositories
   - [ ] Audit all fragments for any accidental main-thread `SQLiteDatabase` access
-- [ ] **Automated test coverage**
-  - [ ] Replace the placeholder `ExampleUnitTest` / `ExampleInstrumentedTest` with real
-        tests: Note/Collection/Tag repository CRUD, segment replace + orphaned-media
-        cleanup, `SpanSerializer` round-trip (headings, bullets, multi-blank-lines)
-  - [ ] Instrumentation test for `NoteEditorView` segment split/merge/delete behavior
-        (image/audio insertion mid-text, backspace-merge at segment boundary)
-  - [ ] Wire up CI (e.g. GitHub Actions) to run unit tests + lint on every PR
+- [ ] **Automated test coverage** *(56 instrumented tests as of 2026-07-29, up from 2
+      placeholders — all under `app/src/androidTest`, run with
+      `./gradlew :app:connectedDebugAndroidTest`)*
+  - [x] Markdown round-trip (`MarkdownSerializerTest`): headings, bullets, blank-line
+        runs, overlapping spans, and escaping of text that looks like syntax
+  - [x] Document ↔ segments (`NoteDocumentTest`): embed ordering, asset rejoining,
+        missing-asset handling, preview/plain-text projections
+  - [x] Repository round-trip (`NoteRepositoryMarkdownTest`): save/reload with embeds,
+        stable asset ids, orphaned-media cleanup, preview
+  - [x] Editor formatting (`TextSegmentViewFormattingTest`): active formatting carried
+        across a newline, heading styling vs. user styling
+  - [x] Image orientation (`BitmapUtilsTest`): EXIF rotation per tag, bounding, no
+        needless re-encode
+  - [ ] Collection/Tag repository CRUD — still uncovered
+  - [ ] `NoteEditorView` segment split/merge/delete (image/audio insertion mid-text,
+        backspace-merge at segment boundary) — still uncovered
+  - [ ] Wire up CI (e.g. GitHub Actions) to run tests + lint on every PR
 - [ ] **Fix bugs found during architecture review**
   - [ ] `WhiteboardFragment.exportWhiteboard()` shows a "Export failed" toast
         unconditionally even after a successful export
@@ -128,36 +141,37 @@ unshippable mess.
 **Why here**: independent of P2P — safe to build in parallel with Epic B/C by a second
 contributor. The `flashcards` table already has SM-2 columns (`interval`,
 `repetitions`, `easiness`, `next_review`) sitting unused. Full design rationale lives in
-[note.md](note.md)'s "Planned: standardized Markdown note format, Q&A segments &
-flashcards" section — read that alongside this checklist, it explains the *why* behind
-each item below.
+[note.md](note.md)'s "Markdown note format" section — read that alongside this
+checklist, it explains the *why* behind each item below.
 
-- [ ] **Decide storage scope** *(open — pending further discussion before starting)*
-  - [ ] **Minimal**: re-encode only `TextSegment` content as Markdown (swap
-        `SpanSerializer`'s HTML internals), keep the `note_segments` row-per-segment
-        model as-is
-  - [ ] **Full**: collapse each note into one Markdown document stored in the
-        currently-unused `notes.content_blob` column; every segment type becomes an
-        inline block; `note_segments`/`position` bookkeeping retired
-- [ ] **Markdown format & tooling**
-  - [ ] Adopt Markwon (`io.noties.markwon`) for parsing/rendering; use its plugin
-        system for the custom block types below instead of forking a parser
-  - [ ] Text formatting: `#`/`##` headings, `**bold**`, `*italic*`, `<u>underline</u>`
-        (raw HTML span — valid CommonMark), `- ` bullets (+ numbered lists as a bonus)
-  - [ ] Retire `SpanSerializer`'s zero-width heading markers and newline-collapsing
-        HTML workaround — the Markdown equivalents don't have HTML's ambiguity
-  - [ ] Image embed: native `![alt](path)`
-  - [ ] Audio embed: `<audio src="..." data-duration="...">`
-  - [ ] Whiteboard embed (also feeds Epic C's whiteboard-linking goal):
-        `<img src="thumb.png" data-quill-embed="whiteboard" data-quill-id="...">` —
-        degrades to a static picture outside Quill, tappable live preview inside it
-- [ ] **Segment identity — prerequisite fix, found during design review**
-  - [ ] `NoteEditorView.exportSegments()` never sets `NoteSegment.id`, so
-        `NoteRepository.replaceSegmentsSync` mints a fresh UUID for every segment on
-        every save (autosave fires every ~500ms). Anything that needs to reference "this
-        exact segment" across edits — the flashcard link below — breaks without this
-  - [ ] Give each `BaseSegmentView` a stable id, assigned once and round-tripped through
-        export/import instead of discarded on every save
+**Storage landed 2026-07-28.** The Markdown format and segment-identity work below is
+done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
+
+- [x] **Decide storage scope** — chose **Full**: each note is one Markdown document in
+      `notes.content_blob`; `note_segments` demoted to a media asset registry (no
+      `position`, no `text_content`). Accepted trade-off: a coarser conflict domain for
+      the sync Epic C anticipates — the plan is to recover granularity by diffing the
+      Markdown at block level, *not* by reverting to per-segment rows. See
+      [conversation.md](conversation.md), 2026-07-28.
+- [x] **Markdown format & tooling**
+  - [x] Round-trip written by hand (`MarkdownSerializer`, `NoteDocument`) — **Markwon
+        was not adopted**: it renders but doesn't help with editing, which is the half
+        that actually mattered
+  - [x] Text formatting: `#`/`##` headings, `**bold**`, `_italic_`, `<u>underline</u>`,
+        `- ` bullets. Italic is `_` not `*` — with `*`, a format ending inside another
+        emits ambiguous `****` runs (numbered lists still outstanding)
+  - [x] Retired `SpanSerializer` outright, along with both its workarounds
+  - [x] Image embed: `![](quill://image/<asset-id>)` — by **id, not path**, so moving
+        media on disk can't invalidate a document; width/duration/transcript live on the
+        asset row, which Markdown link syntax has nowhere to put
+  - [x] Audio embed: `![audio](quill://audio/<asset-id>)`
+  - [ ] Whiteboard embed (also feeds Epic C's whiteboard-linking goal) — reserved shape
+        `![whiteboard](quill://whiteboard/<id>)`, not yet built
+  - [ ] Export to portable `.md`: rewrite `quill://` URIs to relative file paths
+- [x] **Segment identity — prerequisite fix, found during design review**
+  - [x] `BaseSegmentView` now owns a stable id, round-tripped through export/import.
+        Forced by the migration itself (embed references would break on every save) and
+        no longer blocking the flashcard link below
 - [ ] **Q&A segment**
   - [ ] New `NoteSegment.TYPE_QA` + `QASegmentView`: bordered two-field card, plain-text
         Question / plain-text Answer (no rich text in v1) — not an inline cloze marker;
@@ -225,10 +239,14 @@ and what the UI surfaces. None blocks or is blocked by another epic; good filler
 or a second-contributor track alongside Epic D.
 
 - [ ] **Wire up full-text search**
-  - [ ] Add INSERT/UPDATE/DELETE triggers to keep `notes_fts` in sync with `notes`
-        (the FTS5 table is created today but nothing ever populates it)
-  - [ ] Replace `HomeFragment`'s in-memory list filter with an FTS5 `MATCH` query
-        (matters once note counts grow beyond trivial)
+  - [x] Keep `notes_fts` populated — done 2026-07-28, as a side effect of the Markdown
+        migration giving the body a single source. The table was also **fixed**: it was
+        declared `content='notes'` with a `body` column that doesn't exist on `notes`, so
+        it could never have been populated by triggers or otherwise. Now standalone
+        `fts5(note_id UNINDEXED, title, body)`, written by `NoteRepository` in the same
+        transaction as the save (and cleared on delete), guarded for FTS5-less builds
+  - [ ] Replace `HomeFragment`'s in-memory list filter with an FTS5 `MATCH` query — the
+        index is ready and unused; this is the only remaining piece
 - [ ] **Trash / recover UI**
   - [ ] "Recently deleted" screen listing notes with `deleted_at IS NOT NULL`
   - [ ] Restore and permanently-delete actions
@@ -298,6 +316,11 @@ worth following". The items below are the migration itself; the convention outli
 - [x] **Search fields** — `fragment_home.xml` / `fragment_collection_detail.xml` now use
       outlined `TextInputLayout` (static hint, inner id kept as `search_input` so no Java
       changes); unused `bg_search_field.xml` deleted
+- [x] **Formatting toolbar** (2026-07-29) — the last framework `Button`s in the editor,
+      replaced by compact weighted icon items on one tonal surface flush against the
+      keyboard. Active state is a small primary dot rather than M3's tonal/filled
+      selected button: eight filled pills sitting on the keyboard read as a second
+      keyboard. Recorded as a deliberate departure per the convention above
 
 ---
 

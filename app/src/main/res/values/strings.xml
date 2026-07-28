@@ -56,10 +56,25 @@
     <string name="recording_timer_placeholder">0:00</string>
     <string name="action_stop_recording">Stop</string>
 
+    <!-- Formatting toolbar. Icon-only buttons, so these are the accessibility labels. -->
+    <string name="action_bold">Bold</string>
+    <string name="action_italic">Italic</string>
+    <string name="action_underline">Underline</string>
+    <string name="action_heading_1">Heading 1</string>
+    <string name="action_heading_2">Heading 2</string>
+    <string name="action_bullet_list">Bullet list</string>
+    <string name="action_insert_image">Insert image</string>
+    <string name="action_record_audio">Record audio</string>
+
     <string name="action_read_aloud">Read note aloud</string>
     <string name="action_read_aloud_glyph">▶</string>
     <string name="action_stop_reading_glyph">⏸</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>
+
+    <string name="action_save_image">Save to Photos</string>
+    <string name="image_viewer_description">Full size image</string>
+    <string name="image_saved">Saved to Photos</string>
+    <string name="image_save_failed">Couldn\'t save image</string>
 
     <string name="delete_image_title">Delete image?</string>
     <string name="delete_image_message">This image will be removed from the note.</string>

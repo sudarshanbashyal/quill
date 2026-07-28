@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The toolbar reads as one continuous surface butted against the keyboard: a tonal fill that
+     separates it from the white note page, plus a hairline at the top as the only seam. There is
+     deliberately no bottom edge treatment — the keyboard provides that boundary. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <color android:color="@color/surface_container" />
+    </item>
+    <item android:gravity="top" android:height="1dp">
+        <color android:color="@color/divider" />
+    </item>
+</layer-list>
