@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Playfair Display (OFL, see /licenses/PlayfairDisplay-OFL.txt), the display serif used for
+     the home greeting in the MSE Figma file.
+
+     Upstream ships only variable fonts (no static cuts), so the same two files back every
+     entry here and the weight is selected via fontVariationSettings rather than by picking a
+     different file. Without those settings Android would load the 400 default and *synthesise*
+     bold, which looks muddier than the real 700 cut. Variable fonts and
+     android:fontVariationSettings both need API 26, which is this app's minSdk. -->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:font="@font/playfair_display_regular"
+        android:fontStyle="normal"
+        android:fontWeight="400"
+        android:fontVariationSettings="'wght' 400" />
+    <font
+        android:font="@font/playfair_display_regular"
+        android:fontStyle="normal"
+        android:fontWeight="700"
+        android:fontVariationSettings="'wght' 700" />
+    <font
+        android:font="@font/playfair_display_italic"
+        android:fontStyle="italic"
+        android:fontWeight="400"
+        android:fontVariationSettings="'wght' 400" />
+    <font
+        android:font="@font/playfair_display_italic"
+        android:fontStyle="italic"
+        android:fontWeight="700"
+        android:fontVariationSettings="'wght' 700" />
+</font-family>

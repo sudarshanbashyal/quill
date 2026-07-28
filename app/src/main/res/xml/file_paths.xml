@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backs the FileProvider declared in AndroidManifest. The single entry has to cover
+     getFilesDir()/images, which is where ImageEmbedder.createPrivateImageFile() writes the
+     capture target it hands to the camera app. -->
+<paths>
+    <files-path
+        name="images"
+        path="images/" />
+</paths>

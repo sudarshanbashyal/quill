@@ -9,9 +9,20 @@
     <!-- Cards -->
     <dimen name="card_corner_radius">18dp</dimen>
     <dimen name="card_elevation">0dp</dimen>
+    <!-- Note rows are a shorter, tighter card than collection/pinned cards, so they get their own
+         (smaller) radius rather than reusing card_corner_radius. -->
+    <dimen name="note_row_corner_radius">12dp</dimen>
 
     <!-- Home header -->
     <dimen name="header_corner_radius">28dp</dimen>
+    <!-- Header gradient block. In the Figma it is 177dp tall but the content sheet starts at
+         120dp and covers the rest, so the visible band is 120dp — hence the height here and the
+         (negative) overlap below, which pulls the sheet up over the gradient's bottom edge. -->
+    <dimen name="header_min_height">176dp</dimen>
+    <dimen name="content_sheet_overlap">-56dp</dimen>
+
+    <!-- Search field (fragment_home / fragment_collection_detail) -->
+    <dimen name="search_corner_radius">12dp</dimen>
 
     <!-- Color swatch picker (TagPickerDialog) -->
     <dimen name="swatch_size">36dp</dimen>
@@ -20,10 +31,11 @@
 
     <!-- Tag chips (TagChipView) -->
     <dimen name="chip_padding_horizontal">10dp</dimen>
-    <dimen name="chip_padding_vertical">4dp</dimen>
-    <dimen name="chip_corner_radius">999dp</dimen>
     <dimen name="chip_spacing">6dp</dimen>
     <dimen name="chip_max_width">120dp</dimen>
+    <!-- Target overall pill height; replaces the old chip_padding_vertical now that Chip
+         controls vertical sizing via min-height rather than View padding. -->
+    <dimen name="chip_min_height">24dp</dimen>
 
     <!-- Tag picker dialog (TagPickerDialog) -->
     <dimen name="tag_dot_size">14dp</dimen>

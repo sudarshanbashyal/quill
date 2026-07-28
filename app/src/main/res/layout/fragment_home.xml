@@ -16,6 +16,7 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@drawable/bg_home_header"
+            android:minHeight="@dimen/header_min_height"
             android:paddingHorizontal="@dimen/spacing_lg"
             android:paddingTop="@dimen/spacing_lg"
             android:paddingBottom="@dimen/spacing_lg">
@@ -24,6 +25,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/home_greeting"
+                android:fontFamily="@font/playfair_display"
                 android:textSize="24sp"
                 android:textStyle="italic|bold"
                 android:textColor="@color/text_primary" />
@@ -38,10 +40,21 @@
 
         </LinearLayout>
 
+        <!-- Everything below the greeting rides on a sheet whose rounded top corners overlap
+             the header gradient — see bg_content_sheet. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="@dimen/content_sheet_overlap"
+            android:background="@drawable/bg_content_sheet"
+            android:orientation="vertical">
+
         <LinearLayout
             android:id="@+id/pinned_section"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -74,23 +87,34 @@
 
         </LinearLayout>
 
-        <EditText
-            android:id="@+id/search_input"
+        <!-- hintEnabled=false keeps the hint as static placeholder text inside the box (as the
+             Figma draws it) instead of animating it up into a floating label. -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/search_field"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_margin="@dimen/spacing_md"
-            android:background="@drawable/bg_search_field"
-            android:drawableStart="@android:drawable/ic_menu_search"
-            android:drawablePadding="@dimen/spacing_sm"
-            android:drawableTint="@color/text_secondary"
-            android:hint="@string/search_hint"
-            android:inputType="text"
-            android:maxLines="1"
-            android:paddingHorizontal="@dimen/spacing_md"
-            android:paddingVertical="@dimen/spacing_sm"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_secondary"
-            android:textSize="14sp" />
+            app:boxCornerRadiusBottomEnd="@dimen/search_corner_radius"
+            app:boxCornerRadiusBottomStart="@dimen/search_corner_radius"
+            app:boxCornerRadiusTopEnd="@dimen/search_corner_radius"
+            app:boxCornerRadiusTopStart="@dimen/search_corner_radius"
+            app:hintEnabled="false"
+            app:startIconDrawable="@android:drawable/ic_menu_search"
+            app:startIconTint="@color/text_secondary">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/search_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/search_hint"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:textSize="14sp" />
+
+        </com.google.android.material.textfield.TextInputLayout>
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler_home"
@@ -99,6 +123,8 @@
             android:layout_weight="1"
             android:clipToPadding="false"
             android:paddingBottom="88dp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

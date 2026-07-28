@@ -17,7 +17,7 @@ import android.content.ContentValues;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.fragment.app.Fragment;
 
 import mse.quill.R;
@@ -249,7 +249,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     }
 
     private void confirmClear() {
-        new AlertDialog.Builder(requireContext())
+        new MaterialAlertDialogBuilder(requireContext())
                 .setTitle("Clear Whiteboard")
                 .setMessage("This will erase everything on this whiteboard. Continue?")
                 .setPositiveButton("Clear", (d, w) -> clearWhiteboard())

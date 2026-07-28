@@ -1,6 +1,7 @@
 package mse.quill.ui.notes.editor;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -86,8 +87,17 @@ public class ImageEmbedder {
             );
             Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
             intent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
+            // The camera app is a separate process, so it needs explicit permission on our
+            // content:// URI — without the write grant it can't save and returns
+            // RESULT_CANCELED. The read grant is granted implicitly today, but Android logs
+            // that implicit grants for ACTION_IMAGE_CAPTURE end in Android 18, so set both.
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             cameraLauncher.launch(intent);
         } catch (IOException e) {
+            listener.onImageFailed();
+        } catch (ActivityNotFoundException e) {
+            // No camera app installed (common on bare emulator images).
             listener.onImageFailed();
         }
     }

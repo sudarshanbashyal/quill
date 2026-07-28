@@ -1,18 +1,18 @@
 package mse.quill.ui.tags;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
-import android.widget.CheckBox;
-import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.checkbox.MaterialCheckBox;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputLayout;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,11 +22,16 @@ import java.util.Set;
 import mse.quill.R;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
+import mse.quill.util.TextFieldUtils;
 
 /**
  * Dialog for attaching/removing a note's tags: a checklist of every existing tag plus an inline
  * "new tag" row (name + color swatch) that creates and immediately checks a new tag without
- * closing the dialog. Matches the AlertDialog-based idiom used by CollectionDialogs.
+ * closing the dialog. Matches the MaterialAlertDialogBuilder idiom used by CollectionDialogs.
+ *
+ * The color swatches stay hand-drawn GradientDrawable circles on purpose: Material 3 has no
+ * color-picker component, so wrapping them in a Material widget would add indirection without
+ * changing how they look or behave.
  */
 public final class TagPickerDialog {
 
@@ -55,14 +60,12 @@ public final class TagPickerDialog {
             checklistContainer.addView(buildTagRow(context, tag, selectedIds));
         }
 
-        EditText nameInput = new EditText(context);
-        nameInput.setHint(R.string.new_tag_hint);
-        nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        TextInputLayout nameField = TextFieldUtils.outlinedField(context, R.string.new_tag_hint);
         LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         nameParams.topMargin = dp(context, R.dimen.spacing_md);
-        nameInput.setLayoutParams(nameParams);
-        content.addView(nameInput);
+        nameField.setLayoutParams(nameParams);
+        content.addView(nameField);
 
         int[] palette = context.getResources().getIntArray(R.array.swatch_color_palette);
         int[] selectedColor = {palette[0]};
@@ -72,9 +75,8 @@ public final class TagPickerDialog {
         content.addView(colorScroll);
         colorScroll.addView(buildColorPicker(context, palette, selectedColor[0], color -> selectedColor[0] = color));
 
-        Button addButton = new Button(context);
+        MaterialButton addButton = new MaterialButton(context);
         addButton.setText(R.string.action_add_tag);
-        addButton.setAllCaps(false);
         LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         addParams.topMargin = dp(context, R.dimen.spacing_sm);
@@ -82,19 +84,19 @@ public final class TagPickerDialog {
         content.addView(addButton);
 
         addButton.setOnClickListener(v -> {
-            String name = nameInput.getText().toString().trim();
+            String name = nameField.getEditText().getText().toString().trim();
             if (name.isEmpty()) return;
             tagRepository.createTag(name, selectedColor[0], newTag -> {
                 selectedIds.add(newTag.id);
                 checklistContainer.addView(buildTagRow(context, newTag, selectedIds));
-                nameInput.setText("");
+                nameField.getEditText().setText("");
             });
         });
 
         ScrollView scrollView = new ScrollView(context);
         scrollView.addView(content);
 
-        new AlertDialog.Builder(context)
+        new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.dialog_tags_title)
                 .setView(scrollView)
                 .setPositiveButton(R.string.action_done, (dialog, which) ->
@@ -119,7 +121,7 @@ public final class TagPickerDialog {
         dot.setBackground(dotDrawable);
         row.addView(dot);
 
-        CheckBox checkBox = new CheckBox(context);
+        MaterialCheckBox checkBox = new MaterialCheckBox(context);
         checkBox.setText(tag.name);
         checkBox.setChecked(selectedIds.contains(tag.id));
         checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {

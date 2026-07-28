@@ -1,14 +1,14 @@
 package mse.quill.ui.collections;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.text.Editable;
-import android.text.InputType;
 import android.text.TextWatcher;
-import android.widget.CheckBox;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+
+import com.google.android.material.checkbox.MaterialCheckBox;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputLayout;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -20,6 +20,7 @@ import mse.quill.R;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Note;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.util.TextFieldUtils;
 
 /**
  * Dialog for finding existing notes (from anywhere in the app) and adding them to a collection:
@@ -39,10 +40,8 @@ public final class AddExistingNotesDialog {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(pad, pad, pad, pad);
 
-        EditText searchInput = new EditText(context);
-        searchInput.setHint(R.string.search_hint);
-        searchInput.setInputType(InputType.TYPE_CLASS_TEXT);
-        content.addView(searchInput);
+        TextInputLayout searchField = TextFieldUtils.outlinedField(context, R.string.search_hint);
+        content.addView(searchField);
 
         LinearLayout checklistContainer = new LinearLayout(context);
         checklistContainer.setOrientation(LinearLayout.VERTICAL);
@@ -56,7 +55,7 @@ public final class AddExistingNotesDialog {
         content.addView(scroll);
 
         Runnable rebuild = () -> {
-            String query = searchInput.getText().toString().trim().toLowerCase(Locale.getDefault());
+            String query = searchField.getEditText().getText().toString().trim().toLowerCase(Locale.getDefault());
             checklistContainer.removeAllViews();
             for (Note note : candidateNotes) {
                 String title = NoteDisplayUtils.resolveTitle(context, note).toLowerCase(Locale.getDefault());
@@ -66,13 +65,13 @@ public final class AddExistingNotesDialog {
         };
         rebuild.run();
 
-        searchInput.addTextChangedListener(new TextWatcher() {
+        searchField.getEditText().addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override public void afterTextChanged(Editable s) { rebuild.run(); }
         });
 
-        new AlertDialog.Builder(context)
+        new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.dialog_add_existing_notes_title)
                 .setView(content)
                 .setPositiveButton(R.string.action_add, (dialog, which) ->
@@ -94,8 +93,8 @@ public final class AddExistingNotesDialog {
         }
     }
 
-    private static CheckBox buildNoteRow(Context context, Note note, Set<String> selectedIds) {
-        CheckBox checkBox = new CheckBox(context);
+    private static MaterialCheckBox buildNoteRow(Context context, Note note, Set<String> selectedIds) {
+        MaterialCheckBox checkBox = new MaterialCheckBox(context);
         checkBox.setText(NoteDisplayUtils.resolveTitle(context, note));
         checkBox.setChecked(selectedIds.contains(note.id));
         checkBox.setOnCheckedChangeListener((button, isChecked) -> {

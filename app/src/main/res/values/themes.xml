@@ -1,20 +1,23 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Theme.Quill" parent="Theme.MaterialComponents.Light.NoActionBar">
+    <style name="Theme.Quill" parent="Theme.Material3.Light.NoActionBar">
         <!-- Primary brand color. -->
         <item name="colorPrimary">@color/brand_purple</item>
-        <item name="colorPrimaryVariant">@color/brand_purple_dark</item>
         <item name="colorOnPrimary">@color/text_on_brand</item>
-        <!-- Secondary brand color. -->
+        <item name="colorPrimaryContainer">@color/brand_purple_light</item>
+        <item name="colorOnPrimaryContainer">@color/text_primary</item>
+        <!-- Secondary brand color (no distinct secondary hue defined yet — reuses primary). -->
         <item name="colorSecondary">@color/brand_purple</item>
-        <item name="colorSecondaryVariant">@color/brand_purple_dark</item>
         <item name="colorOnSecondary">@color/text_on_brand</item>
+        <item name="colorSecondaryContainer">@color/brand_purple_light</item>
+        <item name="colorOnSecondaryContainer">@color/text_primary</item>
         <!-- Surfaces / backgrounds. -->
         <item name="android:colorBackground">@color/app_background</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/text_primary</item>
         <item name="colorOnBackground">@color/text_primary</item>
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+        <!-- Status bar color. M3 dropped colorPrimaryVariant, so this is hardcoded to the same
+             dark-purple that used to back it. -->
+        <item name="android:statusBarColor">@color/brand_purple_dark</item>
     </style>
 </resources>
