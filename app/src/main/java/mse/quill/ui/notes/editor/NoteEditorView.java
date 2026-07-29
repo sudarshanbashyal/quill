@@ -1,8 +1,10 @@
 package mse.quill.ui.notes.editor;
 
 import android.content.Context;
+import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.util.AttributeSet;
+import android.view.View;
 import android.widget.LinearLayout;
 
 import java.util.ArrayList;
@@ -12,10 +14,12 @@ import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.HeadingMarker;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.ui.notes.editor.model.QaSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.notes.editor.segment.AudioSegmentView;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.segment.ImageSegmentView;
+import mse.quill.ui.notes.editor.segment.QASegmentView;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
 
 public class NoteEditorView extends LinearLayout implements BaseSegmentView.SegmentCallback {
@@ -143,65 +147,110 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         }
     }
 
+    /**
+     * Inserts an empty Q&A block after whatever is focused, splitting the current text segment at
+     * the caret exactly as an image or audio insert does — a Q&A is a block in the document, so it
+     * behaves like one.
+     */
+    public void insertQaBlockAfterFocused() {
+        int insertAt = splitFocusedTextForBlockInsert();
+        addQaSegment(null, new SpannableStringBuilder(""), new SpannableStringBuilder(""), insertAt);
+        ((QASegmentView) segments.get(insertAt)).focusQuestion();
+    }
+
+    /**
+     * Splits the focused text segment at the caret and returns the index a block should be
+     * inserted at, leaving a trailing text segment after it so there is always somewhere to keep
+     * writing. Returns the end of the list when nothing text-like is focused.
+     */
+    private int splitFocusedTextForBlockInsert() {
+        int focusedIndex = getFocusedSegmentIndex();
+        if (focusedIndex < 0 || !(segments.get(focusedIndex) instanceof TextSegmentView)) {
+            int insertAt = segments.size();
+            addTextSegment(new SpannableStringBuilder(""), insertAt + 1);
+            return insertAt;
+        }
+
+        TextSegmentView textView = (TextSegmentView) segments.get(focusedIndex);
+        android.widget.EditText editText = textView.getEditText();
+        int cursor = Math.max(0, editText.getSelectionStart());
+
+        SpannableStringBuilder before = new SpannableStringBuilder(
+                editText.getText().subSequence(0, cursor));
+        SpannableStringBuilder after = new SpannableStringBuilder(
+                editText.getText().subSequence(cursor, editText.getText().length()));
+
+        textView.setText(before);
+        textView.clearBulletContinuation();
+
+        int insertAt = focusedIndex + 1;
+        addTextSegment(after, insertAt);
+        return insertAt;
+    }
+
     /** Focuses the end of the last segment — used when the user taps empty space below the
      *  content to keep writing, rather than having to hit an existing line precisely. */
     public void focusEnd() {
         if (segments.isEmpty()) return;
-        BaseSegmentView last = segments.get(segments.size() - 1);
-        if (last instanceof TextSegmentView) {
-            ((TextSegmentView) last).focusAtEnd();
+        // A note ending in a block (image, audio, Q&A) has nowhere to put the caret, so tapping
+        // below it did nothing at all. Give it somewhere to go.
+        if (!(segments.get(segments.size() - 1) instanceof TextSegmentView)) {
+            addTextSegment(new SpannableStringBuilder(""), segments.size());
         }
+        ((TextSegmentView) segments.get(segments.size() - 1)).focusAtEnd();
     }
 
     public void applyBoldToFocused() {
-        TextSegmentView focused = getFocusedTextSegment();
-        if (focused != null) focused.applyBold();
+        RichTextField field = getFocusedField();
+        if (field != null) field.applyBold();
     }
 
     public void applyItalicToFocused() {
-        TextSegmentView focused = getFocusedTextSegment();
-        if (focused != null) focused.applyItalic();
+        RichTextField field = getFocusedField();
+        if (field != null) field.applyItalic();
     }
 
     public void applyUnderlineToFocused() {
-        TextSegmentView focused = getFocusedTextSegment();
-        if (focused != null) focused.applyUnderline();
+        RichTextField field = getFocusedField();
+        if (field != null) field.applyUnderline();
     }
 
     public void applyHeadingToFocused(int level) {
-        TextSegmentView focused = getFocusedTextSegment();
-        if (focused != null) focused.applyHeading(level);
+        RichTextField field = getFocusedField();
+        if (field != null) field.applyHeading(level);
     }
 
     public void applyBulletListToFocused() {
-        TextSegmentView focused = getFocusedTextSegment();
-        if (focused != null) focused.applyBulletList();
+        RichTextField field = getFocusedField();
+        if (field != null) field.applyBulletList();
     }
 
-    public boolean isBoldActive() {
-        TextSegmentView focused = getFocusedTextSegment();
-        return focused != null && focused.isBoldActive();
+    /**
+     * The editable the caret is in, wherever it lives — a body segment's field or one of a Q&A
+     * block's two. Resolved by asking the view tree for its focused descendant rather than by
+     * walking the segment list, so a segment holding several fields needs no special case here.
+     */
+    public RichTextField getFocusedField() {
+        View focused = findFocus();
+        return focused instanceof RichTextField ? (RichTextField) focused : null;
     }
 
-    public boolean isItalicActive() {
-        TextSegmentView focused = getFocusedTextSegment();
-        return focused != null && focused.isItalicActive();
-    }
+    /** Everything the toolbar needs: what's on, and what the focused field even offers. */
+    public FormattingState getFormattingState() {
+        RichTextField field = getFocusedField();
+        if (field == null) return FormattingState.none();
 
-    public boolean isUnderlineActive() {
-        TextSegmentView focused = getFocusedTextSegment();
-        return focused != null && focused.isUnderlineActive();
-    }
-
-    /** Heading level of the focused segment's current line, or 0 for none. */
-    public int getActiveHeadingLevel() {
-        TextSegmentView focused = getFocusedTextSegment();
-        return focused == null ? 0 : focused.currentHeadingLevel();
-    }
-
-    public boolean isBulletListActive() {
-        TextSegmentView focused = getFocusedTextSegment();
-        return focused != null && focused.isBulletActive();
+        FormattingState state = new FormattingState();
+        state.bold = field.isBoldActive();
+        state.italic = field.isItalicActive();
+        state.underline = field.isUnderlineActive();
+        state.bullet = field.isBulletActive();
+        state.headingLevel = field.currentHeadingLevel();
+        state.headingsAllowed = field.areHeadingsAllowed();
+        // Embeds and Q&A blocks are siblings of a text segment, so they can only be inserted from
+        // one — which is the same set of fields that allows headings.
+        state.embedsAllowed = field.areHeadingsAllowed();
+        return state;
     }
 
     public List<BaseSegmentView> getSegments() {
@@ -226,6 +275,9 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
             } else if (segment instanceof AudioSegment) {
                 AudioSegment audio = (AudioSegment) segment;
                 addAudioSegment(audio.id, audio.filePath, audio.durationMs, segments.size());
+            } else if (segment instanceof QaSegment) {
+                QaSegment qa = (QaSegment) segment;
+                addQaSegment(qa.id, qa.question, qa.answer, segments.size());
             } else if (segment instanceof TextSegment) {
                 addTextSegment(new SpannableStringBuilder(((TextSegment) segment).content), segments.size());
             }
@@ -246,6 +298,11 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
             } else if (view.getSegmentType() == NoteSegment.TYPE_AUDIO) {
                 AudioSegmentView audioView = (AudioSegmentView) view;
                 segment = new AudioSegment(audioView.getFilePath(), audioView.getDurationMs());
+            } else if (view.getSegmentType() == NoteSegment.TYPE_QA) {
+                QASegmentView qaView = (QASegmentView) view;
+                segment = new QaSegment(
+                        new SpannableStringBuilder(qaView.getQuestion()),
+                        new SpannableStringBuilder(qaView.getAnswer()));
             } else {
                 SpannableStringBuilder snapshot = new SpannableStringBuilder((CharSequence) view.getSegmentData());
                 segment = new TextSegment(snapshot);
@@ -270,16 +327,26 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     public String getPlainText() {
         StringBuilder sb = new StringBuilder();
         for (BaseSegmentView view : segments) {
-            if (!(view instanceof TextSegmentView)) continue;
-            CharSequence text = ((TextSegmentView) view).getText();
-            if (text.length() == 0) continue;
-            if (sb.length() > 0) sb.append(". ");
-            for (String line : text.toString().split("\n", -1)) {
-                sb.append(HeadingMarker.strip(line)).append('\n');
+            if (view instanceof TextSegmentView) {
+                appendSpoken(sb, ((TextSegmentView) view).getText());
+            } else if (view instanceof QASegmentView) {
+                // Read a Q&A as the pair it is, so listening to a note doesn't silently skip it.
+                QASegmentView qa = (QASegmentView) view;
+                appendSpoken(sb, qa.getQuestion());
+                appendSpoken(sb, qa.getAnswer());
             }
-            sb.setLength(sb.length() - 1);
         }
         return sb.toString();
+    }
+
+    private static void appendSpoken(StringBuilder sb, CharSequence text) {
+        if (text == null || text.length() == 0) return;
+        if (sb.length() > 0) sb.append(". ");
+        String[] lines = text.toString().split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) sb.append('\n');
+            sb.append(HeadingMarker.strip(lines[i]));
+        }
     }
 
     // ── SegmentCallback ────────────────────────────────────────────────────
@@ -334,10 +401,11 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
 
             removeSegment(index);
 
-        } else if (previous instanceof ImageSegmentView || previous instanceof AudioSegmentView) {
-            // Backspace at start of text after image/audio — delete the embed
-            onRequestDelete(previous);
         }
+        // Backspacing into a block (image, audio, Q&A) deliberately does nothing. It used to
+        // delete it, which meant a single keypress on the line below could silently destroy a
+        // photo or a typed-out question — with no confirmation and no undo. Blocks are removed
+        // only by long-pressing them, which asks first.
     }
 
     @Override
@@ -388,6 +456,24 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         insertSegment(view, index);
     }
 
+    private void addQaSegment(String segmentId, Spannable question, Spannable answer, int index) {
+        QASegmentView view = new QASegmentView(getContext(), segmentId);
+        view.setContent(question, answer);
+        view.setCallback(this);
+        insertSegment(view, index);
+    }
+
+    /** Re-points the body hint at whatever is now the last text segment. Called from the two
+     *  places the segment list can change shape, so no insert/remove path can forget it. */
+    private void updateHints() {
+        for (int i = 0; i < segments.size(); i++) {
+            BaseSegmentView view = segments.get(i);
+            if (view instanceof TextSegmentView) {
+                ((TextSegmentView) view).setHintVisible(i == segments.size() - 1);
+            }
+        }
+    }
+
     private void insertSegment(BaseSegmentView view, int index) {
         if (index < 0 || index >= segments.size()) {
             segments.add(view);
@@ -396,12 +482,14 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
             segments.add(index, view);
             addView(view, index);
         }
+        updateHints();
     }
 
     private void removeSegment(int index) {
         BaseSegmentView view = segments.remove(index);
         if (view instanceof AudioSegmentView) ((AudioSegmentView) view).stopIfPlaying();
         removeView(view);
+        updateHints();
     }
 
     private int getFocusedSegmentIndex() {
@@ -411,12 +499,4 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         return segments.size() - 1; // default to last
     }
 
-    private TextSegmentView getFocusedTextSegment() {
-        for (BaseSegmentView seg : segments) {
-            if (seg.hasFocus() && seg instanceof TextSegmentView) {
-                return (TextSegmentView) seg;
-            }
-        }
-        return null;
-    }
 }

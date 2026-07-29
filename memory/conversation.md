@@ -382,3 +382,55 @@ scaled image's width).
 
 **Verified on the emulator** end-to-end, plus 7 new tests covering rotation per orientation tag,
 bounding, and that an already-upright image is left byte-identical.
+
+## 2026-07-29 — Feature implementation: Q&A blocks in notes
+
+**Asked:** a distinct Q&A block per the MSE Figma's **QA** frame — question above, answer behind a
+green rule; bold/italic/list in both halves; heading/image/audio disabled while inside.
+
+**Design pulled from Figma** (frame `108:4`). The block's fill turned out to be `#F5F6FA` — the
+`surface_container` token already in use for note rows — so no new surface was invented. The green
+came back as an image asset rather than a colour, so it was sampled from the rendered separator:
+`#30B488`.
+
+**Key structural decision:** all the formatting behaviour lived inside `TextSegmentView`, and a Q&A
+needs the same thing in two fields. Rather than copy it, it was extracted into `RichTextField` —
+`TextSegmentView` wraps one, `QASegmentView` wraps two. That extraction is also what made the
+disabling clean: **capabilities are a property of the field, not the toolbar**. A Q&A field declares
+`headingsAllowed = false`; the toolbar greys controls by asking the focused field and never learns
+what a Q&A is. Refusal is enforced in the field too (`applyHeading` no-ops), not just hidden.
+
+**Storage:** a fenced ` ```quill-qa ` block with a `---` divider between question and answer, chosen
+over per-line `Q:`/`A:` prefixes so both halves stay ordinary multi-line Markdown. Content that
+looks like scaffolding is escaped; a truncated document is read to the end rather than dropping
+text — a real off-by-one the tests caught, where the fence-end index ate the last line.
+
+**Flagged:** the toolbar icon was a placeholder authored here, since neither the Figma frame nor the
+supplied icon set had a Q&A glyph. Replaced with `ic_question.png` in the follow-up below.
+
+**Also removed:** `RichTextEditor` and `ImagePathSpan` — early prototypes superseded by
+`TextSegmentView`, referenced by nothing but each other.
+
+## 2026-07-29 — Bug fix: three Q&A follow-ups
+
+**1. Toolbar stayed disabled after leaving a Q&A block.** State refreshed on content *and selection*
+change — but not **focus**. Moving from a Q&A field to the trailing text segment often lands the
+caret at an offset it already had, and Android fires no selection callback when the value doesn't
+change, so nothing ever re-asked which field was focused. Fixed by reporting focus in its own right,
+since focus is what decides *whose* capabilities are on display. While there: `focusEnd()` only
+worked when the note's last segment was text, so tapping below a note ending in a block silently did
+nothing — it now appends a text segment first.
+
+**2. Placeholder shown on every empty text segment.** The empty segments a block insert leaves
+behind mid-note each said "Write something…". Now only the note's last text segment prompts, via
+`NoteEditorView.updateHints()` called from the two places the segment list can change shape.
+
+**3. Backspace deleted blocks.** Backspacing at the start of the line below an image, audio or Q&A
+removed it — one keypress, no confirmation, no undo. Removed entirely; blocks are long-press only.
+This exposed that **Q&A had no delete path at all** (long-press was never wired for it), so that was
+added with the same confirmation dialog.
+
+**Known rough edge, stated rather than hidden:** on a Q&A the long-press target is the card's chrome,
+not the text, because long-press inside a field has to stay text selection — that's how part of an
+answer gets bolded. Offered two ways to widen it (more padding, or long-press-deletes on an empty
+field) if it proves fiddly in use.

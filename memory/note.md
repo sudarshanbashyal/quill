@@ -33,7 +33,7 @@ Single Activity (`MainActivity`) hosting a `NavHostFragment` (`nav_graph.xml`):
 ## Persistence layer
 
 **No Room.** `AppDatabase extends SQLiteOpenHelper` directly (`data/AppDatabase.java`),
-hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 2`; `onUpgrade` is
+hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 3`; `onUpgrade` is
 currently **destructive** (drops every table and recreates) — fine for pre-release
 development, but will need real migrations before this ships with user data worth
 keeping.
@@ -104,9 +104,10 @@ rich-text blob:
 - `TextSegment` — wraps a `Spannable` (bold/italic/underline/heading/bullet spans)
 - `ImageSegment` — file path + optional display width
 - `AudioSegment` — file path + duration
+- `QaSegment` — two `Spannable`s, question and answer (see "Q&A blocks" below)
 
 `NoteEditorView` (a `LinearLayout`) renders one `BaseSegmentView` child per segment
-(`TextSegmentView` / `ImageSegmentView` / `AudioSegmentView`) and stitches them
+(`TextSegmentView` / `ImageSegmentView` / `AudioSegmentView` / `QASegmentView`) and stitches them
 together to *feel* like one continuous document: typing Enter, inserting an image/audio
 mid-paragraph, or backspacing at position 0 of a segment all route through
 `BaseSegmentView.SegmentCallback` (`onRequestSplitAt` / `onRequestDelete` /
@@ -193,7 +194,7 @@ unconditionally after the try/catch block, even on the success path — cosmetic
 success also shows its own "Saved to…" toast first) but worth fixing if that code is
 touched again.
 
-## Markdown note format — implemented; Q&A segments & flashcards still planned
+## Markdown note format — implemented; flashcards still planned
 
 **Storage: done (2026-07-28).** The "Full" option below was chosen: a note is one
 Markdown document in `notes.content_blob`, `note_segments` demoted to a media asset
@@ -210,6 +211,7 @@ registry. See "Note content model" above for how it actually works, and
 | Bullet list | `- item` |
 | Image | `![](quill://image/<asset-id>)` |
 | Audio | `![audio](quill://audio/<asset-id>)` |
+| Q&A block | fenced ` ```quill-qa `, question, `---`, answer, ` ``` ` |
 
 Note this differs from the original sketch: embeds reference an **asset id**, not a file
 path or an HTML tag, because the metadata (width, duration, transcript) has to live on a
@@ -218,15 +220,8 @@ portable Markdown becomes a matter of rewriting `quill://` URIs to relative path
 Markwon was **not** adopted — it renders, but doesn't help with editing, and the
 round-trip is hand-written in `MarkdownSerializer`.
 
-**Still to design/build** (Epic D): the whiteboard embed and Q&A block. The reserved
-shapes are `![whiteboard](quill://whiteboard/<id>)` for the former and a fenced
-`` ```quill-qa:<flashcard-id> `` block for the latter.
-
-**Q&A segment**: a new `NoteSegment.TYPE_QA` / `QASegmentView`, alongside Image/Audio —
-a bordered two-field card (plain-text Question, plain-text Answer; no rich text in v1).
-Deliberately *not* an Anki-style inline cloze marker (`{{c1::text}}`) wrapped around
-arbitrary selected text — Q&A content is meant to be visibly structured in the note
-itself, not hidden inside prose.
+**Still to design/build** (Epic D): the whiteboard embed, reserved as
+`![whiteboard](quill://whiteboard/<id>)`.
 
 **Flashcard generation & sync**: "Create/Sync Flashcards" on the note screen turns every
 `TYPE_QA` segment into a row in the (already-existing, currently-unused) `flashcards`
@@ -483,7 +478,7 @@ focused the input happened while the keyboard was down, and with no window resiz
 
 ## Formatting toolbar
 
-`FormattingToolbarController` builds eight `FormattingButtonView` items into the
+`FormattingToolbarController` builds nine `FormattingButtonView` items into the
 `formatting_toolbar` LinearLayout with equal weights, so they divide the bar's full width
 and the row can never overflow (no scroll container needed).
 
@@ -494,13 +489,60 @@ second keyboard rather than as part of the app. That's also why the item is a co
 view rather than a bare `MaterialButton` — the button has no way to stack an indicator
 under its icon. The whole weighted slot is the touch target, so the glyph can be small.
 
-**Active state comes from two different sources**, which is easy to get wrong:
-bold/italic/underline are a *pending typing mode*, but heading and bullet describe **the
-line the caret is in**. The latter go stale on any caret move, so `TextSegmentView`
-wraps its `EditText` to report `onSelectionChanged`, routed up as
-`NoteEditorView.SelectionChangeListener` — deliberately separate from
+**Toolbar state comes from three different sources**, which is easy to get wrong, and is
+why it's carried in a `FormattingState` value object rather than a positional argument
+list:
+
+1. bold/italic/underline — a *pending typing mode*;
+2. heading and bullet — properties of **the line the caret is in**;
+3. what's offered at all (`headingsAllowed`, `embedsAllowed`) — a property of **the field
+   the caret is in**. A Q&A field refuses headings and embeds, so those controls grey out
+   (`FormattingButtonView.setAvailable`, which also clears the marker so a heading dot
+   can't be left lit where headings don't exist).
+
+(2) and (3) both go stale when the caret moves, so `RichTextField` reports **both**
+`onSelectionChanged` *and* `onFocusChanged`. Focus is not redundant: moving between fields
+often lands the caret at an offset it already had, and Android fires no selection callback
+when the value doesn't change — which is exactly how stepping out of a Q&A block used to
+leave headings and embeds greyed out. Both route up as
+`NoteEditorView.SelectionChangeListener`, deliberately separate from
 `ContentChangeListener`, since a caret move is not an edit and must not schedule an
 autosave.
+
+## Q&A blocks
+
+Design source: the MSE Figma file's **QA** frame. A tonal rounded card (`surface_container`,
+the same fill as note rows) holding a muted question line above an answer indented behind a
+green vertical rule (`#30B488`, sampled from the frame's separator asset).
+
+**`RichTextField` is the reusable piece.** All the formatting behaviour — inline styles,
+bullets and continuation, heading markers, active-format typing, caret/focus reporting —
+used to live inside `TextSegmentView`. A Q&A needs the same thing in *two* fields, so it was
+extracted: `TextSegmentView` now wraps one `RichTextField`, `QASegmentView` wraps two. The
+rules are subtle enough (derived heading spans, the identity-tracked restyle) that a second
+copy would have drifted.
+
+**Capabilities belong to the field.** `RichTextField.setHeadingsAllowed(false)` is how a Q&A
+refuses headings; the toolbar greys controls by asking the focused field and never learns
+what a Q&A is. Refusal is real, not cosmetic — `applyHeading` is a no-op on such a field, so
+a stray call can't sneak a heading in. Embeds and the Q&A button itself are gated on the
+same flag, which also stops a Q&A nesting inside another.
+
+**Why no blocks inside:** a Q&A is one atomic question and one atomic answer destined to
+become a flashcard, not a place to nest document structure.
+
+**Deletion is long-press only.** Backspacing at the start of the line below a block used to
+delete it — one keypress, no confirmation, no undo, and it applied to photos and typed-out
+answers alike. That's gone; `onRequestMergeWithPrevious` now does nothing when the previous
+segment is a block. **Known rough edge**: on a Q&A the long-press target is the card's
+chrome (padding, and the ~27dp gutter left of the answer), because a long-press inside
+either field has to remain text selection — that's how you select part of an answer to bold
+it. Image and audio don't have this problem, having no editable children.
+
+**Hints**: only the note's *last* text segment shows "Write something…". The empty segments
+a block insert leaves behind mid-note are structural gaps, not invitations; repeating the
+prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points it from
+`insertSegment`/`removeSegment`, the two places the list can change shape.
 
 ## Conventions worth following
 

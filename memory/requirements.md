@@ -49,7 +49,7 @@ masquerading as migration bugs).
         `new Thread(...)` calls onto the shared `AppExecutors.diskIO()` used by the
         other repositories
   - [ ] Audit all fragments for any accidental main-thread `SQLiteDatabase` access
-- [ ] **Automated test coverage** *(56 instrumented tests as of 2026-07-29, up from 2
+- [ ] **Automated test coverage** *(70 instrumented tests as of 2026-07-29, up from 2
       placeholders — all under `app/src/androidTest`, run with
       `./gradlew :app:connectedDebugAndroidTest`)*
   - [x] Markdown round-trip (`MarkdownSerializerTest`): headings, bullets, blank-line
@@ -62,6 +62,10 @@ masquerading as migration bugs).
         across a newline, heading styling vs. user styling
   - [x] Image orientation (`BitmapUtilsTest`): EXIF rotation per tag, bounding, no
         needless re-encode
+  - [x] Q&A round-trip (`NoteDocumentTest`): fenced block, multi-line halves, formatting,
+        scaffolding-lookalike escaping, unterminated fence
+  - [x] Q&A field capabilities (`QaFieldCapabilitiesTest`): headings refused for real,
+        inline formatting and bullets still available
   - [ ] Collection/Tag repository CRUD — still uncovered
   - [ ] `NoteEditorView` segment split/merge/delete (image/audio insertion mid-text,
         backspace-merge at segment boundary) — still uncovered
@@ -89,8 +93,10 @@ there's a window where "locked" content leaves the device unencrypted.
 - [ ] **Actual cryptographic protection, not just an access gate**
   - [ ] Per-collection key in Android Keystore, generated with
         `setUserAuthenticationRequired(true)`
-  - [ ] Encrypt locked collections' note content (`notes.title`, segment
-        `text_content`/`file_path` payloads) at rest; decrypt only after biometric auth
+  - [ ] Encrypt locked collections' note content (`notes.title`, `notes.content_blob`, and
+        the media files referenced by `note_segments.file_path`) at rest; decrypt only
+        after biometric auth. Note this changed shape with the Markdown migration — the
+        body is now one blob per note, not per-segment `text_content` rows
   - [ ] Handle key invalidation gracefully (e.g. user re-enrolls a fingerprint) instead
         of silently locking the user out of their own data
 - [ ] **Migration cases**
@@ -172,13 +178,21 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
   - [x] `BaseSegmentView` now owns a stable id, round-tripped through export/import.
         Forced by the migration itself (embed references would break on every save) and
         no longer blocking the flashcard link below
-- [ ] **Q&A segment**
-  - [ ] New `NoteSegment.TYPE_QA` + `QASegmentView`: bordered two-field card, plain-text
-        Question / plain-text Answer (no rich text in v1) — not an inline cloze marker;
-        Q&A content should be visibly structured in the note, not hidden in prose
-  - [ ] Markdown form once the storage-scope decision lands: fenced
-        `` ```quill-qa:<flashcard-id> `` block
-- [ ] **Flashcard generation & sync**
+- [x] **Q&A segment** *(done 2026-07-29)*
+  - [x] `NoteSegment.TYPE_QA` + `QaSegment` + `QASegmentView`, styled from the MSE Figma's
+        **QA** frame: tonal card, muted question above an answer behind a green
+        (`#30B488`) rule. Not an inline cloze marker — Q&A is visibly structured in the note
+  - [x] **Rich text in both halves after all**, not the plain-text v1 sketched here.
+        Bold/italic/underline/bullets work in question and answer; headings, images and
+        audio are refused. Delivered by extracting `RichTextField` out of `TextSegmentView`
+        so both segment types share one implementation — see [note.md](note.md)'s
+        "Q&A blocks"
+  - [x] Markdown form: fenced ` ```quill-qa `, question, `---`, answer, ` ``` `. The divider
+        (rather than per-line `Q:`/`A:` prefixes) is what keeps both halves ordinary
+        multi-line Markdown. Info string still extensible for `:<flashcard-id>`
+  - [ ] Numbered lists inside a Q&A (bullets only today, same as body text)
+- [ ] **Flashcard generation & sync** *(no longer blocked — Q&A segments and stable
+      segment ids both exist now)*
   - [ ] `FlashcardRepository` (CRUD), following the existing callback-based async
         pattern used by `NoteRepository`/`TagRepository`
   - [ ] `flashcards.source_segment_id` (nullable) linking a generated card back to its

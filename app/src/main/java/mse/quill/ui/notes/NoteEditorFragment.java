@@ -264,6 +264,11 @@ public class NoteEditorFragment extends Fragment {
                     public void onAudioRequested() {
                         audioRecorder.toggleRecording();
                     }
+
+                    @Override public void onQaBlockRequested() {
+                        noteEditorView.insertQaBlockAfterFocused();
+                        updateToolbarState();
+                    }
                 }
         );
 
@@ -371,13 +376,7 @@ public class NoteEditorFragment extends Fragment {
     }
 
     private void updateToolbarState() {
-        toolbarController.updateState(
-                noteEditorView.isBoldActive(),
-                noteEditorView.isItalicActive(),
-                noteEditorView.isUnderlineActive(),
-                noteEditorView.getActiveHeadingLevel(),
-                noteEditorView.isBulletListActive()
-        );
+        toolbarController.updateState(noteEditorView.getFormattingState());
     }
 
     private void loadExistingNote() {

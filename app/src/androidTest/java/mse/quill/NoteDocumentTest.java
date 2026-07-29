@@ -3,7 +3,11 @@ package mse.quill;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import android.graphics.Typeface;
+import android.text.Spannable;
 import android.text.SpannableStringBuilder;
+import android.text.style.BulletSpan;
+import android.text.style.StyleSpan;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
@@ -20,6 +24,7 @@ import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.HeadingMarker;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.ui.notes.editor.model.QaSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
 
 /** Covers segment list ↔ Markdown document, including embed ordering and asset rejoining. */
@@ -66,6 +71,15 @@ public class NoteDocumentTest {
                 assertEquals("text at " + i,
                         ((TextSegment) before).content.toString(),
                         ((TextSegment) after).content.toString());
+            } else if (before instanceof QaSegment) {
+                // A Q&A carries no id through the document — it's content, not an asset reference
+                // — so it's compared by what it says.
+                assertEquals("question at " + i,
+                        ((QaSegment) before).question.toString(),
+                        ((QaSegment) after).question.toString());
+                assertEquals("answer at " + i,
+                        ((QaSegment) before).answer.toString(),
+                        ((QaSegment) after).answer.toString());
             } else {
                 assertEquals("asset id at " + i, before.id, after.id);
                 assertEquals("file path at " + i, before.filePath(), after.filePath());
@@ -181,6 +195,125 @@ public class NoteDocumentTest {
                 NoteDocument.toMarkdown(segments), new HashMap<>());
         assertEquals(1, restored.size());
         assertEquals(NoteSegment.TYPE_TEXT, restored.get(0).type());
+    }
+
+    // ── Q&A blocks ─────────────────────────────────────────────────────────
+
+    private static QaSegment qa(String question, String answer) {
+        return new QaSegment(new SpannableStringBuilder(question), new SpannableStringBuilder(answer));
+    }
+
+    private static void assertQaRoundTrips(String question, String answer) {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(qa(question, answer));
+
+        String markdown = NoteDocument.toMarkdown(segments);
+        List<NoteSegment> restored = NoteDocument.fromMarkdown(markdown, new HashMap<>());
+
+        assertEquals("segment count (markdown was:\n" + markdown + "\n)", 1, restored.size());
+        QaSegment result = (QaSegment) restored.get(0);
+        assertEquals("question", question, result.question.toString());
+        assertEquals("answer", answer, result.answer.toString());
+    }
+
+    @Test
+    public void qaBlockRoundTrips() {
+        assertQaRoundTrips("Which country has the most time zones?", "France, with 12.");
+    }
+
+    @Test
+    public void qaKeepsQuestionAndAnswerSeparate() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(qa("Q text", "A text"));
+
+        String markdown = NoteDocument.toMarkdown(segments);
+        assertTrue("expected a fenced quill-qa block, got:\n" + markdown,
+                markdown.startsWith("```quill-qa\n"));
+        assertTrue("expected a divider between the two halves:\n" + markdown,
+                markdown.contains("\n---\n"));
+    }
+
+    @Test
+    public void multiLineQaRoundTrips() {
+        assertQaRoundTrips("line one\nline two", "answer one\n\nanswer two");
+    }
+
+    @Test
+    public void emptyQaRoundTrips() {
+        assertQaRoundTrips("", "");
+    }
+
+    @Test
+    public void qaBetweenTextKeepsOrder() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(text("before"));
+        segments.add(qa("question", "answer"));
+        segments.add(text("after"));
+        assertRoundTrips(segments);
+    }
+
+    @Test
+    public void qaFormattingSurvives() {
+        SpannableStringBuilder question = new SpannableStringBuilder("bold question");
+        question.setSpan(new StyleSpan(Typeface.BOLD), 0, 4, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        SpannableStringBuilder answer = new SpannableStringBuilder("bulleted");
+        answer.setSpan(new BulletSpan(24), 0, 8, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(new QaSegment(question, answer));
+
+        QaSegment restored = (QaSegment) NoteDocument.fromMarkdown(
+                NoteDocument.toMarkdown(segments), new HashMap<>()).get(0);
+
+        assertEquals(1, restored.question.getSpans(0, 4, StyleSpan.class).length);
+        assertEquals(1, restored.answer.getSpans(0, 8, BulletSpan.class).length);
+    }
+
+    /** Text inside the block that looks like the fence or the divider must not break parsing. */
+    @Test
+    public void qaContentThatLooksLikeScaffoldingIsEscaped() {
+        assertQaRoundTrips("---", "```");
+        assertQaRoundTrips("what does ``` mean?", "a fence\n---\nnot a divider");
+    }
+
+    /** And a fence typed into ordinary prose must stay ordinary prose. */
+    @Test
+    public void literalFenceInBodyTextIsEscaped() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(text("```quill-qa"));
+
+        List<NoteSegment> restored = NoteDocument.fromMarkdown(
+                NoteDocument.toMarkdown(segments), new HashMap<>());
+
+        assertEquals(1, restored.size());
+        assertEquals(NoteSegment.TYPE_TEXT, restored.get(0).type());
+        assertEquals("```quill-qa", ((TextSegment) restored.get(0)).content.toString());
+    }
+
+    /** A truncated document shouldn't swallow the user's text. */
+    @Test
+    public void unterminatedQaFenceStillYieldsContent() {
+        List<NoteSegment> restored = NoteDocument.fromMarkdown(
+                "```quill-qa\nquestion\n---\nanswer", new HashMap<>());
+
+        assertEquals(1, restored.size());
+        QaSegment result = (QaSegment) restored.get(0);
+        assertEquals("question", result.question.toString());
+        assertTrue("answer text should survive, was: " + result.answer,
+                result.answer.toString().startsWith("answer"));
+    }
+
+    @Test
+    public void qaTextIsSearchableAndScaffoldingIsNot() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(qa("capital of France", "Paris"));
+
+        String plain = NoteDocument.toPlainText(NoteDocument.toMarkdown(segments));
+
+        assertTrue("question kept: " + plain, plain.contains("capital of France"));
+        assertTrue("answer kept: " + plain, plain.contains("Paris"));
+        assertTrue("fence dropped: " + plain, plain.indexOf("quill-qa") < 0);
+        assertTrue("divider dropped: " + plain, plain.indexOf("---") < 0);
     }
 
     // ── Projections ────────────────────────────────────────────────────────

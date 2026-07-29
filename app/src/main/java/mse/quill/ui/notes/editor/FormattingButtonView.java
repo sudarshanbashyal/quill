@@ -29,6 +29,8 @@ import mse.quill.R;
  */
 public class FormattingButtonView extends LinearLayout {
 
+    private static final float DISABLED_ALPHA = 0.3f;
+
     private final ImageView icon;
     private final View activeDot;
     private final ColorStateList inactiveTint;
@@ -76,6 +78,15 @@ public class FormattingButtonView extends LinearLayout {
     public void setActive(boolean active) {
         activeDot.setVisibility(active ? VISIBLE : INVISIBLE);
         ImageViewCompat.setImageTintList(icon, active ? activeTint : inactiveTint);
+    }
+
+    /** Whether the focused field offers this format at all. An unavailable control is dimmed and
+     *  stops responding, rather than being hidden — the row keeps a stable shape, so the toolbar
+     *  doesn't reflow every time the caret moves in or out of a Q&amp;A block. */
+    public void setAvailable(boolean available) {
+        setEnabled(available);
+        setAlpha(available ? 1f : DISABLED_ALPHA);
+        if (!available) setActive(false);
     }
 
     public void setIcon(int iconRes) {

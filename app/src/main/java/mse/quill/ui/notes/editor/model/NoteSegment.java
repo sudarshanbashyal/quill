@@ -14,6 +14,7 @@ public abstract class NoteSegment {
     public static final int TYPE_TEXT  = 0;
     public static final int TYPE_IMAGE = 1;
     public static final int TYPE_AUDIO = 2;
+    public static final int TYPE_QA    = 3;
 
     public abstract int type();
 
