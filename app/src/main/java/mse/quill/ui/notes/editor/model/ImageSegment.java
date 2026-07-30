@@ -9,4 +9,10 @@ public class ImageSegment extends NoteSegment {
         this.filePath = filePath;
         this.id = java.util.UUID.randomUUID().toString();
     }
+
+    @Override
+    public int type() { return TYPE_IMAGE; }
+
+    @Override
+    public String filePath() { return filePath; }
 }

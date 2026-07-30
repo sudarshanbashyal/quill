@@ -91,26 +91,20 @@
 
     </ScrollView>
 
-    <!-- Formatting toolbar — pinned to bottom, above keyboard -->
-    <HorizontalScrollView
+    <!-- Formatting toolbar — pinned to bottom, sits flush against the keyboard. The items are
+         added with equal weights so they spread across the full width and line up with the
+         keyboard's own columns; that also means the row can never overflow, so no scroll
+         container is needed around it. -->
+    <LinearLayout
         android:id="@+id/formatting_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
+        android:layout_height="@dimen/formatting_toolbar_height"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:visibility="gone"
-        android:scrollbars="none"
-        android:background="?attr/colorSurface"
+        android:background="@drawable/bg_formatting_toolbar"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <LinearLayout
-            android:id="@+id/formatting_buttons"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:padding="4dp"
-            android:gravity="center_vertical" />
-
-    </HorizontalScrollView>
+        app:layout_constraintEnd_toEndOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

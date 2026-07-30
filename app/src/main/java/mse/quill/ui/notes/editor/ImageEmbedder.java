@@ -17,6 +17,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
+import mse.quill.util.BitmapUtils;
+
 public class ImageEmbedder {
 
     public interface ImageResultListener {
@@ -43,12 +45,7 @@ public class ImageEmbedder {
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
                     if (result.getResultCode() == Activity.RESULT_OK && pendingImagePath != null) {
-                        Bitmap bitmap = decodeSampledBitmap(pendingImagePath, 800);
-                        if (bitmap != null) {
-                            listener.onImageReady(bitmap, pendingImagePath);
-                        } else {
-                            listener.onImageFailed();
-                        }
+                        deliver(pendingImagePath);
                     } else {
                         listener.onImageFailed();
                     }
@@ -62,18 +59,25 @@ public class ImageEmbedder {
                     if (uri != null) {
                         String savedPath = saveUriToPrivateStorage(uri);
                         if (savedPath != null) {
-                            Bitmap bitmap = decodeSampledBitmap(savedPath, 800);
-                            if (bitmap != null) {
-                                listener.onImageReady(bitmap, savedPath);
-                            } else {
-                                listener.onImageFailed();
-                            }
+                            deliver(savedPath);
                         } else {
                             listener.onImageFailed();
                         }
                     }
                 }
         );
+    }
+
+    /** Both sources land here so orientation is normalised once, on the way in — a gallery pick
+     *  carries the same EXIF rotation a capture does, since importing copies the file verbatim. */
+    private void deliver(String path) {
+        BitmapUtils.normaliseStoredImage(path);
+        Bitmap bitmap = BitmapUtils.decodeSampled(path, 800);
+        if (bitmap != null) {
+            listener.onImageReady(bitmap, path);
+        } else {
+            listener.onImageFailed();
+        }
     }
 
     public void openCamera() {
@@ -137,19 +141,4 @@ public class ImageEmbedder {
         }
     }
 
-    // Decode without loading full resolution into memory
-    private Bitmap decodeSampledBitmap(String path, int maxWidth) {
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, options);
-
-        int sampleSize = 1;
-        while (options.outWidth / sampleSize > maxWidth) {
-            sampleSize *= 2;
-        }
-
-        options.inJustDecodeBounds = false;
-        options.inSampleSize = sampleSize;
-        return BitmapFactory.decodeFile(path, options);
-    }
 }

@@ -1,7 +1,13 @@
 package mse.quill.ui.notes;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.os.Bundle;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.fragment.NavHostFragment;
 
@@ -15,8 +21,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import androidx.appcompat.widget.Toolbar;
 
 import java.util.ArrayList;
@@ -24,6 +30,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import mse.quill.R;
+import com.google.android.material.snackbar.Snackbar;
+
+import mse.quill.data.AppExecutors;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
@@ -34,12 +43,14 @@ import mse.quill.ui.notes.editor.KeyboardInsetsHandler;
 import mse.quill.ui.notes.editor.NoteEditorView;
 import mse.quill.ui.notes.editor.NoteReader;
 import mse.quill.ui.notes.editor.RecordingDialog;
+import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.tags.TagPickerDialog;
+import mse.quill.util.ImageExporter;
 import mse.quill.util.NoteDisplayUtils;
 
 public class NoteEditorFragment extends Fragment {
@@ -51,7 +62,11 @@ public class NoteEditorFragment extends Fragment {
     private Button readAloudButton;
     private NoteReader noteReader;
     private FormattingToolbarController toolbarController;
-    private HorizontalScrollView formattingToolbar;
+    private LinearLayout formattingToolbar;
+    private ScrollView scrollView;
+    private ActivityResultLauncher<String> storagePermissionLauncher;
+    private String pendingExportPath;
+    private BaseSegmentView.ExportResult pendingExportResult;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
 
@@ -74,6 +89,22 @@ public class NoteEditorFragment extends Fragment {
     private List<Tag> currentTags = new ArrayList<>();
 
     @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Must be registered before the fragment reaches STARTED, so it can't live in
+        // onViewCreated alongside the listener that uses it.
+        storagePermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(),
+                granted -> {
+                    if (granted) {
+                        runExport();
+                    } else {
+                        abandonExport();
+                    }
+                });
+    }
+
+    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         return inflater.inflate(R.layout.fragment_note_editor, container, false);
@@ -87,6 +118,7 @@ public class NoteEditorFragment extends Fragment {
         readAloudButton = view.findViewById(R.id.read_aloud_button);
         noteEditorView = view.findViewById(R.id.note_editor_view);
         formattingToolbar = view.findViewById(R.id.formatting_toolbar);
+        scrollView = view.findViewById(R.id.scroll_view);
         tagRowScroll = view.findViewById(R.id.tag_row_scroll);
         tagRowContainer = view.findViewById(R.id.tag_row_container);
 
@@ -125,7 +157,12 @@ public class NoteEditorFragment extends Fragment {
         noteEditorView.setContentChangeListener(() -> {
             scheduleAutoSave();
             updateReadAloudVisibility();
+            updateToolbarState();
         });
+        // Heading/bullet markers describe the caret's line, so they have to follow the caret and
+        // not just edits — otherwise tapping from a heading into body text leaves H1 lit.
+        noteEditorView.setSelectionChangeListener(this::updateToolbarState);
+        noteEditorView.setMediaExportListener(this::exportMedia);
         view.findViewById(R.id.note_editor_content).setOnClickListener(v -> noteEditorView.focusEnd());
         noteTitle.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -188,7 +225,7 @@ public class NoteEditorFragment extends Fragment {
         });
 
         toolbarController = new FormattingToolbarController(
-                view.findViewById(R.id.formatting_buttons),
+                formattingToolbar,
                 new FormattingToolbarController.FormatListener() {
                     @Override public void onBoldToggled() {
                         noteEditorView.applyBoldToFocused();
@@ -205,14 +242,17 @@ public class NoteEditorFragment extends Fragment {
 
                     @Override public void onHeading1Toggled() {
                         noteEditorView.applyHeadingToFocused(1);
+                        updateToolbarState();
                     }
 
                     @Override public void onHeading2Toggled() {
                         noteEditorView.applyHeadingToFocused(2);
+                        updateToolbarState();
                     }
 
                     @Override public void onBulletListToggled() {
                         noteEditorView.applyBulletListToFocused();
+                        updateToolbarState();
                     }
 
                     @Override
@@ -223,6 +263,11 @@ public class NoteEditorFragment extends Fragment {
                     @Override
                     public void onAudioRequested() {
                         audioRecorder.toggleRecording();
+                    }
+
+                    @Override public void onQaBlockRequested() {
+                        noteEditorView.insertQaBlockAfterFocused();
+                        updateToolbarState();
                     }
                 }
         );
@@ -245,22 +290,93 @@ public class NoteEditorFragment extends Fragment {
             @Override
             public void onKeyboardShown(int height) {
                 formattingToolbar.setVisibility(View.VISIBLE);
-                formattingToolbar.setTranslationY(-height);
+                reserveKeyboardSpace(view, height);
             }
             @Override
             public void onKeyboardHidden() {
                 formattingToolbar.setVisibility(View.GONE);
-                formattingToolbar.setTranslationY(0);
+                reserveKeyboardSpace(view, 0);
             }
         });
     }
 
+    /**
+     * Shrinks the editor by the keyboard's height instead of sliding views up over it.
+     *
+     * <p>The distinction matters. {@code targetSdk} is 35+, so the system enforces edge-to-edge and
+     * the window never resizes for the IME — the editor has to reserve that space itself. Doing it
+     * with {@code translationY} on the toolbar (the previous approach) only moves pixels: the
+     * ScrollView, constrained above the toolbar, keeps its full-height layout bounds and its
+     * viewport still nominally extends behind the keyboard. Android's own "reveal the focused
+     * view" pass then finds a tapped segment already inside those bounds and correctly decides no
+     * scrolling is needed — which is exactly why segments near the end of a note were never
+     * revealed. Padding is a layout change, so the toolbar lands above the keyboard by its
+     * existing constraint and the ScrollView's viewport becomes truthful.
+     */
+    private void reserveKeyboardSpace(View root, int height) {
+        if (root.getPaddingBottom() == height) return;
+        root.setPadding(root.getPaddingLeft(), root.getPaddingTop(), root.getPaddingRight(), height);
+        revealFocusedInput();
+    }
+
+    /**
+     * Re-runs the reveal after the resize. The tap that focused an input happened while the
+     * keyboard was still down — at which point there was genuinely nothing to scroll past — and
+     * nothing re-triggers it once the space is reserved. With the window not resizing, {@code
+     * ViewRootImpl}'s own keep-focus-visible pass never runs either, so this is the one nudge that
+     * has to be explicit.
+     */
+    private void revealFocusedInput() {
+        scrollView.post(() -> {
+            View focused = scrollView.findFocus();
+            if (focused == null) return;
+            Rect caret = new Rect();
+            focused.getFocusedRect(caret); // for an EditText this is the cursor line, not the whole field
+            focused.requestRectangleOnScreen(caret, true);
+        });
+    }
+
+    /**
+     * Copies an embedded file out to the shared Pictures collection. Below API 29 that needs
+     * {@code WRITE_EXTERNAL_STORAGE}, so the request is made here — a segment view has no way to
+     * ask for a runtime permission.
+     */
+    private void exportMedia(String filePath, BaseSegmentView.ExportResult result) {
+        pendingExportPath = filePath;
+        pendingExportResult = result;
+        if (ImageExporter.requiresStoragePermission()
+                && ContextCompat.checkSelfPermission(requireContext(),
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            return;
+        }
+        runExport();
+    }
+
+    private void runExport() {
+        String path = pendingExportPath;
+        BaseSegmentView.ExportResult result = pendingExportResult;
+        pendingExportPath = null;
+        pendingExportResult = null;
+        if (path == null || result == null) return;
+
+        AppExecutors executors = AppExecutors.getInstance();
+        executors.diskIO(() -> {
+            boolean saved = ImageExporter.saveToPictures(requireContext().getApplicationContext(), path);
+            executors.mainThread(() -> result.onExportFinished(saved));
+        });
+    }
+
+    private void abandonExport() {
+        BaseSegmentView.ExportResult result = pendingExportResult;
+        pendingExportPath = null;
+        pendingExportResult = null;
+        if (result != null) result.onExportFinished(false);
+    }
+
     private void updateToolbarState() {
-        toolbarController.updateState(
-                noteEditorView.isBoldActive(),
-                noteEditorView.isItalicActive(),
-                noteEditorView.isUnderlineActive()
-        );
+        toolbarController.updateState(noteEditorView.getFormattingState());
     }
 
     private void loadExistingNote() {

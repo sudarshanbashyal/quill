@@ -10,4 +10,10 @@ public class AudioSegment extends NoteSegment {
         this.durationMs = durationMs;
         this.id = java.util.UUID.randomUUID().toString();
     }
+
+    @Override
+    public int type() { return TYPE_AUDIO; }
+
+    @Override
+    public String filePath() { return filePath; }
 }
