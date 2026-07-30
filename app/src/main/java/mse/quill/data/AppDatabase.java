@@ -9,7 +9,7 @@ import android.util.Log;
 public class AppDatabase extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "quill.db";
-    private static final int DATABASE_VERSION = 2;
+    private static final int DATABASE_VERSION = 3;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -100,12 +100,15 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "target_device_id TEXT, " +
                 "created_at INTEGER)");
 
+        // Media asset registry. A note's text lives in notes.content_blob as one Markdown
+        // document; this table holds only what a Markdown link has nowhere to put — where the
+        // file is, how wide to draw it, how long it runs, its transcript. Rows are referenced by
+        // id from the document ("quill://image/<id>"), so there's no position column: ordering is
+        // the document's job, and a row is reachable only while some document still names it.
         db.execSQL("CREATE TABLE note_segments (" +
                 "id TEXT PRIMARY KEY, " +
                 "note_id TEXT NOT NULL, " +
-                "position INTEGER NOT NULL, " +
                 "type INTEGER NOT NULL, " +
-                "text_content BLOB, " +
                 "file_path TEXT, " +
                 "transcript TEXT, " +
                 "duration_ms INTEGER, " +
@@ -128,12 +131,15 @@ public class AppDatabase extends SQLiteOpenHelper {
 
         // ---------- FTS5 virtual table ----------
 
+        // Standalone (not content='notes') because the indexed body is the Markdown document
+        // flattened to plain text, which no column on `notes` holds — NoteRepository writes both
+        // columns in the same transaction as the save.
         try {
-            db.execSQL("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, content='notes', content_rowid='rowid')");
+            db.execSQL("CREATE VIRTUAL TABLE notes_fts USING fts5(note_id UNINDEXED, title, body)");
         } catch (SQLException e) {
             // Some SQLite builds (notably some emulator system images) aren't compiled with the
-            // FTS5 module. Search isn't wired up to this table yet, so skip it rather than
-            // failing database creation entirely.
+            // FTS5 module. The search UI still filters in memory, so skip the table rather than
+            // failing database creation entirely — writes to it are guarded the same way.
             Log.w("AppDatabase", "fts5 unavailable, skipping notes_fts table", e);
         }
 
@@ -144,7 +150,7 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_strokes_whiteboard_id ON strokes(whiteboard_id)");
         db.execSQL("CREATE INDEX idx_flashcards_note_id ON flashcards(note_id)");
         db.execSQL("CREATE INDEX idx_voice_memos_note_id ON voice_memos(note_id)");
-        db.execSQL("CREATE INDEX idx_note_segments_note_id_position ON note_segments(note_id, position)");
+        db.execSQL("CREATE INDEX idx_note_segments_note_id ON note_segments(note_id)");
         db.execSQL("CREATE INDEX idx_note_tags_tag_id ON note_tags(tag_id)");
 
     }

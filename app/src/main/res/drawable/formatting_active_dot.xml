@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Active-state marker under a formatting toolbar icon. A dot rather than a filled/tinted button
+     because the bar sits directly above the keyboard: eight tonal pills in a row read as another
+     keyboard, which is exactly the visual noise this toolbar is trying to avoid. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/brand_purple" />
+    <size
+        android:width="@dimen/formatting_dot_size"
+        android:height="@dimen/formatting_dot_size" />
+</shape>

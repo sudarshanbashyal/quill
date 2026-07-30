@@ -23,8 +23,8 @@ public class AudioSegmentView extends BaseSegmentView {
 
     private MediaPlayer mediaPlayer;
 
-    public AudioSegmentView(Context context, String filePath, int durationMs) {
-        super(context);
+    public AudioSegmentView(Context context, String segmentId, String filePath, int durationMs) {
+        super(context, segmentId);
         this.filePath = filePath;
         this.durationMs = durationMs;
 

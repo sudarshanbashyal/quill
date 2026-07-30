@@ -4,8 +4,11 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteException;
+import android.util.Log;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -17,11 +20,10 @@ import java.util.UUID;
 
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
-import mse.quill.data.serialization.SpanSerializer;
+import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
 
 public class NoteRepository {
 
@@ -72,14 +74,18 @@ public class NoteRepository {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             Set<String> orphanedMediaPaths;
 
+            String markdown = NoteDocument.toMarkdown(segments);
+
             db.beginTransaction();
             try {
                 ContentValues cv = new ContentValues();
                 cv.put("title", title);
+                cv.put("content_blob", markdown.getBytes(StandardCharsets.UTF_8));
                 cv.put("updated_at", System.currentTimeMillis());
                 db.update("notes", cv, "id = ?", new String[]{noteId});
 
-                orphanedMediaPaths = replaceSegmentsSync(db, noteId, segments);
+                orphanedMediaPaths = replaceMediaAssetsSync(db, noteId, segments);
+                indexNoteSync(db, noteId, title, markdown);
 
                 db.setTransactionSuccessful();
             } finally {
@@ -97,9 +103,18 @@ public class NoteRepository {
     public void deleteNote(String noteId, Runnable onDeleted) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
-            ContentValues cv = new ContentValues();
-            cv.put("deleted_at", System.currentTimeMillis());
-            db.update("notes", cv, "id = ?", new String[]{noteId});
+            db.beginTransaction();
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put("deleted_at", System.currentTimeMillis());
+                db.update("notes", cv, "id = ?", new String[]{noteId});
+                // Soft delete, so the document and its assets stay put — but the note must stop
+                // turning up in search until (and unless) it's restored.
+                deleteFromIndexSync(db, noteId);
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
             if (onDeleted != null) executors.mainThread(onDeleted);
         });
     }
@@ -186,9 +201,7 @@ public class NoteRepository {
     private List<Note> getAllNotesSync(SQLiteDatabase db, String filter, boolean pinnedOnly) {
         StringBuilder sql = new StringBuilder(
                 "SELECT n.id, n.collection_id, n.title, n.created_at, n.updated_at, n.deleted_at, n.pinned_at, " +
-                        "(SELECT s.text_content FROM note_segments s " +
-                        " WHERE s.note_id = n.id AND s.type = " + NoteSegment.TYPE_TEXT +
-                        " ORDER BY s.position ASC LIMIT 1) AS preview_blob " +
+                        "n.content_blob " +
                         "FROM notes n WHERE n.deleted_at IS NULL");
 
         List<String> args = new ArrayList<>();
@@ -210,7 +223,9 @@ public class NoteRepository {
         try {
             while (c.moveToNext()) {
                 Note note = readNote(c);
-                note.preview = c.isNull(7) ? "" : SpanSerializer.fromBytes(c.getBlob(7)).toString().trim();
+                note.preview = c.isNull(7)
+                        ? ""
+                        : NoteDocument.toPreview(new String(c.getBlob(7), StandardCharsets.UTF_8));
                 notes.add(note);
                 noteIds.add(note.id);
             }
@@ -265,42 +280,61 @@ public class NoteRepository {
         return result;
     }
 
+    /** The note's Markdown document, parsed back into the segments the editor renders. */
     private List<NoteSegment> getSegmentsSync(SQLiteDatabase db, String noteId) {
-        Cursor c = db.rawQuery(
-                "SELECT type, text_content, file_path, width, duration_ms FROM note_segments " +
-                        "WHERE note_id = ? ORDER BY position ASC",
-                new String[]{noteId});
+        return NoteDocument.fromMarkdown(getMarkdownSync(db, noteId), getMediaAssetsSync(db, noteId));
+    }
+
+    private String getMarkdownSync(SQLiteDatabase db, String noteId) {
+        Cursor c = db.rawQuery("SELECT content_blob FROM notes WHERE id = ?", new String[]{noteId});
         try {
-            List<NoteSegment> segments = new ArrayList<>();
-            while (c.moveToNext()) {
-                int type = c.getInt(0);
-                if (type == NoteSegment.TYPE_IMAGE) {
-                    ImageSegment segment = new ImageSegment(c.getString(2));
-                    if (!c.isNull(3)) segment.displayWidth = c.getInt(3);
-                    segments.add(segment);
-                } else if (type == NoteSegment.TYPE_AUDIO) {
-                    int durationMs = c.isNull(4) ? 0 : c.getInt(4);
-                    segments.add(new AudioSegment(c.getString(2), durationMs));
-                } else {
-                    segments.add(new TextSegment(SpanSerializer.fromBytes(c.getBlob(1))));
-                }
-            }
-            return segments;
+            if (!c.moveToFirst() || c.isNull(0)) return "";
+            return new String(c.getBlob(0), StandardCharsets.UTF_8);
         } finally {
             c.close();
         }
     }
 
-    /** Deletes and reinserts all segments for a note inside the caller's transaction.
-     *  Returns the file paths of image segments that existed before but are no longer
-     *  referenced, so the caller can delete those files once the transaction has committed. */
-    private Set<String> replaceSegmentsSync(SQLiteDatabase db, String noteId, List<NoteSegment> segments) {
+    /** Every media asset belonging to the note, keyed by id — the document decides which of them
+     *  actually appear and in what order. */
+    private Map<String, NoteSegment> getMediaAssetsSync(SQLiteDatabase db, String noteId) {
+        Map<String, NoteSegment> assets = new HashMap<>();
+        Cursor c = db.rawQuery(
+                "SELECT id, type, file_path, width, duration_ms FROM note_segments WHERE note_id = ?",
+                new String[]{noteId});
+        try {
+            while (c.moveToNext()) {
+                int type = c.getInt(1);
+                NoteSegment segment;
+                if (type == NoteSegment.TYPE_IMAGE) {
+                    ImageSegment image = new ImageSegment(c.getString(2));
+                    if (!c.isNull(3)) image.displayWidth = c.getInt(3);
+                    segment = image;
+                } else if (type == NoteSegment.TYPE_AUDIO) {
+                    segment = new AudioSegment(c.getString(2), c.isNull(4) ? 0 : c.getInt(4));
+                } else {
+                    continue; // text isn't an asset — it's the document
+                }
+                segment.id = c.getString(0);
+                assets.put(segment.id, segment);
+            }
+        } finally {
+            c.close();
+        }
+        return assets;
+    }
+
+    /** Rewrites the note's asset rows inside the caller's transaction to match what the document
+     *  now references. Returns the files that were referenced before but aren't any more, so the
+     *  caller can delete them once the transaction has committed. */
+    private Set<String> replaceMediaAssetsSync(SQLiteDatabase db, String noteId, List<NoteSegment> segments) {
         Set<String> oldMediaPaths = new HashSet<>();
         Cursor c = db.rawQuery(
-                "SELECT file_path FROM note_segments WHERE note_id = ? AND type IN (?, ?)",
-                new String[]{noteId, String.valueOf(NoteSegment.TYPE_IMAGE), String.valueOf(NoteSegment.TYPE_AUDIO)});
+                "SELECT file_path FROM note_segments WHERE note_id = ?", new String[]{noteId});
         try {
-            while (c.moveToNext()) oldMediaPaths.add(c.getString(0));
+            while (c.moveToNext()) {
+                if (!c.isNull(0)) oldMediaPaths.add(c.getString(0));
+            }
         } finally {
             c.close();
         }
@@ -309,37 +343,52 @@ public class NoteRepository {
 
         Set<String> newMediaPaths = new HashSet<>();
         long now = System.currentTimeMillis();
-        int position = 0;
         for (NoteSegment segment : segments) {
+            if (!segment.isMedia()) continue;
+
             ContentValues cv = new ContentValues();
             cv.put("id", segment.id != null ? segment.id : UUID.randomUUID().toString());
             cv.put("note_id", noteId);
-            cv.put("position", position++);
+            cv.put("type", segment.type());
+            cv.put("file_path", segment.filePath());
             cv.put("created_at", now);
 
             if (segment instanceof ImageSegment) {
-                ImageSegment image = (ImageSegment) segment;
-                cv.put("type", NoteSegment.TYPE_IMAGE);
-                cv.put("file_path", image.filePath);
-                cv.put("width", image.displayWidth);
-                newMediaPaths.add(image.filePath);
+                cv.put("width", ((ImageSegment) segment).displayWidth);
             } else if (segment instanceof AudioSegment) {
-                AudioSegment audio = (AudioSegment) segment;
-                cv.put("type", NoteSegment.TYPE_AUDIO);
-                cv.put("file_path", audio.filePath);
-                cv.put("duration_ms", audio.durationMs);
-                newMediaPaths.add(audio.filePath);
-            } else if (segment instanceof TextSegment) {
-                TextSegment text = (TextSegment) segment;
-                cv.put("type", NoteSegment.TYPE_TEXT);
-                cv.put("text_content", SpanSerializer.toBytes(text.content));
-            } else {
-                continue; // unsupported segment type
+                cv.put("duration_ms", ((AudioSegment) segment).durationMs);
             }
+
             db.insert("note_segments", null, cv);
+            newMediaPaths.add(segment.filePath());
         }
 
         oldMediaPaths.removeAll(newMediaPaths);
         return oldMediaPaths;
+    }
+
+    // ── Search index ───────────────────────────────────────────────────────
+    // Both helpers tolerate notes_fts being absent: AppDatabase skips creating it on SQLite
+    // builds without FTS5, and search still works (in-memory filtering) without it.
+
+    private void indexNoteSync(SQLiteDatabase db, String noteId, String title, String markdown) {
+        try {
+            db.delete("notes_fts", "note_id = ?", new String[]{noteId});
+            ContentValues cv = new ContentValues();
+            cv.put("note_id", noteId);
+            cv.put("title", title);
+            cv.put("body", NoteDocument.toPlainText(markdown));
+            db.insert("notes_fts", null, cv);
+        } catch (SQLiteException e) {
+            Log.w("NoteRepository", "notes_fts unavailable, skipping index update", e);
+        }
+    }
+
+    private void deleteFromIndexSync(SQLiteDatabase db, String noteId) {
+        try {
+            db.delete("notes_fts", "note_id = ?", new String[]{noteId});
+        } catch (SQLiteException e) {
+            Log.w("NoteRepository", "notes_fts unavailable, skipping index delete", e);
+        }
     }
 }

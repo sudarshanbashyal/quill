@@ -10,4 +10,7 @@ public class TextSegment extends NoteSegment {
         this.content = content;
         this.id = java.util.UUID.randomUUID().toString();
     }
+
+    @Override
+    public int type() { return TYPE_TEXT; }
 }

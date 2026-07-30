@@ -33,7 +33,7 @@ Single Activity (`MainActivity`) hosting a `NavHostFragment` (`nav_graph.xml`):
 ## Persistence layer
 
 **No Room.** `AppDatabase extends SQLiteOpenHelper` directly (`data/AppDatabase.java`),
-hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 2`; `onUpgrade` is
+hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 3`; `onUpgrade` is
 currently **destructive** (drops every table and recreates) — fine for pre-release
 development, but will need real migrations before this ships with user data worth
 keeping.
@@ -60,11 +60,14 @@ unifying if the whiteboard code gets touched again.
 Core, actively used:
 - `collections(id, name, color, created_at, biometric_locked)` — `biometric_locked`
   column exists but no lock/auth flow reads or writes it yet.
-- `notes(id, collection_id, title, created_at, updated_at, deleted_at, pinned_at, …)`
-  — soft-deleted via `deleted_at` (never hard-deleted by app code). Also carries
-  `location_lat/lng/name` columns that nothing in the app populates yet.
-- `note_segments(id, note_id, position, type, text_content, file_path, transcript,
-  duration_ms, width, created_at)` — see "Note content model" below.
+- `notes(id, collection_id, title, content_blob, created_at, updated_at, deleted_at,
+  pinned_at, …)` — soft-deleted via `deleted_at` (never hard-deleted by app code).
+  `content_blob` holds the note's whole body as one UTF-8 Markdown document; see "Note
+  content model" below. Also carries `location_lat/lng/name` columns that nothing in the
+  app populates yet.
+- `note_segments(id, note_id, type, file_path, transcript, duration_ms, width,
+  created_at)` — **media asset registry only** since schema v3. No `position` (order
+  lives in the Markdown document) and no `text_content` (text *is* the document).
 - `whiteboards(id, note_id)`, `strokes(id, whiteboard_id, author_id, tool, color,
   width, points_blob, created_at)`.
 - `tags(id, name, color, created_at)`, `note_tags(note_id, tag_id)` join table.
@@ -79,9 +82,13 @@ scaffolding, not dead code to delete casually — check before assuming it's unu
   multi-device outbox pattern
 - `notes.author_device_id`, `notes.vector_clock` — sync/conflict-resolution columns
   with no writer yet
-- `notes_fts` FTS5 virtual table — created (wrapped in try/catch since some emulator
-  SQLite builds lack FTS5) but nothing queries it; search in `HomeFragment` today is
-  plain in-memory filtering over the loaded note list, not SQL full-text search.
+- `notes_fts` FTS5 virtual table — now a **standalone** `fts5(note_id UNINDEXED, title,
+  body)`, maintained by `NoteRepository` on every save and delete. (It was previously
+  declared `content='notes'` with a `body` column that doesn't exist on `notes`, so it
+  could never have been populated at all.) Still wrapped in try/catch since some
+  emulator SQLite builds lack FTS5 — writes are guarded the same way. **Nothing queries
+  it yet**: search in `HomeFragment` is still plain in-memory filtering over the loaded
+  note list. The index is ready; the query path is the remaining work.
 
 Takeaway: the schema was designed ahead of the current feature set (multi-device sync,
 flashcards, geotagged notes, FTS search). Don't be surprised these tables/columns are
@@ -97,9 +104,10 @@ rich-text blob:
 - `TextSegment` — wraps a `Spannable` (bold/italic/underline/heading/bullet spans)
 - `ImageSegment` — file path + optional display width
 - `AudioSegment` — file path + duration
+- `QaSegment` — two `Spannable`s, question and answer (see "Q&A blocks" below)
 
 `NoteEditorView` (a `LinearLayout`) renders one `BaseSegmentView` child per segment
-(`TextSegmentView` / `ImageSegmentView` / `AudioSegmentView`) and stitches them
+(`TextSegmentView` / `ImageSegmentView` / `AudioSegmentView` / `QASegmentView`) and stitches them
 together to *feel* like one continuous document: typing Enter, inserting an image/audio
 mid-paragraph, or backspacing at position 0 of a segment all route through
 `BaseSegmentView.SegmentCallback` (`onRequestSplitAt` / `onRequestDelete` /
@@ -108,26 +116,44 @@ refocus the right one. This is why inserting an image "in the middle of typing" 
 the focused `TextSegmentView` is split into a before/after pair around the new
 image/audio segment.
 
-Persistence: `note_segments` rows, ordered by `position`, fully replaced on every save
-(`NoteRepository.replaceSegmentsSync` deletes-then-reinserts all segments for a note in
-one transaction — no diffing). Orphaned image/audio files (referenced by the old
-segment set but not the new one) are deleted from disk *after* the transaction commits.
+**Segments are a view concept, not a storage one.** They're what the note's Markdown
+document parses into. Persistence (since schema v3):
 
-**Rich text serialization** (`data/serialization/SpanSerializer.java`): a `Spannable`
-is round-tripped to bytes via Android's built-in `Html.toHtml`/`Html.fromHtml` rather
-than a custom binary/JSON span format. Two non-obvious workarounds layered on top:
-1. `Html.toHtml` collapses runs of consecutive newlines into one paragraph boundary, so
-   before encoding, runs of 2+ `\n` are collapsed to one real `\n` plus private marker
-   characters (`EXTRA_LINE_MARKER`) that Html carries through as literal text instead
-   of interpreting as more paragraph breaks; decoding reverses both steps.
-2. Headings have **no** native HTML span equivalent that `Html.toHtml` preserves
-   (`RelativeSizeSpan` isn't serialized), so `TextSegmentView` marks heading lines with
-   an invisible zero-width-space prefix (`HEADING_1_PREFIX`/`HEADING_2_PREFIX`, H2's
-   marker starts with H1's so length-order matters when detecting) instead of relying
-   on the span surviving serialization. The `RelativeSizeSpan` + bold `StyleSpan` are
-   always *re-derived* from the marker after load/edit, never trusted as the source of
-   truth themselves. Bullets, by contrast, use plain `BulletSpan` and round-trip
-   natively through `Html`, no marker needed.
+- The whole body is one Markdown document in `notes.content_blob`.
+- `note_segments` survives only as a media asset registry — one row per image/audio,
+  holding what a Markdown link has nowhere to put (file path, display width, duration,
+  transcript). Rows are referenced from the document by id, e.g.
+  `![](quill://image/3f2a…)`, so moving media on disk can never invalidate a document.
+- `NoteRepository.replaceMediaAssetsSync` deletes-then-reinserts a note's asset rows on
+  every save — no diffing. Orphaned files (referenced before, not now) are deleted from
+  disk *after* the transaction commits.
+
+**Serialization** (`data/serialization/`):
+- `MarkdownSerializer` — one text segment's `Spannable` ↔ Markdown.
+- `NoteDocument` — the segment list ↔ the whole document, plus plain-text/preview
+  projections used for the note list and the FTS body.
+- `HeadingMarker` — shared so the data layer doesn't have to import a `View`.
+
+Three things about the format that are non-obvious:
+1. **Italic is `_`, not `*`.** Markdown requires properly nested markers, so a format
+   ending inside another forces a close-then-reopen at the boundary; with `*` for italic
+   that emits ambiguous `****`/`*****` runs no reader can split back correctly. Mixing
+   the two marker characters keeps every such run unambiguous. Cost: literal underscores
+   get escaped (`snake\_case`), which still renders as a plain underscore anywhere.
+2. **The decoder coalesces abutting same-format spans.** Without it, that same
+   close-then-reopen hands the editor two touching bold spans where it had one, and the
+   fragmentation compounds on every save.
+3. **Headings still use the zero-width-space marker in memory** (`HeadingMarker`), even
+   though they're stored as a real `#` prefix. The marker survives the editor moving
+   line content around — splitting a segment to insert an embed, merging on backspace,
+   copying into a builder for export — whereas a size span has to be re-derived and can
+   be clobbered by every such move. `RelativeSizeSpan` + bold are always re-derived from
+   the marker, never trusted as the source of truth. Bullets need no marker: the
+   serializer reads `BulletSpan` directly.
+
+An embed whose asset row is missing is dropped on parse, and the text either side closes
+up into one segment — preserving the invariant that two text segments are never
+adjacent, which is what makes splitting the document back into segments unambiguous.
 
 **Autosave**: `NoteEditorFragment` debounces saves 500ms after any content/title change
 (`scheduleAutoSave`), and force-flushes on `onPause`. A note with `note_id == null` is
@@ -136,16 +162,13 @@ not created in the DB until it actually has content (empty title *and* empty seg
 (soft-delete) rather than left as an empty row. Note creation guards against duplicate
 concurrent creation with an `AtomicBoolean` (`isCreatingNote`).
 
-**Segment identity is not currently stable across saves** — worth knowing before
-building anything that needs to reference "this exact segment" over time (e.g. linking
-a flashcard to the Q&A block that produced it; see "Planned" section below).
-`NoteEditorView.exportSegments()` always constructs fresh `TextSegment`/`ImageSegment`/
-`AudioSegment` instances without ever setting `NoteSegment.id`, so it's always `null`
-by the time `NoteRepository.replaceSegmentsSync` runs — which then always takes the
-`segment.id != null ? segment.id : UUID.randomUUID().toString()` fallback branch and
-mints a brand-new id for every segment, on every single save (i.e. every ~500ms of
-editing via autosave). Nothing today depends on a segment id surviving a save, so this
-has been harmless so far — but any future feature that does will need this fixed first.
+**Segment identity is stable across saves** (fixed 2026-07-28; it previously minted a
+fresh UUID on every autosave). `BaseSegmentView` now owns the id, and
+`NoteEditorView.exportSegments()` copies it onto the exported model, so a media
+segment's `quill://` reference keeps pointing at the same asset row for the life of the
+note. The Markdown migration forced this — without stable ids the document's embed
+references would break on every save — and it also removes the prerequisite that was
+blocking flashcard↔segment linking (see "Planned" below).
 
 ## Whiteboard
 
@@ -171,57 +194,40 @@ unconditionally after the try/catch block, even on the success path — cosmetic
 success also shows its own "Saved to…" toast first) but worth fixing if that code is
 touched again.
 
-## Planned: standardized Markdown note format, Q&A segments & flashcards
+## Markdown note format — implemented; flashcards still planned
 
-**Status: design agreed, not yet implemented.** Tracked in detail as Epic D in
-[requirements.md](requirements.md); this section is the "why/how" behind that epic.
-Recorded here ahead of the code existing so the reasoning isn't lost between design and
-build.
+**Storage: done (2026-07-28).** The "Full" option below was chosen: a note is one
+Markdown document in `notes.content_blob`, `note_segments` demoted to a media asset
+registry. See "Note content model" above for how it actually works, and
+[conversation.md](conversation.md) for the decision and what was traded away.
 
-**Motivation**: `SpanSerializer`'s HTML-based encoding (see above) works but needed two
-non-obvious workarounds (newline-collapsing, invisible heading markers) to get there.
-Markdown expresses the same things natively, is human-readable, and is the closest
-thing to a portable, cross-tool standard for notes (Obsidian, Joplin, Bear, GitHub, …).
-
-**Format mapping** (via [Markwon](https://noties.io/Markwon/), an Android Markdown
-library with a plugin/AST system suited to the custom block types below):
+**Format mapping as built:**
 
 | Content | Markdown form |
 |---|---|
 | Heading 1 / 2 | `# text` / `## text` |
-| Bold / italic | `**text**` / `*text*` |
+| Bold / italic | `**text**` / `_text_` (underscore — see "Note content model") |
 | Underline | `<u>text</u>` — raw inline HTML, valid per CommonMark |
-| Bullet / numbered list | `- item` / `1. item` |
-| Image | `![alt](path)` — native |
-| Audio | `<audio src="..." data-duration="...">` — real HTML5 tag, not invented syntax |
-| Whiteboard embed | `<img src="thumb.png" data-quill-embed="whiteboard" data-quill-id="...">` — a flattened PNG (`WhiteboardView.exportToBitmap()` already exists) wrapped so it degrades to a plain picture outside Quill but resolves to a tappable live preview inside it |
-| Q&A block | fenced block, e.g. `` ```quill-qa:fc_8f3a\nQ: ...\nA: ...\n``` `` — the `:fc_8f3a` suffix is the linked flashcard id once one exists |
+| Bullet list | `- item` |
+| Image | `![](quill://image/<asset-id>)` |
+| Audio | `![audio](quill://audio/<asset-id>)` |
+| Q&A block | fenced ` ```quill-qa `, question, `---`, answer, ` ``` ` |
 
-This retires both `SpanSerializer` workarounds outright: headings become their own
-literal, readable prefix instead of an invisible marker character, and Markdown's
-blank-line paragraph rule doesn't have HTML's newline-collapsing ambiguity.
+Note this differs from the original sketch: embeds reference an **asset id**, not a file
+path or an HTML tag, because the metadata (width, duration, transcript) has to live on a
+row anyway and a path in the document breaks the moment media moves. Exporting to
+portable Markdown becomes a matter of rewriting `quill://` URIs to relative paths.
+Markwon was **not** adopted — it renders, but doesn't help with editing, and the
+round-trip is hand-written in `MarkdownSerializer`.
 
-**Open decision** — how much of the storage layer this touches, still to be decided:
-- *Minimal*: keep `note_segments` rows as they are; only change what `TextSegment`
-  serializes to (Markdown bytes instead of HTML bytes). Smaller, lower-risk.
-- *Full*: collapse a whole note into one Markdown document, stored in `notes.
-  content_blob` — a column that **already exists in the schema and is completely
-  unused today** (nothing reads or writes it). Every segment becomes an inline block;
-  `note_segments.position` bookkeeping disappears since order falls out of the
-  document's line order. Bigger lift, but this is the version that produces an
-  actually-portable `.md` file per note.
-
-**Q&A segment**: a new `NoteSegment.TYPE_QA` / `QASegmentView`, alongside Image/Audio —
-a bordered two-field card (plain-text Question, plain-text Answer; no rich text in v1).
-Deliberately *not* an Anki-style inline cloze marker (`{{c1::text}}`) wrapped around
-arbitrary selected text — Q&A content is meant to be visibly structured in the note
-itself, not hidden inside prose.
+**Still to design/build** (Epic D): the whiteboard embed, reserved as
+`![whiteboard](quill://whiteboard/<id>)`.
 
 **Flashcard generation & sync**: "Create/Sync Flashcards" on the note screen turns every
 `TYPE_QA` segment into a row in the (already-existing, currently-unused) `flashcards`
-table. Requires the segment-identity fix noted above — flashcards link back via a new
-`flashcards.source_segment_id`, and that link is meaningless if segment ids don't
-survive a save. Two sync modes, user-selectable **per note** (default: Manual):
+table. Flashcards link back via a new `flashcards.source_segment_id`; the segment-
+identity fix this depended on has since landed (see "Note content model"), so this is no
+longer blocked. Two sync modes, user-selectable **per note** (default: Manual):
 - **Manual** — nothing happens until the user taps "Sync Flashcards."
 - **Automatic** — sync runs on note save, but must never touch a card the user is
   actively reviewing: a review session snapshots its due-card queue at session start,
@@ -406,6 +412,137 @@ together, and **the app had none of them** — tapping "Take photo" crashed outr
 `IllegalArgumentException`, but `openCamera()` only caught `IOException`, so it propagated to
 the UI thread. The catch now also handles `ActivityNotFoundException` (no camera app, common
 on bare emulator images) and routes it to `onImageFailed()` like every other failure.
+
+## Image pipeline
+
+`util/BitmapUtils` is the single place images are decoded, and both sources (camera and
+gallery) funnel through `ImageEmbedder.deliver()`.
+
+**Orientation is normalised once, on ingest.** Cameras don't rotate pixels — they record
+how the phone was held in an EXIF tag and leave the sensor data as-is, and
+`BitmapFactory` ignores that tag, so portrait photos decoded sideways. Gallery picks had
+the identical bug, because importing copies the file byte-for-byte, tag included.
+`normaliseStoredImage()` rotates and rewrites the file upright (bounded to 2048px on the
+long edge) so nothing downstream — inline segment, viewer, export — needs to know EXIF
+exists. Honouring the tag at draw time instead would have to be repeated correctly in
+every consumer, including ones added later. An already-upright, already-small image is
+left byte-identical rather than needlessly re-encoded.
+
+**Everything decodes sampled.** `ImageSegmentView` previously called
+`BitmapFactory.decodeFile` at full resolution — tens of megabytes of heap for something
+drawn a few hundred pixels wide, and several images in one note was an OOM waiting to
+happen. Inline images are also capped at `note_image_max_height` (280dp) with
+`adjustViewBounds`, and centred via `FIT_CENTER` **plus** container gravity (with
+`adjustViewBounds` the ImageView shrinks to the scaled image's width, so centring the
+content inside the view isn't enough on its own).
+
+**Viewer & export.** Tapping an inline image opens `ImageViewerDialog` — a bare `Dialog`
+over a `#E6000000` scrim, deliberately not a MaterialAlertDialog, whose inset card and
+surface colour fight an edge-to-edge image. Neither action closes it: save reports back
+through `showMessage()`, and delete closes only once the confirmation is accepted.
+Feedback has to be a Snackbar on the *dialog's own* root — one on the editor's root view
+sits behind this window and is never seen.
+
+`util/ImageExporter` copies into `Pictures/Quill` via MediaStore under a
+`Quill_<timestamp>.jpg` display name (not the internal `img_<uuid>.jpg`, which is what
+the user would otherwise see in their gallery). Below API 29 that needs
+`WRITE_EXTERNAL_STORAGE` — declared with `maxSdkVersion="28"` and requested by
+`NoteEditorFragment`, since a segment view can't ask for a runtime permission. That's
+why the request routes up through `SegmentCallback.onRequestExport`, with the outcome
+handed back down so the view can report it where the user is actually looking.
+
+## Keyboard handling in the note editor
+
+`targetSdk` is 35+, so **the system enforces edge-to-edge and the window never resizes
+for the IME** — `adjustResize` cannot work here regardless of the manifest, and the
+editor has to reserve the keyboard's space itself.
+
+`NoteEditorFragment.reserveKeyboardSpace()` does that with **bottom padding on the
+fragment root**. The distinction from the earlier `translationY` approach matters: a
+transform moves pixels but not layout bounds, so the `ScrollView` (constrained above the
+formatting toolbar) kept its full-height bounds and its viewport nominally extended
+behind the keyboard. Android's own "reveal the focused view" pass then found a tapped
+segment already inside those bounds and correctly concluded no scrolling was needed —
+which is exactly why segments near the end of a note were never revealed. Padding is a
+layout change, so the toolbar lands above the keyboard by its existing constraint and
+the viewport becomes truthful.
+
+`revealFocusedInput()` then re-runs the reveal after the resize, using
+`getFocusedRect()` (the caret line, not the whole field — revealing the whole field
+overshoots and pushes the title off screen). It has to be explicit because the tap that
+focused the input happened while the keyboard was down, and with no window resize
+`ViewRootImpl`'s own keep-focus-visible pass never runs.
+
+**Do not reintroduce custom scroll arithmetic here.** A long earlier attempt at that
+(≈10 rounds, all reverted) is recorded in [conversation.md](conversation.md).
+
+## Formatting toolbar
+
+`FormattingToolbarController` builds nine `FormattingButtonView` items into the
+`formatting_toolbar` LinearLayout with equal weights, so they divide the bar's full width
+and the row can never overflow (no scroll container needed).
+
+Each item is an icon plus a small primary-coloured dot that appears when the format is
+active. The dot carries the state rather than M3's usual tonal/filled selected button:
+the bar sits directly against the keyboard, and a row of filled pills there reads as a
+second keyboard rather than as part of the app. That's also why the item is a composite
+view rather than a bare `MaterialButton` — the button has no way to stack an indicator
+under its icon. The whole weighted slot is the touch target, so the glyph can be small.
+
+**Toolbar state comes from three different sources**, which is easy to get wrong, and is
+why it's carried in a `FormattingState` value object rather than a positional argument
+list:
+
+1. bold/italic/underline — a *pending typing mode*;
+2. heading and bullet — properties of **the line the caret is in**;
+3. what's offered at all (`headingsAllowed`, `embedsAllowed`) — a property of **the field
+   the caret is in**. A Q&A field refuses headings and embeds, so those controls grey out
+   (`FormattingButtonView.setAvailable`, which also clears the marker so a heading dot
+   can't be left lit where headings don't exist).
+
+(2) and (3) both go stale when the caret moves, so `RichTextField` reports **both**
+`onSelectionChanged` *and* `onFocusChanged`. Focus is not redundant: moving between fields
+often lands the caret at an offset it already had, and Android fires no selection callback
+when the value doesn't change — which is exactly how stepping out of a Q&A block used to
+leave headings and embeds greyed out. Both route up as
+`NoteEditorView.SelectionChangeListener`, deliberately separate from
+`ContentChangeListener`, since a caret move is not an edit and must not schedule an
+autosave.
+
+## Q&A blocks
+
+Design source: the MSE Figma file's **QA** frame. A tonal rounded card (`surface_container`,
+the same fill as note rows) holding a muted question line above an answer indented behind a
+green vertical rule (`#30B488`, sampled from the frame's separator asset).
+
+**`RichTextField` is the reusable piece.** All the formatting behaviour — inline styles,
+bullets and continuation, heading markers, active-format typing, caret/focus reporting —
+used to live inside `TextSegmentView`. A Q&A needs the same thing in *two* fields, so it was
+extracted: `TextSegmentView` now wraps one `RichTextField`, `QASegmentView` wraps two. The
+rules are subtle enough (derived heading spans, the identity-tracked restyle) that a second
+copy would have drifted.
+
+**Capabilities belong to the field.** `RichTextField.setHeadingsAllowed(false)` is how a Q&A
+refuses headings; the toolbar greys controls by asking the focused field and never learns
+what a Q&A is. Refusal is real, not cosmetic — `applyHeading` is a no-op on such a field, so
+a stray call can't sneak a heading in. Embeds and the Q&A button itself are gated on the
+same flag, which also stops a Q&A nesting inside another.
+
+**Why no blocks inside:** a Q&A is one atomic question and one atomic answer destined to
+become a flashcard, not a place to nest document structure.
+
+**Deletion is long-press only.** Backspacing at the start of the line below a block used to
+delete it — one keypress, no confirmation, no undo, and it applied to photos and typed-out
+answers alike. That's gone; `onRequestMergeWithPrevious` now does nothing when the previous
+segment is a block. **Known rough edge**: on a Q&A the long-press target is the card's
+chrome (padding, and the ~27dp gutter left of the answer), because a long-press inside
+either field has to remain text selection — that's how you select part of an answer to bold
+it. Image and audio don't have this problem, having no editable children.
+
+**Hints**: only the note's *last* text segment shows "Write something…". The empty segments
+a block insert leaves behind mid-note are structural gaps, not invitations; repeating the
+prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points it from
+`insertSegment`/`removeSegment`, the two places the list can change shape.
 
 ## Conventions worth following
 

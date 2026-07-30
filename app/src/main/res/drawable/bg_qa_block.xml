@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Q&A block surface. Same tonal fill as note rows and the formatting bar, so a Q&A reads as a
+     card sitting in the note rather than as a differently-themed widget. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface_container" />
+    <corners android:radius="@dimen/qa_corner_radius" />
+</shape>
