@@ -64,6 +64,31 @@
     <dimen name="qa_rule_gap">12dp</dimen>
     <dimen name="qa_question_text_size">14sp</dimen>
 
+    <!-- Popup menu items (see ic_menu_flashcard.xml). -->
+    <dimen name="menu_icon_size">22dp</dimen>
+
+    <!-- Note editor toolbar. The options button's icon is three dots, so it wants to be smaller
+         than a normal 24dp glyph or it reads as a heavy blob. -->
+    <dimen name="note_options_icon_size">18dp</dimen>
+
+    <!-- Flashcard review (FlashcardsFragment). The card is deliberately tall — it fills whatever
+         the header and grading row leave — with the min-height only mattering on short screens. -->
+    <dimen name="flashcard_min_height">240dp</dimen>
+    <dimen name="flashcard_corner_radius">20dp</dimen>
+    <dimen name="flashcard_grade_button_size">64dp</dimen>
+    <!-- Half the button size — a square with a half-size corner radius is a circle, and stating it
+         beats relying on whatever the tonal icon-button style's default shape happens to be. -->
+    <dimen name="flashcard_grade_button_radius">32dp</dimen>
+    <dimen name="flashcard_grade_icon_size">26dp</dimen>
+    <dimen name="flashcard_message_icon_size">48dp</dimen>
+
+    <!-- Flashcard deck rows (FlashcardDeckRowView). The badge is a pill rather than a circle so a
+         two-digit due count doesn't get clipped. -->
+    <dimen name="deck_badge_min_width">40dp</dimen>
+    <dimen name="deck_badge_radius">14dp</dimen>
+    <dimen name="deck_delete_size">36dp</dimen>
+    <dimen name="deck_delete_icon_size">18dp</dimen>
+
     <!-- Formatting toolbar (FormattingToolbarController). Items carry no fixed width — they are
          added with equal weights so the eight of them divide the full bar width evenly. The glyph
          is small but the whole weighted slot is the touch target, so it stays comfortably past

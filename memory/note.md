@@ -22,8 +22,13 @@ Design source: the **MSE** Figma file — see [references.md](references.md).
 
 Single Activity (`MainActivity`) hosting a `NavHostFragment` (`nav_graph.xml`):
 
+Two of them are **top-level**, reachable from a `BottomNavigationView` in `activity_main`:
+`homeFragment` and `flashcardDecksFragment`. The bar hides on every other destination.
+
 - `HomeFragment` (start destination) — collections grid + notes list/search + up to
   `NoteRepository.MAX_PINNED_NOTES` (3) pinned-note cards.
+- `FlashcardDecksFragment` — one row per note that has flashcards (see "Flashcards").
+- `FlashcardsFragment` (args: `note_id` required) — the review session for one note's deck.
 - `NoteEditorFragment` (args: `note_id` nullable, `collection_id` nullable) — the rich
   text editor. Null `note_id` means "new note, not yet persisted."
 - `CollectionDetailFragment` (args: `collection_id`, `collection_name`)
@@ -194,7 +199,7 @@ unconditionally after the try/catch block, even on the success path — cosmetic
 success also shows its own "Saved to…" toast first) but worth fixing if that code is
 touched again.
 
-## Markdown note format — implemented; flashcards still planned
+## Markdown note format — implemented, flashcards included
 
 **Storage: done (2026-07-28).** The "Full" option below was chosen: a note is one
 Markdown document in `notes.content_blob`, `note_segments` demoted to a media asset
@@ -211,7 +216,7 @@ registry. See "Note content model" above for how it actually works, and
 | Bullet list | `- item` |
 | Image | `![](quill://image/<asset-id>)` |
 | Audio | `![audio](quill://audio/<asset-id>)` |
-| Q&A block | fenced ` ```quill-qa `, question, `---`, answer, ` ``` ` |
+| Q&A block | fenced ` ```quill-qa:<block-id> `, question, `---`, answer, ` ``` ` |
 
 Note this differs from the original sketch: embeds reference an **asset id**, not a file
 path or an HTML tag, because the metadata (width, duration, transcript) has to live on a
@@ -223,23 +228,7 @@ round-trip is hand-written in `MarkdownSerializer`.
 **Still to design/build** (Epic D): the whiteboard embed, reserved as
 `![whiteboard](quill://whiteboard/<id>)`.
 
-**Flashcard generation & sync**: "Create/Sync Flashcards" on the note screen turns every
-`TYPE_QA` segment into a row in the (already-existing, currently-unused) `flashcards`
-table. Flashcards link back via a new `flashcards.source_segment_id`; the segment-
-identity fix this depended on has since landed (see "Note content model"), so this is no
-longer blocked. Two sync modes, user-selectable **per note** (default: Manual):
-- **Manual** — nothing happens until the user taps "Sync Flashcards."
-- **Automatic** — sync runs on note save, but must never touch a card the user is
-  actively reviewing: a review session snapshots its due-card queue at session start,
-  and auto-sync only writes to the table, never into an in-progress session's queue —
-  otherwise editing a note mid-review could rewrite the card someone's looking at.
-
-Re-syncing a note is an update, not a duplicate-generator: existing linked segments
-overwrite only `front`/`back` text on their flashcard, never the SM-2 scheduling state
-(`interval`/`repetitions`/`easiness`/`next_review`). A flashcard whose source segment
-disappeared (block deleted from the note) is left alone rather than silently deleted —
-someone's review progress shouldn't evaporate because a note got tidied up; surface it
-as orphaned instead and let the user decide.
+See "Flashcards" below for how the Q&A fence's info string ended up being used.
 
 ## Planned: Quizzes — scored, auto-graded, no free-text matching
 
@@ -543,6 +532,113 @@ it. Image and audio don't have this problem, having no editable children.
 a block insert leaves behind mid-note are structural gaps, not invitations; repeating the
 prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points it from
 `insertSegment`/`removeSegment`, the two places the list can change shape.
+
+## Flashcards
+
+**Status: built 2026-07-30** (Epic D's generation/sync and the per-note review screen; the
+global cross-note session and reminders are still outstanding).
+
+**Entry point.** The note editor's toolbar carries an options button (`ic_option`, ⋮) where
+the read-aloud button used to sit. Its menu is "Play aloud" (title/icon toggle to "Stop
+reading" while speaking, hidden when there is nothing to read) and "Turn into flashcards" —
+which becomes **"Review flashcards"** once the note has cards. That flag is re-asked on every
+`onResume` rather than cached at load, so deleting a deck puts the label back.
+The voice picker is still a **long-press** on that button, exactly as it was on the button it
+replaced — a setting used once doesn't earn a line in a two-item menu. The button lives in
+the toolbar rather than beside the title so it stays put as the note scrolls.
+
+**A block's id is stored in the fence.** ` ```quill-qa:<uuid> `. This is the piece everything
+else hangs off, and it isn't cosmetic: segment ids are minted by `BaseSegmentView`, so a
+reload used to give every Q&A block a brand new one. A card keyed to that id would have lost
+its review history on the next parse — and re-syncing would have inserted a duplicate every
+single time. Old fences without an id still parse (they get one, which the next save writes
+back), and a fence typed into ordinary prose is escaped whether or not it carries an id.
+
+**Only complete pairs become cards.** Both halves have to be non-blank. A question with no
+answer has nothing to turn over, and half-written is a normal state mid-note, so it's skipped
+silently rather than flagged. A note can therefore hold Q&A and still have no deck — that's
+what the Snackbar on "Turn into flashcards" explains. The option is deliberately *not* hidden
+in that case: a missing menu item leaves someone hunting for a feature they were told exists.
+
+**Sync is an update, never a duplicate-generator.** `FlashcardRepository.syncFromNote` matches
+on `source_segment_id` and writes only `front`/`back` when they've changed — the SM-2 columns
+are never touched, so fixing a typo in a question doesn't throw away what's known about how
+well it's known. A card whose block has been deleted is left in the table (review progress
+shouldn't evaporate because a note got tidied up); it simply stops appearing in the deck.
+Front/back are stored as **Markdown**, not plain text, so a bolded term or bulleted answer
+looks on the card the way it looks in the note.
+
+**Two clocks, deliberately.** `FlashcardScheduler` (SM-2) decides when a card comes back in
+*days*; `ReviewSession` decides what happens for the rest of the *sitting*. A missed card goes
+to the back of the session queue and has to be answered right before the session ends — being
+shown the answer and immediately moving on is how people finish a deck having learned nothing.
+Only a card's **first** answer feeds the schedule: without that, missing a card and getting it
+right two cards later would look to SM-2 like a clean recall and push it weeks out.
+
+**Why two buttons, not SM-2's six grades.** SM-2 grades 0–5; Quill offers right/wrong and maps
+them to 5 and 2, the two ends of the boundary the algorithm actually turns on. Self-rating
+recall on a six-point scale mid-review is the part of SM-2 people get wrong most often and the
+part that matters least — the interval ladder (1 day → 6 days → ×easiness) does the work.
+Easiness floors at 1.3, below which intervals stop growing and it degenerates into daily
+drilling.
+
+**The Flashcards tab** (`FlashcardDecksFragment`) is the app's second top-level destination, added
+alongside Home in a `BottomNavigationView` wired by `NavigationUI` — the bottom menu's item ids
+*are* the destination ids, which is what gives correct tab-switching and back-stack behaviour
+without a click listener. The bar hides itself on every other destination. One row per note that
+has cards, ordered decks-with-something-to-do first: a due-count badge (the "reviews left" number,
+which is what you scan a list like this for), then `N due now · M cards` with either the unseen
+count or when the deck next comes back. Counted in SQL, not by loading cards.
+
+**Deleting a deck is a hard delete**, against the app's soft-delete convention. A card is *derived*
+from a Q&A block that the delete doesn't touch, so a tombstone would either be resurrected by the
+next sync or, worse, block that note from ever making cards again. What's actually lost is review
+history — which is what the shared confirmation (`DeleteFlashcardsDialog`, used by both the decks
+list and the review screen) warns about.
+
+**Schema v4** adds `flashcards.source_segment_id` and `last_reviewed_at`. Note that
+`onUpgrade` is **no longer unconditionally destructive**: from v3 (the Markdown schema)
+upgrades are additive, and only pre-v3 development-era databases are rebuilt. Wiping a user's
+notes to add two columns isn't a trade worth making.
+
+**The editor now navigates forward, and that exposed a latent bug.** `NoteEditorFragment` read the
+note id straight out of its arguments in `onViewCreated`. For a note created *during* the session
+the arguments have no id — the editor was opened without one — and until there was somewhere to
+navigate to, nothing ever rebuilt the view to notice. Going to the review screen and back does: the
+fragment instance survives on the back stack and only its view is recreated, so the read wiped the
+id, showed a blank page, and autosaved itself into a **second, empty note**. The id is now taken
+from the arguments only when the fragment doesn't already have one, with `onSaveInstanceState` as
+the third fallback for a genuine recreation. Anything else added to the editor that navigates away
+inherits this fix — don't re-introduce an unconditional read from `getArguments()`.
+
+**UI gotchas worth remembering**, all hit and fixed on the emulator:
+- A `ScrollView` consumes taps whether or not it has anything to scroll, so the card's click
+  listener only fired on its margins. Fixed with a `GestureDetector` on the scroll view that
+  watches touches without consuming them — a long answer still scrolls, a tap still flips.
+- The icon set ships as **density-less PNGs**, whose intrinsic size is their pixel size at
+  mdpi (~85dp on a 3x screen). Everywhere else they're drawn into a fixed-size `ImageView`,
+  but a menu item asks the drawable how big it is and believes it — which blew the popup out
+  to the icon's width and truncated the labels. `ic_menu_*.xml` wrap them in a size-pinned
+  `layer-list`; do the same for any new menu icon. (A `BottomNavigationView` doesn't need this —
+  it sets the icon's bounds from `itemIconSize` itself.)
+- Running `connectedAndroidTest` **clears the app's data** on the device, so manual test data set
+  up on the emulator is gone after a test run. Seed first, or test first — not the other way round.
+- **Never ask `TextToSpeech.isSpeaking()` whether *your* reader is speaking.** It reports the engine
+  service's global state, shared across every client in the process and outliving any one of them,
+  so a note screen opened right after another one had been reading could inherit "busy" and offer to
+  "Stop reading" with nothing playing (reported 2026-07-30 on a physical device). `NoteReader` now
+  tracks its own flag, which starts false — right by construction, since a new reader has not been
+  asked to read anything. The emulator's Google TTS settles fast enough that it never showed the
+  symptom, so this one can only be confirmed on a real device.
+- **An icon-only `MaterialButton` does not centre its icon by default.** The button lays the icon
+  out relative to its *text* block and insets its own background (6dp top/bottom, plus a horizontal
+  inset in the icon-button styles), so at a fixed square size the fill comes out as an ellipse with
+  the glyph sitting up and toward the start — which is exactly what the flashcard grading buttons
+  did. The recipe that works: `android:padding="0dp"`, all four `android:inset*="0dp"`,
+  `android:minWidth/minHeight="0dp"`, `app:iconPadding="0dp"`, `app:iconGravity="textStart"`, and an
+  explicit `app:cornerRadius` of half the size for a true circle. Worth measuring rather than eyeing:
+  `adb shell uiautomator dump` gives the button's exact bounds, and cropping the screenshot to those
+  bounds shows immediately whether the glyph sits at the centre.
 
 ## Conventions worth following
 

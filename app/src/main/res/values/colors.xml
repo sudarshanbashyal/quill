@@ -36,6 +36,14 @@
     <color name="qa_answer_rule">#30B488</color>
     <color name="qa_question_text">#96000000</color>
 
+    <!-- Flashcard grading. Green/red are doing semantic work here (right vs. wrong), not brand
+         work, so they're their own pair rather than a tint of brand_purple; the container tones are
+         what the buttons are actually filled with, keeping the pair quiet until it's looked at. -->
+    <color name="answer_correct">#1E8E5A</color>
+    <color name="answer_correct_container">#E1F3EA</color>
+    <color name="answer_incorrect">#C0392F</color>
+    <color name="answer_incorrect_container">#FBE7E5</color>
+
     <!-- Misc -->
     <color name="uncategorized_gray">#9E9E9E</color>
     <color name="divider">#EBE9F2</color>

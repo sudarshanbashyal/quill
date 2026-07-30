@@ -14,7 +14,23 @@
         app:navigationIcon="?attr/homeAsUpIndicator"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Everything the whole note can have done to it — read aloud, turned into flashcards —
+             lives behind this one control, in the toolbar rather than beside the title so it stays
+             put as the note scrolls. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/note_options_button"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|center_vertical"
+            android:contentDescription="@string/action_note_options"
+            app:icon="@drawable/ic_option"
+            app:iconSize="@dimen/note_options_icon_size"
+            app:iconTint="@color/text_primary" />
+
+    </androidx.appcompat.widget.Toolbar>
 
     <!-- Scrollable note content -->
     <ScrollView
@@ -34,36 +50,17 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <LinearLayout
+            <EditText
+                android:id="@+id/note_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <EditText
-                    android:id="@+id/note_title"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:hint="Title"
-                    android:textSize="24sp"
-                    android:textStyle="bold"
-                    android:background="@null"
-                    android:inputType="textNoSuggestions"
-                    android:imeOptions="actionNext"
-                    android:maxLines="2" />
-
-                <Button
-                    android:id="@+id/read_aloud_button"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/action_read_aloud_glyph"
-                    android:textAllCaps="false"
-                    android:visibility="gone"
-                    android:contentDescription="@string/action_read_aloud" />
-
-            </LinearLayout>
+                android:hint="Title"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:background="@null"
+                android:inputType="textNoSuggestions"
+                android:imeOptions="actionNext"
+                android:maxLines="2" />
 
             <HorizontalScrollView
                 android:id="@+id/tag_row_scroll"

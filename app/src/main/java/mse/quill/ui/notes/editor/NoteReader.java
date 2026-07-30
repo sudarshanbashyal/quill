@@ -40,6 +40,8 @@ public class NoteReader {
     private TextToSpeech tts;
     private boolean ready = false;
     private String pendingText;
+    /** Whether <em>this</em> reader has a reading in flight — see {@link #isSpeaking()}. */
+    private boolean speaking = false;
 
     public NoteReader(Context context, ReadingListener listener) {
         this.listener = listener;
@@ -47,8 +49,10 @@ public class NoteReader {
         tts = new TextToSpeech(context.getApplicationContext(), status -> {
             ready = status == TextToSpeech.SUCCESS;
             if (!ready) {
-                if (pendingText != null) listener.onReadingFailed();
+                boolean hadPending = pendingText != null;
                 pendingText = null;
+                speaking = false;
+                if (hadPending) listener.onReadingFailed();
                 return;
             }
             tts.setLanguage(Locale.getDefault());
@@ -56,10 +60,16 @@ public class NoteReader {
                 @Override public void onStart(String utteranceId) {}
                 // These land on the TTS engine's own thread, not the main thread.
                 @Override public void onDone(String utteranceId) {
-                    mainHandler.post(listener::onReadingFinished);
+                    mainHandler.post(() -> {
+                        speaking = false;
+                        listener.onReadingFinished();
+                    });
                 }
                 @Override public void onError(String utteranceId) {
-                    mainHandler.post(listener::onReadingFailed);
+                    mainHandler.post(() -> {
+                        speaking = false;
+                        listener.onReadingFailed();
+                    });
                 }
             });
             restorePreferredVoice();
@@ -124,8 +134,21 @@ public class NoteReader {
         return best;
     }
 
+    /**
+     * Whether this reader is reading — tracked here rather than asked of the engine.
+     *
+     * <p>{@link TextToSpeech#isSpeaking()} reports the <em>engine service's</em> state, which is
+     * global: it is shared by every client in the process and outlives any one of them. A reader is
+     * created per note screen, so a freshly opened note would inherit "busy" from the screen before
+     * it — the engine can still be settling after a stop, and the docs are explicit that a lag sits
+     * between audio being handed to the mixer and playback finishing. The symptom was a note you'd
+     * just opened offering to "Stop reading" with nothing playing.
+     *
+     * <p>Our own flag starts false, which is right by construction: this reader has not been asked
+     * to read anything yet.
+     */
     public boolean isSpeaking() {
-        return tts != null && tts.isSpeaking();
+        return speaking;
     }
 
     public void speak(String text) {
@@ -134,13 +157,17 @@ public class NoteReader {
             return;
         }
         if (!ready) {
+            // Counts as speaking from here: the request is accepted and will start on its own once
+            // the engine is up, so the control has to offer stopping it in the meantime.
             pendingText = text;
+            speaking = true;
             return;
         }
         speakInternal(text);
     }
 
     private void speakInternal(String text) {
+        speaking = true;
         listener.onReadingStarted();
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString());
     }
@@ -149,10 +176,13 @@ public class NoteReader {
      *  trigger onDone/onError — the caller is responsible for updating its own UI state. */
     public void stop() {
         pendingText = null;
+        speaking = false;
         if (tts != null) tts.stop();
     }
 
     public void shutdown() {
+        pendingText = null;
+        speaking = false;
         if (tts != null) {
             tts.stop();
             tts.shutdown();

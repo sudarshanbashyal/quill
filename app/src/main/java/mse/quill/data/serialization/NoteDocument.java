@@ -52,10 +52,24 @@ public final class NoteDocument {
 
     /** A Q&A is a fenced block rather than a {@code quill://} line because, unlike an image, its
      *  content *is* text — formatted, multi-line, and belonging in the document rather than on a
-     *  side table. The info string stays extensible so a linked flashcard id can be appended later
-     *  ({@code quill-qa:fc_8f3a}) without changing the shape. */
+     *  side table. The info string carries the block's id ({@code ```quill-qa:8f3a…}), which is what
+     *  gives a Q&A an identity that outlives a reload — see {@link #QA_FENCE_LINE}. */
     private static final String QA_FENCE = "```quill-qa";
     private static final String FENCE_CLOSE = "```";
+
+    /**
+     * A whole line opening a Q&A block, capturing the id in its info string.
+     *
+     * <p>The id is what a flashcard's {@code source_segment_id} points at, so it has to survive the
+     * document round trip: a block's runtime id is minted by the view and would otherwise be
+     * regenerated every time the note is parsed back in, and a card's review history would follow
+     * the block for exactly one session. Keeping it in the info string rather than on a side table
+     * means it travels with the block through copy, export and hand-editing.
+     *
+     * <p>The id is optional so blocks written before this landed still parse — they simply get a
+     * fresh id, the same as a newly typed block.
+     */
+    private static final Pattern QA_FENCE_LINE = Pattern.compile("^```quill-qa(?::([^\\s]+))?$");
     /** Divides question from answer inside the fence. Chosen over per-line prefixes so both halves
      *  can be ordinary multi-line Markdown. */
     private static final String QA_DIVIDER = "---";
@@ -93,7 +107,7 @@ public final class NoteDocument {
         String[] lines = MarkdownSerializer.toMarkdown(content).split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
             if (i > 0) out.append('\n');
-            if (EMBED_LINE.matcher(lines[i]).matches() || lines[i].equals(QA_FENCE)) {
+            if (EMBED_LINE.matcher(lines[i]).matches() || isQaFence(lines[i])) {
                 out.append('\\');
             }
             out.append(lines[i]);
@@ -101,7 +115,9 @@ public final class NoteDocument {
     }
 
     private static void appendQa(QaSegment segment, StringBuilder out) {
-        out.append(QA_FENCE).append('\n');
+        out.append(QA_FENCE);
+        if (segment.id != null && !segment.id.isEmpty()) out.append(':').append(segment.id);
+        out.append('\n');
         appendFenced(segment.question, out);
         out.append(QA_DIVIDER).append('\n');
         appendFenced(segment.answer, out);
@@ -112,7 +128,7 @@ public final class NoteDocument {
      *  escaped — the backslash is consumed again by {@link MarkdownSerializer} on the way back. */
     private static void appendFenced(Spanned content, StringBuilder out) {
         for (String line : MarkdownSerializer.toMarkdown(content).split("\n", -1)) {
-            if (line.equals(FENCE_CLOSE) || line.equals(QA_DIVIDER) || line.equals(QA_FENCE)) {
+            if (line.equals(FENCE_CLOSE) || line.equals(QA_DIVIDER) || isQaFence(line)) {
                 out.append('\\');
             }
             out.append(line).append('\n');
@@ -138,14 +154,15 @@ public final class NoteDocument {
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
 
-            if (line.equals(QA_FENCE)) {
+            Matcher qaFence = QA_FENCE_LINE.matcher(line);
+            if (qaFence.matches()) {
                 int close = indexOfFenceClose(lines, i + 1);
                 if (hasPendingText) {
                     segments.add(new TextSegment(MarkdownSerializer.fromMarkdown(pendingText.toString())));
                     pendingText.setLength(0);
                     hasPendingText = false;
                 }
-                segments.add(readQa(lines, i + 1, close));
+                segments.add(readQa(lines, i + 1, close, qaFence.group(1)));
                 i = close;
                 continue;
             }
@@ -185,7 +202,7 @@ public final class NoteDocument {
         return lines.length;
     }
 
-    private static QaSegment readQa(String[] lines, int from, int close) {
+    private static QaSegment readQa(String[] lines, int from, int close, String id) {
         StringBuilder question = new StringBuilder();
         StringBuilder answer = new StringBuilder();
         StringBuilder target = question;
@@ -201,9 +218,18 @@ public final class NoteDocument {
             target.append(lines[i]);
         }
 
-        return new QaSegment(
+        QaSegment segment = new QaSegment(
                 MarkdownSerializer.fromMarkdown(question.toString()),
                 MarkdownSerializer.fromMarkdown(answer.toString()));
+        // A block written before ids were stored keeps the fresh one the constructor minted; the
+        // next save writes it into the document, so it only ever happens once.
+        if (id != null && !id.isEmpty()) segment.id = id;
+        return segment;
+    }
+
+    /** Whether a line opens a Q&A block — with or without an id in its info string. */
+    private static boolean isQaFence(String line) {
+        return QA_FENCE_LINE.matcher(line).matches();
     }
 
     // ── Projections ────────────────────────────────────────────────────────
@@ -221,7 +247,7 @@ public final class NoteDocument {
             if (EMBED_LINE.matcher(line).matches()) continue;
             // A Q&A's question and answer are real note content and stay; only the block's
             // scaffolding is dropped, so search and previews can see inside a Q&A.
-            if (line.equals(QA_FENCE) || line.equals(FENCE_CLOSE) || line.equals(QA_DIVIDER)) continue;
+            if (isQaFence(line) || line.equals(FENCE_CLOSE) || line.equals(QA_DIVIDER)) continue;
             if (out.length() > 0) out.append('\n');
             out.append(HeadingMarker.strip(MarkdownSerializer.fromMarkdown(line).toString()));
         }

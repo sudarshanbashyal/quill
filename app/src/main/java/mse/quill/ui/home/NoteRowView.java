@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
+import mse.quill.util.CardStyles;
 
 /**
  * Builds a note row entirely in code rather than via an XML layout + LayoutInflater.
@@ -113,23 +114,13 @@ final class NoteRowView {
         return new Views(card, title, timestamp, tagsContainer);
     }
 
-    /**
-     * Shared setup for the app's flat card look. The M3 theme's default materialCardViewStyle is
-     * the *outlined* one, so stroke and elevation are zeroed explicitly rather than inherited —
-     * that keeps these cards looking identical regardless of which default the MDC version ships.
-     * Clickable/focusable is what makes MaterialCardView install its ripple foreground.
-     */
+    /** Lives in {@link CardStyles} now that flashcard decks draw the same card; these two stay as
+     *  delegates so this package's call sites read the way they always have. */
     static void applyFlatCardStyle(MaterialCardView card, int cornerRadiusRes) {
-        Context context = card.getContext();
-        card.setRadius(dimen(context, cornerRadiusRes));
-        card.setCardElevation(0f);
-        card.setStrokeWidth(0);
-        card.setRippleColorResource(R.color.brand_purple_light);
-        card.setClickable(true);
-        card.setFocusable(true);
+        CardStyles.applyFlatCardStyle(card, cornerRadiusRes);
     }
 
     static int dimen(Context context, int dimenRes) {
-        return context.getResources().getDimensionPixelSize(dimenRes);
+        return CardStyles.dimen(context, dimenRes);
     }
 }

@@ -9,7 +9,7 @@ import android.util.Log;
 public class AppDatabase extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "quill.db";
-    private static final int DATABASE_VERSION = 3;
+    private static final int DATABASE_VERSION = 4;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -73,15 +73,20 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "created_at INTEGER, " +
                 "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
 
+        // source_segment_id is the id of the Q&A block the card was generated from, as carried in
+        // the note's Markdown (```quill-qa:<id>). It's what makes re-syncing a note an update
+        // rather than a duplicate-generator: the card's SM-2 columns survive edits to its text.
         db.execSQL("CREATE TABLE flashcards (" +
                 "id TEXT PRIMARY KEY, " +
                 "note_id TEXT, " +
+                "source_segment_id TEXT, " +
                 "front TEXT, " +
                 "back TEXT, " +
                 "interval INTEGER DEFAULT 1, " +
                 "repetitions INTEGER DEFAULT 0, " +
                 "easiness REAL DEFAULT 2.5, " +
                 "next_review INTEGER, " +
+                "last_reviewed_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
         db.execSQL("CREATE TABLE voice_memos (" +
@@ -149,6 +154,7 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_whiteboards_note_id ON whiteboards(note_id)");
         db.execSQL("CREATE INDEX idx_strokes_whiteboard_id ON strokes(whiteboard_id)");
         db.execSQL("CREATE INDEX idx_flashcards_note_id ON flashcards(note_id)");
+        db.execSQL("CREATE INDEX idx_flashcards_source_segment_id ON flashcards(source_segment_id)");
         db.execSQL("CREATE INDEX idx_voice_memos_note_id ON voice_memos(note_id)");
         db.execSQL("CREATE INDEX idx_note_segments_note_id ON note_segments(note_id)");
         db.execSQL("CREATE INDEX idx_note_tags_tag_id ON note_tags(tag_id)");
@@ -157,8 +163,26 @@ public class AppDatabase extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // For development: simple destructive upgrade.
-        // For production: write proper ALTER TABLE / migration steps per version.
+        // v3 is the schema the Markdown migration shipped, so from there on upgrades are additive:
+        // dropping a user's notes to add two columns to a table they've never filled would be a
+        // poor trade. Anything older is a development-era schema and still gets rebuilt.
+        if (oldVersion >= 3) {
+            if (oldVersion < 4) upgradeToV4(db);
+            return;
+        }
+
+        rebuild(db);
+    }
+
+    /** Links a flashcard back to the Q&A block it came from, and records when it was last seen. */
+    private void upgradeToV4(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE flashcards ADD COLUMN source_segment_id TEXT");
+        db.execSQL("ALTER TABLE flashcards ADD COLUMN last_reviewed_at INTEGER");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_flashcards_source_segment_id " +
+                "ON flashcards(source_segment_id)");
+    }
+
+    private void rebuild(SQLiteDatabase db) {
         db.execSQL("DROP TABLE IF EXISTS notes_fts");
         db.execSQL("DROP TABLE IF EXISTS note_tags");
         db.execSQL("DROP TABLE IF EXISTS tags");

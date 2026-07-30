@@ -434,3 +434,128 @@ added with the same confirmation dialog.
 not the text, because long-press inside a field has to stay text selection — that's how part of an
 answer gets bolded. Offered two ways to widen it (more padding, or long-press-deletes on an empty
 field) if it proves fiddly in use.
+
+## 2026-07-30 — Feature implementation: flashcards from Q&A blocks
+
+**Asked:** replace the note screen's audio button with an options button (`ic_option`) offering
+"play aloud" and "turn into flashcards"; build cards from Q&A blocks that have *both* halves, show
+a message when a note has none, and put a typical review algorithm behind a simple right/wrong
+design.
+
+**The prerequisite nobody asked for.** Card→block linking was already designed (Epic D's
+`source_segment_id`) and already assumed to be unblocked, because segment ids became stable back in
+July. They're stable *within a session* — `BaseSegmentView` mints them — but the Q&A fence didn't
+store one, so every reload minted fresh ids. A card keyed to that would have lost its history on the
+next parse and re-syncing would have duplicated the deck every time. The fix is the extension the
+format had already reserved: ` ```quill-qa:<id> `. It carries the **block's** id rather than a
+flashcard id, which keeps the document the source of truth and the flashcard table the follower.
+Old fences without an id still parse and get one written back on the next save.
+
+**Two clocks, kept separate.** `FlashcardScheduler` is SM-2 over days; `ReviewSession` governs the
+sitting. A missed card returns to the back of the session queue and must be answered right before
+the session ends, but only a card's **first** answer feeds SM-2 — otherwise missing a card and
+getting it right two cards later reads to the algorithm as clean recall and pushes it weeks out.
+Both are plain Java with no Android or clock, and carry 18 unit tests between them.
+
+**Right/wrong rather than SM-2's six grades**, mapped to quality 5 and 2. Self-rating recall on a
+six-point scale mid-review is the part of SM-2 people get wrong most often and the part that matters
+least; the interval ladder does the work.
+
+**Deviations from the plan in requirements.md, stated rather than hidden:** no per-note
+Manual/Automatic sync mode (sync just runs when the review screen opens — Manual in all but name),
+and an orphaned card is left alone rather than surfaced as orphaned. Neither the per-note card list
+nor the global cross-note session was built.
+
+**Also changed:** `AppDatabase.onUpgrade` is no longer unconditionally destructive — v3+ upgrades
+are additive now, so adding two columns doesn't wipe someone's notes. And `hasRealContent` didn't
+count Q&A blocks, so a note whose only content was Q&A survived purely because the auto-generated
+title is never empty.
+
+**Verified on the emulator end to end** — two blocks → deck of 2 → miss one → it comes back → summary
+"1 of 2 right first time" → reopening shows "All caught up, next card: In 23 hours", with the DB
+confirming two rows (no duplicates), ids matching the fences, and the missed card's easiness down to
+2.18. Two things only the emulator caught: a `ScrollView` eats taps whether or not it can scroll (so
+the card only flipped on its margins), and the density-less PNG icons report their mdpi pixel size to
+a menu item, which blew the popup out and truncated its labels.
+
+## 2026-07-30 — Follow-up: a Flashcards tab, and deleting decks
+
+**Asked:** say "Review flashcards" once a note's cards exist; add a bottom navigation menu with Home
+and Flashcards; list one entry per note that has cards showing how many reviews are left and other
+useful detail; allow deleting from that list and from the review screen.
+
+**Navigation.** `BottomNavigationView` wired with `NavigationUI`, with the menu's item ids set to the
+*destination* ids — that's what makes tab switching pop back to the start destination instead of
+stacking Home on Flashcards on Home. The bar hides on every non-top-level destination; the editor
+and a review session are places you arrived from a tab, and a bar offering to jump away mid-note is
+noise.
+
+**The deck row leads with the due count**, because "how many reviews are left" is the number worth
+scanning a list for; `N due now · M cards` and either the unseen count or the next due time follow as
+detail. All counted in SQL — a note with two hundred cards should cost what one with three costs.
+
+**Deletion is a hard delete**, deliberately breaking the app's soft-delete convention: a card is
+derived from a Q&A block the delete doesn't touch, so a tombstone would either be resurrected by the
+next sync or block that note from making cards ever again. What's lost is review history, which is
+what the shared confirmation says. Both entry points use the same dialog so the warning can't drift.
+
+**A latent bug the feature exposed.** `NoteEditorFragment` read its note id from `getArguments()` on
+every `onViewCreated`. For a note created *during* the session there is no id in the arguments, and
+until this feature there was nowhere to navigate to and come back from, so it never showed. Coming
+back from the review screen does exactly that: the fragment instance survives on the back stack and
+only its view is rebuilt, so the editor forgot which note it was editing, went blank, and autosaved
+itself into a **second, empty note**. Caught on the emulator, confirmed in the database (two rows,
+one of them 0 bytes), and fixed by only reading the arguments when the fragment doesn't already know
+its id — with `onSaveInstanceState` as the fallback for a real recreation. My first attempt at the
+fix was the `onSaveInstanceState` half alone, which did nothing: the instance isn't destroyed, so
+there was no saved state to restore from and the argument read still clobbered the id.
+
+**Verified on the emulator**: generate → label flips to "Review flashcards" → tab shows `2 · 2 due
+now · 2 new` → review both → row becomes `0 · All caught up · Next: In 23 hours` → delete from the
+list (empty state + snackbar) → regenerate → delete from the review screen (returns to the note,
+label back to "Turn into flashcards"), with the database checked at each step. Also confirmed a
+trashed note's deck drops out of the list while its cards stay in the table.
+
+**Worth knowing for next time:** `connectedAndroidTest` clears the app's data, which ate a round of
+manually seeded emulator state mid-session.
+
+## 2026-07-30 — Bug fix: "Stop reading" on a note that isn't reading
+
+**Reported:** play a note aloud, go back, open a note again — the options menu says stop even though
+nothing is playing.
+
+**Cause:** `NoteReader.isSpeaking()` delegated to `TextToSpeech.isSpeaking()`, which reports the
+**engine service's** state. That state is global — shared by every client in the process and
+outliving any one of them — while a `NoteReader` is created per note screen. So a freshly opened
+note could inherit "busy" from the screen before it, and Android's own docs are explicit that a lag
+sits between audio being handed to the mixer and playback actually finishing.
+
+**Fix:** the reader tracks its own flag (set when it speaks or queues a pending utterance, cleared
+on done/error/stop/shutdown). A new reader starts false, which is right by construction: it hasn't
+been asked to read anything. The symptom is now impossible regardless of how slowly an engine
+settles.
+
+**Honest about verification:** not reproducible on the emulator — its Google TTS clears the flag
+promptly, and the same sequence showed "Play aloud" on both the pre-fix and post-fix builds (checked
+by stashing the fix and reinstalling). What the emulator did confirm is that the label still turns to
+"Stop reading" while a reading is genuinely in progress on the same screen. The reported case needs
+a real device to confirm.
+
+## 2026-07-30 — Bug fix: off-centre icons on the flashcard grading buttons
+
+**Reported:** the right/wrong icons aren't centred in their circles.
+
+**Cause:** an icon-only `MaterialButton` doesn't centre its icon. It positions the icon relative to
+the *text* block — of which there is none — and insets its own background (6dp top and bottom, plus
+a horizontal inset in the icon-button styles), so a fixed 64dp square renders as an ellipse with the
+glyph pushed up and toward the start.
+
+**Fix:** zero padding, all four insets zeroed, `minWidth`/`minHeight` zeroed, `iconPadding` zero,
+`iconGravity="textStart"`, and an explicit `cornerRadius` of half the button size so the fill is a
+real circle rather than whatever the style's default shape works out to.
+
+**Measured rather than eyeballed**, which is what made this quick: `adb shell uiautomator dump` gives
+the button's exact bounds, then cropping the screenshot to precisely those bounds and magnifying
+shows whether the glyph's centre matches the box's. The first attempt centred the glyph but left the
+fill narrower than it was tall — visible only at that magnification — and the horizontal insets were
+the remaining culprit. Confirmed working by the user.

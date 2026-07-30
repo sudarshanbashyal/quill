@@ -71,10 +71,53 @@
     <string name="qa_question_hint">Question</string>
     <string name="qa_answer_hint">Answer</string>
 
-    <string name="action_read_aloud">Read note aloud</string>
-    <string name="action_read_aloud_glyph">▶</string>
-    <string name="action_stop_reading_glyph">⏸</string>
+    <!-- Note options menu (the toolbar's ⋮). -->
+    <string name="action_note_options">Note options</string>
+    <string name="action_read_aloud">Play aloud</string>
+    <string name="action_stop_reading">Stop reading</string>
+    <string name="action_turn_into_flashcards">Turn into flashcards</string>
+    <string name="action_review_flashcards">Review flashcards</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>
+
+    <!-- Bottom navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_flashcards">Flashcards</string>
+
+    <!-- Flashcards -->
+    <string name="flashcards_title">Flashcards</string>
+    <string name="flashcards_decks_subtitle">Decks made from your notes\' Q&amp;A blocks</string>
+    <string name="flashcards_decks_empty">No flashcards yet — open a note with Q&amp;A blocks and choose "Turn into flashcards".</string>
+    <string name="flashcards_deck_due_format">%1$d due now · %2$d cards</string>
+    <string name="flashcards_deck_none_due_format">All caught up · %1$d cards</string>
+    <string name="flashcards_deck_next_format">Next: %1$s</string>
+    <string name="flashcards_deck_unseen_format">%1$d new</string>
+    <string name="flashcards_deck_last_reviewed_format">Reviewed %1$s</string>
+    <string name="flashcards_deck_never_reviewed">Not started</string>
+    <string name="action_delete_flashcards">Delete flashcards</string>
+    <string name="delete_flashcards_title">Delete these flashcards?</string>
+    <string name="delete_flashcards_title_format">Delete flashcards for \"%1$s\"?</string>
+    <string name="delete_flashcards_message">The cards and their review progress will be gone. The note\'s Q&amp;A blocks stay, so you can make them again later — starting from scratch.</string>
+    <string name="flashcards_deleted">Flashcards deleted</string>
+    <string name="flashcards_no_qa_message">Add a question and answer block first — flashcards are made from Q&amp;A pairs that have both halves filled in.</string>
+    <string name="flashcard_label_question">QUESTION</string>
+    <string name="flashcard_label_answer">ANSWER</string>
+    <string name="flashcard_tap_to_reveal">Tap to reveal the answer</string>
+    <string name="flashcard_position_format">%1$d / %2$d</string>
+    <string name="action_answer_correct">I got it right</string>
+    <string name="action_answer_incorrect">I got it wrong</string>
+    <string name="flashcards_summary_title">Session complete</string>
+    <string name="flashcards_summary_format">%1$d of %2$d right first time.</string>
+    <string name="flashcards_summary_perfect">Every card right first time.</string>
+    <string name="flashcards_caught_up_title">All caught up</string>
+    <string name="flashcards_caught_up_message">Nothing to review right now.</string>
+    <!-- %1$s is a relative time from DateUtils ("In 3 days"), which comes back capitalised — hence
+         a colon rather than running it into a sentence. -->
+    <string name="flashcards_caught_up_message_format">Next card: %1$s</string>
+    <string name="flashcards_empty_title">No cards yet</string>
+    <string name="flashcards_empty_message">This note has no question and answer blocks with both halves filled in.</string>
+    <string name="flashcards_action_review_again">Review again</string>
+    <string name="flashcards_action_review_anyway">Review anyway</string>
+    <string name="flashcards_action_back">Back to note</string>
 
     <string name="action_save_image">Save to Photos</string>
     <string name="image_viewer_description">Full size image</string>

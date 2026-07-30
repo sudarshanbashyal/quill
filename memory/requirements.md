@@ -187,31 +187,49 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
         audio are refused. Delivered by extracting `RichTextField` out of `TextSegmentView`
         so both segment types share one implementation — see [note.md](note.md)'s
         "Q&A blocks"
-  - [x] Markdown form: fenced ` ```quill-qa `, question, `---`, answer, ` ``` `. The divider
-        (rather than per-line `Q:`/`A:` prefixes) is what keeps both halves ordinary
-        multi-line Markdown. Info string still extensible for `:<flashcard-id>`
+  - [x] Markdown form: fenced ` ```quill-qa:<block-id> `, question, `---`, answer, ` ``` `.
+        The divider (rather than per-line `Q:`/`A:` prefixes) is what keeps both halves
+        ordinary multi-line Markdown. The reserved info-string slot is now **used**, and
+        carries the *block's* id rather than a flashcard id — see below
   - [ ] Numbered lists inside a Q&A (bullets only today, same as body text)
-- [ ] **Flashcard generation & sync** *(no longer blocked — Q&A segments and stable
-      segment ids both exist now)*
-  - [ ] `FlashcardRepository` (CRUD), following the existing callback-based async
-        pattern used by `NoteRepository`/`TagRepository`
-  - [ ] `flashcards.source_segment_id` (nullable) linking a generated card back to its
-        source Q&A segment — depends on the segment-identity fix above
-  - [ ] Per-note sync mode, user-selectable, default **Manual**: "Sync Flashcards"
-        button (manual) vs. "Sync Automatically" (syncs on every note save)
-  - [ ] Sync logic: unlinked Q&A segments → create a flashcard; linked segments →
-        update `front`/`back` only, never touch SM-2 scheduling state; flashcards whose
-        source segment disappeared → flagged as orphaned, not silently deleted
+- [x] **Flashcard generation & sync** *(done 2026-07-30)*
+  - [x] `FlashcardRepository` (sync + record-review), following the existing
+        callback-based async pattern used by `NoteRepository`/`TagRepository`
+  - [x] `flashcards.source_segment_id` linking a generated card back to its source Q&A
+        block (schema v4, additive migration from v3 — no data wipe). The link only holds
+        because the **block's id is now persisted in the fence's info string**: segment
+        ids are minted by the view, so before this a reload gave every block a new id and
+        a card's history would have survived exactly one session
+  - [x] Sync logic: unlinked Q&A blocks → create a flashcard; linked ones → update
+        `front`/`back` only, never touch SM-2 scheduling state; a card whose source block
+        disappeared is left alone (it just stops appearing in the note's deck)
+  - [x] Only Q&A blocks with **both** halves non-blank become cards — a question with no
+        answer has nothing to turn over, and half-written is a normal editing state
+  - [ ] Per-note sync mode: not built. Sync is unconditional and runs when the review
+        screen opens, which is the Manual default in all but name — there is no automatic
+        on-save sync, so the in-progress-session hazard below hasn't arisen yet
   - [ ] Automatic mode must not disrupt an in-progress review session — a session
         snapshots its due-card queue at start; auto-sync writes to the table but never
         mutates a card the user is actively looking at mid-session
-  - [ ] "Create/Sync Flashcards" entry point on the note screen, hidden when the note
-        has no Q&A segments, with concrete feedback ("3 created, 1 updated — View
-        flashcards") rather than a bare toast
+  - [x] Entry point: **"Turn into flashcards"** in the note screen's new options menu
+        (⋮), becoming **"Review flashcards"** once the note has cards. Shown always rather
+        than hidden — a note with Q&A but no complete pair explains itself in a Snackbar,
+        where a missing menu item would leave the user looking for a feature they'd been
+        told existed
+  - [x] Deleting a note's cards, from the decks list and from the review screen. A hard
+        delete (the cards are derived data; a tombstone would either be resurrected by the
+        next sync or block that note from making cards again), so the confirmation says
+        review progress is what's lost
 - [ ] **Review & study surfaces**
-  - [ ] Per-note flashcard list (manage/inspect what a specific note produced)
-  - [ ] Global review session screen — today's due cards across *all* notes (this is
-        what actually exercises SM-2 scheduling, not the per-note list)
+  - [x] Per-note review session (`FlashcardsFragment`): flip card, right/wrong grading,
+        SM-2 scheduling, due-first with an "all caught up / review anyway" state, and
+        missed cards re-queued within the sitting
+  - [x] Decks list (`FlashcardDecksFragment`), a top-level destination alongside Home in a
+        new bottom navigation bar: one row per note that has cards, with the due count,
+        totals and next-review time
+  - [ ] Per-card management (inspect/edit/delete an individual card, rather than a note's
+        whole deck)
+  - [ ] Global review session screen — today's due cards across *all* notes
 - [ ] **Reminders (background infrastructure, reusable beyond flashcards)**
   - [ ] Notification channel setup
   - [ ] WorkManager/AlarmManager job to notify when cards are due
