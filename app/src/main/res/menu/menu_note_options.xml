@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Whole-note actions, shown from the toolbar's options button. Icons are forced on (see
-     NoteEditorFragment) so the two items read at a glance rather than as a wall of text. -->
+     NoteEditorFragment) so the items read at a glance rather than as a wall of text. -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
@@ -12,5 +12,10 @@
         android:id="@+id/action_turn_into_flashcards"
         android:icon="@drawable/ic_menu_flashcard"
         android:title="@string/action_turn_into_flashcards" />
+
+    <item
+        android:id="@+id/action_make_quiz"
+        android:icon="@drawable/ic_menu_quiz"
+        android:title="@string/action_make_quiz" />
 
 </menu>

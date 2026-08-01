@@ -51,6 +51,28 @@
         <argument android:name="note_id" app:argType="string" />
     </fragment>
 
+    <!-- Top-level destination, reachable from the bottom bar. Its two children take a quiz id and
+         nothing else: the questions are regenerated from the note each time, so there is no session
+         state worth passing between screens. -->
+    <fragment
+        android:id="@+id/quizzesFragment"
+        android:name="mse.quill.ui.quiz.QuizzesFragment"
+        android:label="Quizzes" />
+
+    <fragment
+        android:id="@+id/quizDetailFragment"
+        android:name="mse.quill.ui.quiz.QuizDetailFragment"
+        android:label="Quiz">
+        <argument android:name="quiz_id" app:argType="string" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/quizSessionFragment"
+        android:name="mse.quill.ui.quiz.QuizSessionFragment"
+        android:label="Quiz">
+        <argument android:name="quiz_id" app:argType="string" />
+    </fragment>
+
     <!-- add other fragments here -->
     <fragment
         android:id="@+id/whiteboardFragment"

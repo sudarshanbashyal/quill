@@ -36,9 +36,12 @@ import com.google.android.material.snackbar.Snackbar;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.NoteRepository;
+import mse.quill.data.QuizRepository;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
 import mse.quill.ui.flashcards.FlashcardsFragment;
+import mse.quill.ui.quiz.QuizDetailFragment;
+import mse.quill.ui.quiz.QuizRules;
 import mse.quill.ui.notes.editor.AudioRecorder;
 import mse.quill.ui.notes.editor.FormattingToolbarController;
 import mse.quill.ui.notes.editor.ImageEmbedder;
@@ -87,9 +90,12 @@ public class NoteEditorFragment extends Fragment {
     private NoteRepository noteRepository;
     private TagRepository tagRepository;
     private FlashcardRepository flashcardRepository;
+    private QuizRepository quizRepository;
     /** Whether this note has already generated cards — decides which of the two flashcard labels
      *  the menu shows. Refreshed on resume, so deleting a deck reverts the label. */
     private boolean hasFlashcards;
+    /** The same, for the quiz item: "Make quiz" until there is one, "Open quiz" after. */
+    private boolean hasQuiz;
     private String noteId;
     private String pendingCollectionId;
     private final AtomicBoolean isCreatingNote = new AtomicBoolean(false);
@@ -136,6 +142,7 @@ public class NoteEditorFragment extends Fragment {
         noteRepository = new NoteRepository(requireContext());
         tagRepository = new TagRepository(requireContext());
         flashcardRepository = new FlashcardRepository(requireContext());
+        quizRepository = new QuizRepository(requireContext());
 
         // The note's id can come from three places, and the order matters. A note created *during*
         // this editing session has no id in the arguments — the editor was opened without one — so
@@ -463,18 +470,22 @@ public class NoteEditorFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        refreshFlashcardState();
+        refreshStudyState();
     }
 
-    /** Asked on every resume rather than cached from load, so coming back from the review screen
-     *  having deleted the deck puts the menu's "Turn into flashcards" label back. */
-    private void refreshFlashcardState() {
+    /** Asked on every resume rather than cached from load, so coming back from the review or quiz
+     *  screen having deleted what was there puts the menu's "make it" labels back. */
+    private void refreshStudyState() {
         if (noteId == null) {
             hasFlashcards = false;
+            hasQuiz = false;
             return;
         }
         flashcardRepository.countForNote(noteId, count -> {
             if (isAdded()) hasFlashcards = count > 0;
+        });
+        quizRepository.existsForNote(noteId, exists -> {
+            if (isAdded()) hasQuiz = exists;
         });
     }
 
@@ -511,6 +522,8 @@ public class NoteEditorFragment extends Fragment {
         menu.getMenu().findItem(R.id.action_turn_into_flashcards).setTitle(
                 hasFlashcards ? R.string.action_review_flashcards
                               : R.string.action_turn_into_flashcards);
+        menu.getMenu().findItem(R.id.action_make_quiz).setTitle(
+                hasQuiz ? R.string.action_open_quiz : R.string.action_make_quiz);
 
         MenuItem playAloud = menu.getMenu().findItem(R.id.action_play_aloud);
         boolean speaking = noteReader.isSpeaking();
@@ -528,6 +541,10 @@ public class NoteEditorFragment extends Fragment {
             }
             if (id == R.id.action_turn_into_flashcards) {
                 openFlashcards();
+                return true;
+            }
+            if (id == R.id.action_make_quiz) {
+                openQuiz();
                 return true;
             }
             return false;
@@ -568,6 +585,39 @@ public class NoteEditorFragment extends Fragment {
             Bundle args = new Bundle();
             args.putString(FlashcardsFragment.ARG_NOTE_ID, noteId);
             NavHostFragment.findNavController(this).navigate(R.id.flashcardsFragment, args);
+        });
+    }
+
+    /**
+     * Opens this note's quiz, making it on the first run.
+     *
+     * <p>The five-block minimum is a property of how questions are built, not a rule for its own
+     * sake: every wrong option is another block's answer, so a note with four of them can only ever
+     * offer the same three distractors and the quiz becomes a memory game about the note's layout.
+     * A note that already has a quiz opens it regardless — that screen can explain a shortfall
+     * better than a Snackbar on the way out can.
+     */
+    private void openQuiz() {
+        List<NoteSegment> segments = noteEditorView.exportSegments();
+        int usable = FlashcardRepository.reviewableQa(segments).size();
+        if (!hasQuiz && usable < QuizRules.MIN_QA_BLOCKS) {
+            Snackbar.make(requireView(),
+                            getString(R.string.quiz_not_enough_qa_message, QuizRules.MIN_QA_BLOCKS),
+                            Snackbar.LENGTH_LONG)
+                    .show();
+            return;
+        }
+
+        noteReader.stop(); // a quiz is a different mode; don't leave a voice running under it
+        saveNow(() -> {
+            if (!isAdded() || noteId == null) return;
+            quizRepository.ensureForNote(noteId, quiz -> {
+                if (!isAdded()) return;
+                hasQuiz = true;
+                Bundle args = new Bundle();
+                args.putString(QuizDetailFragment.ARG_QUIZ_ID, quiz.id);
+                NavHostFragment.findNavController(this).navigate(R.id.quizDetailFragment, args);
+            });
         });
     }
 

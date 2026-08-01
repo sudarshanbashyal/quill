@@ -22,13 +22,18 @@ Design source: the **MSE** Figma file — see [references.md](references.md).
 
 Single Activity (`MainActivity`) hosting a `NavHostFragment` (`nav_graph.xml`):
 
-Two of them are **top-level**, reachable from a `BottomNavigationView` in `activity_main`:
-`homeFragment` and `flashcardDecksFragment`. The bar hides on every other destination.
+Three of them are **top-level**, reachable from a `BottomNavigationView` in `activity_main`:
+`homeFragment`, `flashcardDecksFragment` and `quizzesFragment`. The bar hides on every other
+destination. The menu's item ids *are* the destination ids, which is what lets `NavigationUI`
+own selection and the back stack.
 
 - `HomeFragment` (start destination) — collections grid + notes list/search + up to
   `NoteRepository.MAX_PINNED_NOTES` (3) pinned-note cards.
 - `FlashcardDecksFragment` — one row per note that has flashcards (see "Flashcards").
 - `FlashcardsFragment` (args: `note_id` required) — the review session for one note's deck.
+- `QuizzesFragment` — one row per note that has a quiz (see "Quizzes").
+- `QuizDetailFragment` (args: `quiz_id` required) — attempt history and the Start button.
+- `QuizSessionFragment` (args: `quiz_id` required) — the timed run and its marked paper.
 - `NoteEditorFragment` (args: `note_id` nullable, `collection_id` nullable) — the rich
   text editor. Null `note_id` means "new note, not yet persisted."
 - `CollectionDetailFragment` (args: `collection_id`, `collection_name`)
@@ -76,11 +81,15 @@ Core, actively used:
 - `whiteboards(id, note_id)`, `strokes(id, whiteboard_id, author_id, tool, color,
   width, points_blob, created_at)`.
 - `tags(id, name, color, created_at)`, `note_tags(note_id, tag_id)` join table.
+- `flashcards(id, note_id, source_segment_id, front, back, …)` + SM-2 columns
+  (`interval`, `repetitions`, `easiness`, `next_review`, `last_reviewed_at`) — live since
+  schema v4, written by `FlashcardRepository`.
+- `quizzes(id, note_id, created_at)` and `quiz_attempts(id, quiz_id, score, answered,
+  total, status, started_at, finished_at)` — schema v5, written by `QuizRepository`. See
+  "Quizzes" for why a quiz holds no questions.
 
 Present in schema, **not wired to any repository/DAO/UI yet** (forward-looking
 scaffolding, not dead code to delete casually — check before assuming it's unused):
-- `flashcards` (front/back + SM-2-style spaced-repetition columns: `interval`,
-  `repetitions`, `easiness`, `next_review`)
 - `voice_memos` (superseded in practice by `note_segments` TYPE_AUDIO — audio embeds
   in the actual editor go through segments, not this table)
 - `outbox` (`type`, `payload_blob`, `target_device_id`) — looks like a staged sync/
@@ -230,10 +239,11 @@ round-trip is hand-written in `MarkdownSerializer`.
 
 See "Flashcards" below for how the Q&A fence's info string ended up being used.
 
-## Planned: Quizzes — scored, auto-graded, no free-text matching
+## Quizzes — scored, auto-graded, no free-text matching
 
-**Status: design agreed, not yet implemented.** Tracked as Epic E in
-[requirements.md](requirements.md).
+**Status: built 2026-08-01** (per-note MCQ quizzes, timed, with attempt history; the
+collection/tag scopes and True/False fallback below are still outstanding). Tracked as
+Epic E in [requirements.md](requirements.md).
 
 Two tempting approaches were deliberately rejected up front:
 - **Free-text typed answers graded by string match** — real answers vary too much
@@ -255,18 +265,86 @@ locally from the flashcard pool**, so no string matching or AI is ever required:
   notes/collections too small for MCQ.
 - **Matching mode** (later, optional) — N questions + N shuffled answers to pair up.
 
-**Flashcards and quizzes share one data model, not two.** `flashcards` stays the single
-source of truth for Q/A content (see the Epic D section above); two separate *modes*
-sit on top of it:
-- **Review** — spaced repetition, self-graded (Again/Hard/Good/Easy), private, drives
-  SM-2 scheduling. No matching problem here at all — the human is always the judge.
-- **Quiz** — user picks a scope (a note / a collection / a tag), the app auto-builds N
-  MCQ/True-False questions from that scope's flashcards, and tracks a score.
+**What was built differs from the sketch above in one important way: quizzes read the
+note's Q&A blocks directly, not the `flashcards` table.** The plan had both modes sitting
+on one content model, and that's still true of the *content* — `FlashcardRepository
+.reviewableQa` is the single definition of a usable block, shared by both — but a quiz
+doesn't need a card to exist first. Requiring one would have meant "Make quiz" silently
+generating flashcards as a side effect, and a note's quiz history depending on whether its
+deck had since been deleted. What the two features actually share is the rule, not the rows.
 
-New schema needed (none of this exists yet): something like
-`quiz_attempts(id, scope_type, scope_id, score, total, taken_at)`, optionally
-`quiz_attempt_answers(attempt_id, flashcard_id, was_correct)` if per-question review
-after a quiz is wanted.
+**A quiz stores nothing but the fact that it exists.** `quizzes(id, note_id, created_at)`,
+one row per note (a unique index on `note_id`, so "Make quiz" is idempotent and becomes
+"Open quiz"). Questions are regenerated from the note at the start of every attempt, which
+is what makes a quiz incapable of drifting out of step with an edited note — the whole
+`source_segment_id` sync problem the flashcard side has to solve doesn't arise, because
+nothing derived is kept. It also means the options land in a different order every time.
+
+**Schema (v5, additive from v4).** `quiz_attempts(id, quiz_id, score, answered, total,
+status, started_at, finished_at)`. Three departures from the sketched shape, each earned:
+- No `scope_type`/`scope_id` — the scope is a note, and a column that can only hold one
+  value is a column that lies about being flexible. Collection/tag scopes can add it.
+- `total` is per attempt, not read off the quiz: a note gains and loses Q&A blocks, so
+  "2 / 6" only means something next to the 6 that was true that day.
+- `answered` distinguishes an abandoned attempt from a bad one. 2/12 having answered three
+  questions and 2/12 having answered twelve are not the same afternoon.
+- No `quiz_attempt_answers`. The marked paper is shown at the end from the in-memory
+  session; nothing yet reopens a past attempt, and a table written for a screen that
+  doesn't exist is a table that will be wrong when it does.
+
+**The row is written when the attempt starts.** Otherwise walking out of a quiz leaves no
+trace, which silently rewards giving up. Leaving marks it abandoned with what was answered;
+a killed process leaves it in progress, and a sweep on the next load retires it — "too old
+to still be running" is *computable* here rather than arbitrary, since a quiz is time-boxed
+at `total × QUESTION_TIME_MS` plus a grace period.
+
+**Everything tunable lives in `QuizRules`**: `MIN_QA_BLOCKS = 5`, `OPTIONS_PER_QUESTION =
+4`, `QUESTION_TIME_MS = 15s`, `WARNING_TIME_MS = 10s`, `ABANDON_GRACE_MS`. The first two are
+not independent — a question needs its own answer plus three from other blocks, so four
+options need four blocks, and the fifth is what stops every question from reusing the same
+three distractors. The option views *and* the indicator pips are built in code from those
+constants rather than nailed into the layout, so changing either actually changes the quiz.
+
+**One clock for the whole run, not one per question** (`QuizRules.totalTimeMs` = 15s ×
+questions; 6 questions gives 1:30, shown on both the detail screen and the session header so
+the two agree). A per-question timer forces the same pace onto a one-line recall and a
+question worth thinking about. More importantly it's what makes the rest of the screen
+possible: with nothing sealed when a question is left, questions can be answered in any
+order, revisited and changed.
+
+**The answer sheet, not a conveyor belt.** `QuizSession` holds selections for every question
+and a cursor; Previous/Next move without requiring an answer, tapping an option again clears
+it (on a revisitable paper, the alternative to undo is leaving a mis-tap wrong), and the pip
+row across the top shows answered/blank/current — that row exists because "did I leave
+anything blank?" would otherwise cost a page-through that the clock is charging for. Pips
+are tappable, so it's navigation as well as status, and the row scrolls to keep the current
+one visible rather than shrinking below readable.
+
+**Running out of time completes the attempt, it doesn't abandon it.** Every question was
+put; the blanks are answers the user didn't get to, and the paper is marked as it stands
+under a "Time's up" heading. Under `WARNING_TIME_MS` the clock and its bar turn red and a
+line spells out what running out costs — latched once rather than re-applied per tick, so it
+gets attention instead of fighting for it. The clock pauses behind any dialog and resumes
+from where it stopped: time spent answering the *app's* question isn't the user's to pay for.
+
+**Handing in with blanks is allowed, but it asks first.** Free movement makes forgetting a
+question easy, so `Submit quiz` counts the blanks and says how many will be marked wrong —
+`Submit anyway` or `Keep answering`. Blanks are marked wrong rather than excluded: a score
+out of "the ones I attempted" would flatter exactly the run that ran out of time.
+
+**Marked at the end, never per question.** A quiz is a measurement; grading each answer as
+it's given turns it into a study session, and the remaining answers get given by someone who
+has just been coached. (It's also what lets an answer be changed at all — feedback would
+make revisiting a question a free second guess.) The results list restates the correct
+answer for wrong answers only: repeating it under a right one is noise, omitting it entirely
+makes the list a scolding.
+
+**Screens.** `QuizzesFragment` (third bottom-nav tab, `ic_stopwatch`) → `QuizDetailFragment`
+(question count, attempt history, Start) → `QuizSessionFragment` (timer, single-select
+options, Submit, then the marked paper in the same panel). The detail screen reads the
+question count from the *note* on every resume, so it can say "only 3 complete Q&A blocks —
+5 are needed" rather than letting Start fail. Deliberately shaped like the flashcards
+screens next door: same row idiom, same delete-with-confirmation, same empty states.
 
 ## Material 3 UI migration
 

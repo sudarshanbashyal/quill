@@ -34,7 +34,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Wires the two top-level destinations to the bottom bar.
+     * Wires the top-level destinations to the bottom bar.
      *
      * <p>The menu's item ids <em>are</em> the destination ids, which is what lets {@link
      * NavigationUI} handle selection and the back stack — switching tabs pops back to the start
@@ -53,7 +53,8 @@ public class MainActivity extends AppCompatActivity {
 
         navController.addOnDestinationChangedListener((controller, destination, arguments) -> {
             boolean topLevel = destination.getId() == R.id.homeFragment
-                    || destination.getId() == R.id.flashcardDecksFragment;
+                    || destination.getId() == R.id.flashcardDecksFragment
+                    || destination.getId() == R.id.quizzesFragment;
             bottomNav.setVisibility(topLevel ? View.VISIBLE : View.GONE);
         });
     }

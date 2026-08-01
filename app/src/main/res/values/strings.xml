@@ -77,11 +77,14 @@
     <string name="action_stop_reading">Stop reading</string>
     <string name="action_turn_into_flashcards">Turn into flashcards</string>
     <string name="action_review_flashcards">Review flashcards</string>
+    <string name="action_make_quiz">Make quiz</string>
+    <string name="action_open_quiz">Open quiz</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>
 
     <!-- Bottom navigation -->
     <string name="nav_home">Home</string>
     <string name="nav_flashcards">Flashcards</string>
+    <string name="nav_quizzes">Quizzes</string>
 
     <!-- Flashcards -->
     <string name="flashcards_title">Flashcards</string>
@@ -118,6 +121,74 @@
     <string name="flashcards_action_review_again">Review again</string>
     <string name="flashcards_action_review_anyway">Review anyway</string>
     <string name="flashcards_action_back">Back to note</string>
+
+    <!-- Quizzes -->
+    <string name="quizzes_title">Quizzes</string>
+    <string name="quizzes_subtitle">Multiple choice, built from your notes\' Q&amp;A blocks</string>
+    <string name="quizzes_empty">No quizzes yet — open a note with at least %1$d Q&amp;A blocks and choose "Make quiz".</string>
+    <string name="quiz_row_never_taken">Not taken yet</string>
+    <string name="quiz_row_best_format">Best %1$d%%</string>
+    <string name="quiz_row_last_taken_format">Last taken %1$s</string>
+    <string name="quiz_row_not_completed">Started, never finished</string>
+    <plurals name="quiz_row_attempts">
+        <item quantity="one">%d attempt</item>
+        <item quantity="other">%d attempts</item>
+    </plurals>
+    <string name="action_delete_quiz">Delete quiz</string>
+    <string name="delete_quiz_title">Delete this quiz?</string>
+    <string name="delete_quiz_title_format">Delete the quiz for \"%1$s\"?</string>
+    <string name="delete_quiz_message">Every attempt and score will be gone. The note\'s Q&amp;A blocks stay, so you can make the quiz again later — with an empty history.</string>
+    <string name="quiz_deleted">Quiz deleted</string>
+    <!-- Kept under ~100 characters: it is shown in a Snackbar, which ellipsises at two lines. -->
+    <string name="quiz_not_enough_qa_message">A quiz needs %1$d Q&amp;A blocks with both halves filled in — wrong options come from the others.</string>
+
+    <!-- Quiz detail -->
+    <!-- %2$s is the whole run's budget as m:ss — the same figure the session's clock counts down,
+         so the two screens agree on what the number means. -->
+    <string name="quiz_detail_ready_format">%1$d questions · %2$s on the clock</string>
+    <string name="quiz_detail_not_ready_format">Only %1$d complete Q&amp;A blocks — %2$d are needed to take this quiz.</string>
+    <string name="action_start_quiz">Start quiz</string>
+    <string name="quiz_attempts_heading">Previous attempts</string>
+    <string name="quiz_attempts_empty">No attempts yet.</string>
+    <string name="quiz_attempt_score_format">%1$d / %2$d</string>
+    <string name="quiz_attempt_completed">Completed</string>
+    <string name="quiz_attempt_abandoned_format">Abandoned after %1$d of %2$d</string>
+    <string name="quiz_attempt_percent_format">%1$d%%</string>
+
+    <!-- Quiz session -->
+    <string name="quiz_position_format">Question %1$d of %2$d</string>
+    <!-- Minutes and seconds, so a whole-quiz budget reads as a duration rather than "105s". -->
+    <string name="quiz_timer_format">%1$d:%2$02d</string>
+    <string name="quiz_indicator_description_format">Question %1$d, %2$s</string>
+    <string name="quiz_indicator_answered">answered</string>
+    <string name="quiz_indicator_unanswered">not answered</string>
+    <string name="quiz_time_warning_format">Under %1$d seconds left — unanswered questions are marked wrong.</string>
+    <string name="action_previous_question">← Previous</string>
+    <string name="action_next_question">Next →</string>
+    <string name="action_submit_quiz">Submit quiz</string>
+    <string name="quiz_submit_unanswered_title">Submit with blanks?</string>
+    <plurals name="quiz_submit_unanswered_message">
+        <item quantity="one">%d question has no answer, and will be marked wrong.</item>
+        <item quantity="other">%d questions have no answer, and will be marked wrong.</item>
+    </plurals>
+    <string name="action_submit_anyway">Submit anyway</string>
+    <string name="action_keep_answering">Keep answering</string>
+    <string name="quiz_time_up_title">Time\'s up</string>
+    <string name="quiz_leave_title">Leave the quiz?</string>
+    <string name="quiz_leave_message">This attempt is recorded as abandoned, with the questions you\'ve answered so far.</string>
+    <string name="action_leave_quiz">Leave</string>
+    <string name="action_keep_going">Keep going</string>
+    <string name="quiz_unavailable_title">Can\'t start this quiz</string>
+    <string name="quiz_summary_title">Quiz complete</string>
+    <string name="quiz_summary_format">%1$d of %2$d correct · %3$d%%</string>
+    <string name="quiz_results_heading">Your answers</string>
+    <!-- ^1 rather than %1$s: these are filled with the Markdown-rendered answer, and only
+         TextUtils.expandTemplate keeps its bold/italic spans intact through the substitution. -->
+    <string name="quiz_results_your_answer_format">You picked: ^1</string>
+    <string name="quiz_results_no_answer">Left unanswered</string>
+    <string name="quiz_results_correct_format">Correct: ^1</string>
+    <string name="action_retake_quiz">Take it again</string>
+    <string name="action_quiz_done">Done</string>
 
     <string name="action_save_image">Save to Photos</string>
     <string name="image_viewer_description">Full size image</string>

@@ -9,7 +9,7 @@ import android.util.Log;
 public class AppDatabase extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "quill.db";
-    private static final int DATABASE_VERSION = 4;
+    private static final int DATABASE_VERSION = 5;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -89,6 +89,31 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "last_reviewed_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
+        // A quiz is a *marker*, not a question set: it records that a note was turned into one.
+        // The questions themselves are generated fresh from the note's Q&A blocks at the start of
+        // every attempt, so they can't go stale against an edited note and the options land in a
+        // different order each time.
+        db.execSQL("CREATE TABLE quizzes (" +
+                "id TEXT PRIMARY KEY, " +
+                "note_id TEXT NOT NULL, " +
+                "created_at INTEGER, " +
+                "FOREIGN KEY(note_id) REFERENCES notes(id))");
+
+        // total is stored per attempt rather than read off the quiz: a note gains and loses Q&A
+        // blocks over time, so "7 / 9" is only meaningful next to the 9 that was true that day.
+        // answered is what separates an abandoned attempt from a bad one — 2/12 having answered
+        // three questions and 2/12 having answered all twelve are not the same afternoon.
+        db.execSQL("CREATE TABLE quiz_attempts (" +
+                "id TEXT PRIMARY KEY, " +
+                "quiz_id TEXT NOT NULL, " +
+                "score INTEGER DEFAULT 0, " +
+                "answered INTEGER DEFAULT 0, " +
+                "total INTEGER DEFAULT 0, " +
+                "status TEXT, " +
+                "started_at INTEGER, " +
+                "finished_at INTEGER, " +
+                "FOREIGN KEY(quiz_id) REFERENCES quizzes(id))");
+
         db.execSQL("CREATE TABLE voice_memos (" +
                 "id TEXT PRIMARY KEY, " +
                 "note_id TEXT, " +
@@ -155,6 +180,10 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_strokes_whiteboard_id ON strokes(whiteboard_id)");
         db.execSQL("CREATE INDEX idx_flashcards_note_id ON flashcards(note_id)");
         db.execSQL("CREATE INDEX idx_flashcards_source_segment_id ON flashcards(source_segment_id)");
+        // A note has at most one quiz — "Make quiz" on a note that already has one opens it rather
+        // than making a second, and the constraint is what guarantees that rather than a convention.
+        db.execSQL("CREATE UNIQUE INDEX idx_quizzes_note_id ON quizzes(note_id)");
+        db.execSQL("CREATE INDEX idx_quiz_attempts_quiz_id ON quiz_attempts(quiz_id)");
         db.execSQL("CREATE INDEX idx_voice_memos_note_id ON voice_memos(note_id)");
         db.execSQL("CREATE INDEX idx_note_segments_note_id ON note_segments(note_id)");
         db.execSQL("CREATE INDEX idx_note_tags_tag_id ON note_tags(tag_id)");
@@ -168,6 +197,7 @@ public class AppDatabase extends SQLiteOpenHelper {
         // poor trade. Anything older is a development-era schema and still gets rebuilt.
         if (oldVersion >= 3) {
             if (oldVersion < 4) upgradeToV4(db);
+            if (oldVersion < 5) upgradeToV5(db);
             return;
         }
 
@@ -182,6 +212,28 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "ON flashcards(source_segment_id)");
     }
 
+    /** Adds quizzes and their attempt history. Two new tables, so nothing existing is touched. */
+    private void upgradeToV5(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS quizzes (" +
+                "id TEXT PRIMARY KEY, " +
+                "note_id TEXT NOT NULL, " +
+                "created_at INTEGER, " +
+                "FOREIGN KEY(note_id) REFERENCES notes(id))");
+        db.execSQL("CREATE TABLE IF NOT EXISTS quiz_attempts (" +
+                "id TEXT PRIMARY KEY, " +
+                "quiz_id TEXT NOT NULL, " +
+                "score INTEGER DEFAULT 0, " +
+                "answered INTEGER DEFAULT 0, " +
+                "total INTEGER DEFAULT 0, " +
+                "status TEXT, " +
+                "started_at INTEGER, " +
+                "finished_at INTEGER, " +
+                "FOREIGN KEY(quiz_id) REFERENCES quizzes(id))");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_quizzes_note_id ON quizzes(note_id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_id " +
+                "ON quiz_attempts(quiz_id)");
+    }
+
     private void rebuild(SQLiteDatabase db) {
         db.execSQL("DROP TABLE IF EXISTS notes_fts");
         db.execSQL("DROP TABLE IF EXISTS note_tags");
@@ -189,6 +241,8 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("DROP TABLE IF EXISTS note_segments");
         db.execSQL("DROP TABLE IF EXISTS outbox");
         db.execSQL("DROP TABLE IF EXISTS voice_memos");
+        db.execSQL("DROP TABLE IF EXISTS quiz_attempts");
+        db.execSQL("DROP TABLE IF EXISTS quizzes");
         db.execSQL("DROP TABLE IF EXISTS flashcards");
         db.execSQL("DROP TABLE IF EXISTS strokes");
         db.execSQL("DROP TABLE IF EXISTS whiteboards");

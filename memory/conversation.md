@@ -559,3 +559,106 @@ the button's exact bounds, then cropping the screenshot to precisely those bound
 shows whether the glyph's centre matches the box's. The first attempt centred the glyph but left the
 fill narrower than it was tall — visible only at that magnification — and the horizontal insets were
 the remaining culprit. Confirmed working by the user.
+
+## 2026-08-01 — Quizzes from Q&A blocks (Epic E, per-note MCQ)
+
+**Asked for:** a "Make quiz" option in notes mirroring "Turn into flashcards"; at least 5 complete
+Q&A blocks required, since the wrong options are drawn from the note's other answers; a Quizzes tab
+(`ic_stopwatch`) listing quizzes; per-quiz attempt history with scores or an abandoned marker; a
+15-second-per-question timer kept in a constant.
+
+**One thing was ambiguous enough to ask about**: "multi-select". It could mean multiple-choice
+(pick one) or genuinely selecting several. Chosen: **pick one, confirm with Submit** — a mis-tap
+isn't final, and the timer has something to auto-submit when it expires.
+
+**The design decision worth remembering: a quiz stores no questions.** `quizzes` is one row per
+note saying "this is a quiz"; the questions are regenerated from the note's Q&A blocks at the start
+of every attempt. That's what makes a quiz incapable of going stale against an edited note — the
+whole `source_segment_id` reconciliation problem the flashcard side had to solve simply doesn't
+arise when nothing derived is stored. It also gives fresh distractors and a fresh order each run.
+
+**Departure from the plan in note.md**: quizzes read Q&A blocks *directly* rather than the
+`flashcards` table. Sharing the rows would have meant "Make quiz" silently generating flashcards as
+a side effect, and a quiz's history depending on whether its deck had since been deleted. What the
+two features share is the *rule* — `FlashcardRepository.reviewableQa` — not the storage.
+
+**Schema v5** (additive from v4): `quizzes` + `quiz_attempts`. Two columns that weren't in the
+sketched shape earned their place: `total` per attempt (a note's block count moves, so "2 / 6" only
+means something next to that day's 6) and `answered` (2/12 having answered three questions and 2/12
+having answered twelve are not the same afternoon). `answered` was added mid-implementation after a
+stub method that returned a hardcoded 0 made the gap obvious — the row wanted to say "Abandoned
+after 4 of 12" and nothing stored the 4.
+
+**The attempt row is written at start**, so leaving is recorded rather than rewarded. Normal exits
+mark it abandoned on the way out; a killed process leaves it in progress, and a sweep on the next
+load retires it — staleness is *computable* here rather than arbitrary, since a quiz can't outlive
+`total × 15s` plus a grace period.
+
+**Marked at the end, never per question**, and the results list restates the correct answer only
+where the answer was wrong. Grading as you go turns a measurement into a study session; restating
+a correct answer under a correct answer is noise, but omitting it everywhere makes the list a
+scolding.
+
+**`QuizRules` holds every tunable** (`MIN_QA_BLOCKS`, `OPTIONS_PER_QUESTION`, `QUESTION_TIME_MS`,
+`ABANDON_GRACE_MS`) and the option views are built in code from that constant rather than four
+`MaterialCardView`s in the layout — otherwise "flexible" would only be true of the timer.
+
+**Verified on the emulator** end to end, with a six-block note seeded by pulling the app's DB,
+editing it locally and pushing it back (no `sqlite3` on the system image): Make quiz → detail
+("6 questions · 15 seconds each") → a full run → the marked paper → history → the leave dialog and
+its abandoned row ("Abandoned after 1 of 6", greyed score) → the Quizzes tab (`33%` badge, "4
+attempts", "Last taken 1 minute ago") → the menu label flipped to "Open quiz" → the Snackbar on a
+note with one Q&A block. Letting all six questions time out was the *fastest* way to reach the
+results screen — `adb shell input tap` pacing kept overshooting into the retake/done buttons.
+
+**Caught by looking at a screenshot rather than the code**: the shortfall Snackbar was 137
+characters and ellipsised at two lines, hiding the reason for the rule. Shortened to fit, with the
+constraint written next to the string so the next edit doesn't undo it.
+
+**30 JVM unit tests now** (12 new): `QuizGeneratorTest` and `QuizSessionTest`. `QuizQuestion`'s
+constructor is package-private, so the session tests build their questions through the generator —
+which also keeps them honest about the shapes the app actually produces.
+
+## 2026-08-01 (same session) — Quiz session reworked into an answer sheet
+
+**Asked for**, after seeing the first version: one budget of 15s × questions for the whole quiz
+instead of 15s per question; Previous/Next at the bottom with free movement whether or not the
+question is answered; indicators at the top for what's been answered; a red warning at 10 seconds;
+and submitting with blanks allowed but warned about.
+
+**These are one change, not five.** The per-question timer was what forced the conveyor belt — a
+question had to be sealed when you left it, or its clock made no sense. Moving to a whole-run
+budget is what makes free navigation, changeable answers and blanks coherent, so `QuizSession` was
+rewritten from "submit and advance" into an answer sheet: selections for every question, a cursor
+that moves both ways, `goTo` for the indicator taps, and `unanswered()` for the submit warning.
+Marking still happens only at the end — which is also what stops revisiting a question from being
+a free second guess.
+
+**Small decisions worth keeping:**
+- Tapping the selected option again **clears** it. On a paper that can be revisited, the only other
+  way to undo a mis-tap would be to leave it wrong.
+- Running out of time **completes** the attempt rather than abandoning it. Every question was put;
+  the blanks are answers the user didn't reach, so the paper is marked as it stands under "Time's
+  up". Abandoned stays reserved for walking out.
+- The clock **pauses behind dialogs** and resumes from where it stopped — time spent answering the
+  app's question isn't the user's to pay for.
+- The warning is **latched**, not re-evaluated per tick: styling applied once gets attention,
+  reapplied 20×/second it fights for it.
+- Blanks are marked **wrong, not excluded**. A percentage out of "the ones I attempted" would
+  flatter exactly the run that ran out of time.
+- The indicator row is built from the question count and scrolls; pips are distinguishable by fill
+  (solid = answered) as well as by the ring on the current one, so the current *blank* question and
+  the current *answered* one don't look the same.
+
+**Verified on the emulator**: 1:30 on the clock for six questions on both the detail and session
+screens, pips filling as questions are answered, jumping to question 5 by tapping its pip,
+Previous/Next enable/disable at the ends, the blanks dialog ("5 questions have no answer, and will
+be marked wrong") with the clock frozen behind it and resuming on "Keep answering", the red
+clock/bar/warning appearing exactly at 0:10, and expiry landing on "Time's up · 2 of 6 correct"
+with the four blanks marked wrong. 33 JVM unit tests pass; `QuizSessionTest` was rewritten around
+the sheet (movement bounds, out-of-range jumps ignored, blank-and-return, change/clear, blanks
+counted wrong).
+
+**Note for next session:** a physical device (`34211FDH2005RG`) appeared on adb partway through, so
+emulator commands now need `ANDROID_SERIAL=emulator-5554` — an unqualified `adb` call fails with
+"more than one device/emulator" and, worse, could target the phone.
