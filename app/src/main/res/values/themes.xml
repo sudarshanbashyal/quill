@@ -20,4 +20,31 @@
              dark-purple that used to back it. -->
         <item name="android:statusBarColor">@color/brand_purple_dark</item>
     </style>
+
+    <!-- Splash. windowBackground is the lavender the launcher icon sits on, so the window the
+         system draws before SplashActivity's first frame is already the splash's background —
+         no white flash between tapping the icon and the logo appearing. The status bar matches
+         it (with dark icons, since it's a light fill) so the mark floats on one flat field. -->
+    <style name="Theme.Quill.Splash" parent="Theme.Quill">
+        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:statusBarColor">@color/splash_background</item>
+        <item name="android:navigationBarColor">@color/splash_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+
+        <!-- Android 12 draws its own splash before SplashActivity's first frame, and by default
+             puts the launcher icon on it — which read as the static logo flashing up and being
+             replaced by the animated one. The mark can't be shown twice in a row without that
+             stutter (the system centres its icon, while QuillLogoView centres the whole mark, so
+             the "Q" alone sits left of centre and the two can never line up), so the system's
+             icon is made transparent and only its background is kept. The launch is then one
+             unbroken lavender field that the animated mark appears on.
+             These two attributes are API 31+; older platforms ignore them and just use
+             windowBackground above, which is the same colour. -->
+        <item name="android:windowSplashScreenBackground" tools:targetApi="s">
+            @color/splash_background
+        </item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="s">
+            @drawable/splash_system_icon
+        </item>
+    </style>
 </resources>

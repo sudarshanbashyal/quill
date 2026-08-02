@@ -718,6 +718,73 @@ inherits this fix — don't re-introduce an unconditional read from `getArgument
   `adb shell uiautomator dump` gives the button's exact bounds, and cropping the screenshot to those
   bounds shows immediately whether the glyph sits at the centre.
 
+## Brand, splash and window insets
+
+**The mark.** `res/font/caprasimo_regular.ttf` (OFL in `licenses/`) is the logo face. The splash
+draws it live rather than shipping a raster: `ui/splash/QuillLogoView` renders "Q" with the
+typeface and derives the two dots entirely from `getTextBounds("Q")` — 0.30 of the glyph box
+across, 0.70 of the way down it, gaps of 0.036 and 0.071 — so `android:textSize` alone scales the
+whole mark and it stays sharp at any size. One `ValueAnimator` walks a cycle clock and each dot's
+alpha is a pure function of it; an `AnimatorSet` per dot drifts apart over unbounded repeats.
+Playfair Display is still the display serif for Home's greeting — the two are not
+interchangeable.
+
+**A device won't `drawText` glyphs much above ~250px** at the size you asked for, even though
+`Paint`/`getTextBounds` report the large size honestly (measured: `textSize=667.5`, bounds
+502×563, drawn ~229px). Harmless at the shipped 96dp, but don't trust large `drawText`.
+
+**Launcher icon** is an adaptive icon in `mipmap-anydpi` (minSdk 26, so it wins everywhere) with
+foreground/monochrome PNGs per density under `drawable-*dpi/`. `<monochrome>` must be a real
+alpha-only glyph, not the colour foreground, or themed icons render a blob.
+
+**Splash.** `SplashActivity` is the launcher entry point and finishes into `MainActivity` on
+`max(2s, StartupTasks)` — `StartupTasks` is the seam for real startup work and completes
+immediately today. Android 12+ draws its *own* splash before it, so
+`Theme.Quill.Splash` sets `windowSplashScreenAnimatedIcon` to an empty vector: the mark cannot be
+shown statically and then animated without a visible stutter.
+
+**Window insets — the rules that cost time here:**
+- `MainActivity` applies only the **side** insets to its root. The **top** goes to each screen
+  (see below) and the **bottom** to whichever view actually reaches the screen bottom —
+  `BottomNavigationView` pads *itself* by it, so padding the root too charged for it twice.
+- **A view has exactly one `OnApplyWindowInsetsListener`.** A second `setOnApplyWindowInsetsListener`
+  silently replaces the first. The note editor's root is already claimed by
+  `KeyboardInsetsHandler`, which is why its status-bar inset goes on the toolbar.
+- **Padding a view for an inset only moves its contents unless the view can grow.** A fixed
+  `layout_height` squeezes; a `minHeight` taller than the content pushes the contents down inside
+  the same box. `WindowInsetsUtils.applyTopInset` grows `minimumHeight` for that reason, and the
+  editor toolbar had to move from `48dp` to `wrap_content` + `minHeight`.
+- Screens get the top inset automatically from one
+  `FragmentManager.FragmentLifecycleCallbacks` in `MainActivity` (`recursive = true` — the screens
+  live in the nav host's *child* manager). Default target is the fragment root; implement
+  `WindowInsetsUtils.TopInsetHost` to name another view. Only Home (gradient header) and the note
+  editor (toolbar) do. **Don't re-add per-fragment calls.**
+
+**A negative margin on a weighted `LinearLayout` child positions but does not measure.**
+`measureVertical` accumulates `totalLength = max(totalLength, totalLength + childHeight + margins)`
+and that `max` swallows it, so the child is pulled up *and* measured short — Home's content sheet
+stopped 56dp above the bottom bar. Put the offset on the sibling above instead (the header's
+`layout_marginBottom`).
+
+## Two races that only show up when the user is fast
+
+Both pre-date the work above and both need input faster than a hand-paced emulator run; chain
+taps inside a **single** `adb shell "input …; input …"` call to reproduce (separate `adb shell`
+invocations are 200-400ms apart, slower than a person).
+
+- **`NoteReader` / TTS.** `TextToSpeech` binds asynchronously and `onDestroyView` → `shutdown()`
+  nulled the field; leaving a note before the bind completed crashed the app in the init callback.
+  The callback now takes a local reference and bails on a `shutDown` flag. Any per-screen async
+  engine handle needs the same shape.
+- **`NoteEditorFragment.autoSave` deleting the note you just opened.** `loadNote` is async, so a
+  note opened and left before the read returns has an empty title and no segments — `hasContent`
+  was false and it took the "user emptied this" branch. Guarded by `contentLoaded`. Empty fields
+  before a read means "not loaded", never "emptied".
+- Relatedly, `NoteRepository.createNote` now takes an id the caller minted
+  (`NoteRepository.newNoteId()`) instead of generating one behind an async callback. `noteId` is
+  usable immediately, and the insert and the first save queue in order on the one disk thread —
+  a save arriving mid-creation used to be dropped.
+
 ## Conventions worth following
 
 - **All UI is Material 3 — no exceptions without a recorded reason.** Every new or edited
@@ -744,3 +811,11 @@ inherits this fix — don't re-introduce an unconditional read from `getArgument
   anything user-facing (matches `notes.deleted_at`).
 - IDs are `UUID.randomUUID().toString()` throughout, not autoincrement — consistent
   with the schema anticipating multi-device sync later.
+- **Verify on the emulator (`ANDROID_SERIAL=emulator-5554`), not the phone**, even when both are
+  attached — the phone is the user's. Its screen also sleeps within seconds, and `screencap`
+  returns solid black while the display is off, which reads as a crash if you only sample pixels.
+- Sizing wrappers for oversized PNG icons: a `layer-list` with `android:width/height` (see
+  `drawable/ic_section_note.xml`). The raw assets are 256-1024px and cannot be compound drawables
+  directly.
+- `aapt` strips leading/trailing whitespace from a string resource unless the value is quoted —
+  `<string name="count_separator">" · "</string>`.

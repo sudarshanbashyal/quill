@@ -28,22 +28,40 @@ public final class TagChipView {
 
     /** Rebuilds {@code container} with one pill chip per tag, hiding it entirely when there are none. */
     public static void render(Context context, LinearLayout container, List<Tag> tags) {
+        render(context, container, tags, false);
+    }
+
+    /**
+     * Same, but with the chips drawn white-on-dark-text instead of in the tag's own colour — for
+     * the pinned cards, which are themselves a pastel fill. A tinted chip on a tinted card is
+     * colour on colour, and the tag stops being legible as a separate thing.
+     */
+    public static void renderNeutral(Context context, LinearLayout container, List<Tag> tags) {
+        render(context, container, tags, true);
+    }
+
+    private static void render(Context context, LinearLayout container, List<Tag> tags, boolean neutral) {
         container.removeAllViews();
         if (tags == null || tags.isEmpty()) {
             container.setVisibility(View.GONE);
             return;
         }
         container.setVisibility(View.VISIBLE);
-        for (Tag tag : tags) container.addView(buildChip(context, tag));
+        for (Tag tag : tags) container.addView(buildChip(context, tag, neutral));
     }
 
     /** A single tag's pill chip — exposed for the note editor's editable tag row. */
     public static Chip buildChip(Context context, Tag tag) {
+        return buildChip(context, tag, false);
+    }
+
+    private static Chip buildChip(Context context, Tag tag, boolean neutral) {
         Chip chip = baseChip(context);
-        chip.setChipBackgroundColor(
-                ColorStateList.valueOf(ColorUtils.lighten(tag.color, CHIP_BACKGROUND_WHITE_RATIO)));
+        chip.setChipBackgroundColor(ColorStateList.valueOf(neutral
+                ? context.getColor(R.color.white)
+                : ColorUtils.lighten(tag.color, CHIP_BACKGROUND_WHITE_RATIO)));
         chip.setText(tag.name);
-        chip.setTextColor(tag.color);
+        chip.setTextColor(neutral ? context.getColor(R.color.text_primary) : tag.color);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);

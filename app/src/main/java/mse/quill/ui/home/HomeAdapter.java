@@ -1,6 +1,8 @@
 package mse.quill.ui.home;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
+import android.content.res.Resources;
 import android.text.format.DateUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -20,7 +22,6 @@ import mse.quill.R;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
 import mse.quill.ui.tags.TagChipView;
-import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
 
 /**
@@ -125,11 +126,18 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private static TextView buildSectionHeader(Context context) {
         TextView header = new TextView(context);
-        header.setLayoutParams(new RecyclerView.LayoutParams(
-                RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
-        int marginStart = NoteRowView.dimen(context, R.dimen.spacing_md);
-        int marginTop = NoteRowView.dimen(context, R.dimen.spacing_md);
-        ((RecyclerView.LayoutParams) header.getLayoutParams()).setMargins(marginStart, marginTop, 0, 0);
+        RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
+                RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
+        params.setMargins(
+                NoteRowView.dimen(context, R.dimen.list_item_gutter),
+                NoteRowView.dimen(context, R.dimen.section_header_margin_top),
+                0,
+                NoteRowView.dimen(context, R.dimen.section_header_margin_bottom));
+        header.setLayoutParams(params);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setCompoundDrawablePadding(NoteRowView.dimen(context, R.dimen.spacing_sm));
+        header.setCompoundDrawableTintList(
+                ColorStateList.valueOf(context.getColor(R.color.text_primary)));
         header.setTextColor(context.getColor(R.color.text_primary));
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         header.setTypeface(header.getTypeface(), android.graphics.Typeface.BOLD);
@@ -151,8 +159,10 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
         int type = getItemViewType(position);
         if (type == TYPE_SECTION_HEADER) {
-            int titleRes = position == POS_COLLECTIONS_HEADER ? R.string.section_collections : R.string.section_notes;
-            ((SectionHeaderViewHolder) holder).bind(titleRes);
+            boolean collections = position == POS_COLLECTIONS_HEADER;
+            ((SectionHeaderViewHolder) holder).bind(
+                    collections ? R.string.section_collections : R.string.section_notes,
+                    collections ? R.drawable.ic_section_collection : R.drawable.ic_section_note);
         } else if (type == TYPE_COLLECTION_CARD) {
             int index = position - collectionsStart();
             bindCollectionCard((CollectionCardViewHolder) holder, index);
@@ -172,7 +182,14 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class SectionHeaderViewHolder extends RecyclerView.ViewHolder {
         SectionHeaderViewHolder(@NonNull View itemView) { super(itemView); }
-        void bind(int titleRes) { ((TextView) itemView).setText(titleRes); }
+
+        void bind(int titleRes, int iconRes) {
+            TextView header = (TextView) itemView;
+            header.setText(titleRes);
+            // The icon resources are size-pinning layer-lists, so intrinsic bounds are already the
+            // section-header icon size — see drawable/ic_section_note.xml.
+            header.setCompoundDrawablesRelativeWithIntrinsicBounds(iconRes, 0, 0, 0);
+        }
     }
 
     static class EmptyViewHolder extends RecyclerView.ViewHolder {
@@ -207,14 +224,12 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static class CollectionCardViewHolder extends RecyclerView.ViewHolder {
-        private final com.google.android.material.card.MaterialCardView card;
         private final TextView nameView;
         private final TextView countView;
         private final TextView updatedView;
 
         CollectionCardViewHolder(@NonNull CollectionCardView.Views views) {
             super(views.root);
-            card = views.root;
             nameView = views.nameView;
             countView = views.countView;
             updatedView = views.updatedView;
@@ -222,13 +237,11 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         void bindCollection(Collection collection, Listener listener) {
             nameView.setText(collection.name);
-            countView.setText(formatCount(itemView, collection.noteCount));
+            countView.setText(formatContents(itemView.getContext(), collection));
             updatedView.setText(itemView.getContext().getString(
                     R.string.updated_relative_format,
                     DateUtils.getRelativeTimeSpanString(
                             collection.lastActivityAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)));
-            card.setCardBackgroundColor(
-                    ColorUtils.lighten(collection.color, ColorUtils.PASTEL_CARD_WHITE_RATIO));
 
             itemView.setOnClickListener(v -> listener.onCollectionClicked(collection.id, collection.name));
             itemView.setOnLongClickListener(v -> {
@@ -237,10 +250,26 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             });
         }
 
-        private static String formatCount(View itemView, int count) {
-            return count == 0
-                    ? itemView.getContext().getString(R.string.notes_count_zero)
-                    : itemView.getContext().getResources().getQuantityString(R.plurals.notes_count, count, count);
+        /**
+         * "12 notes · 30 flashcards · 2 quizzes". Notes are always stated, even at zero, because
+         * that is the card's headline fact; flashcards and quizzes only appear once they exist, so
+         * a plain collection of notes doesn't advertise two empty features.
+         */
+        private static String formatContents(Context context, Collection collection) {
+            Resources res = context.getResources();
+            StringBuilder summary = new StringBuilder(collection.noteCount == 0
+                    ? context.getString(R.string.notes_count_zero)
+                    : res.getQuantityString(R.plurals.notes_count, collection.noteCount, collection.noteCount));
+            String separator = context.getString(R.string.count_separator);
+            if (collection.flashcardCount > 0) {
+                summary.append(separator).append(res.getQuantityString(
+                        R.plurals.flashcards_count, collection.flashcardCount, collection.flashcardCount));
+            }
+            if (collection.quizCount > 0) {
+                summary.append(separator).append(res.getQuantityString(
+                        R.plurals.quizzes_count, collection.quizCount, collection.quizCount));
+            }
+            return summary.toString();
         }
     }
 }

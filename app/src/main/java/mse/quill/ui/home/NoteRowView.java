@@ -52,13 +52,13 @@ final class NoteRowView {
     static Views build(Context context) {
         int spacingMd = dimen(context, R.dimen.spacing_md);
         int spacingSm = dimen(context, R.dimen.spacing_sm);
-        int spacingXs = dimen(context, R.dimen.spacing_xs);
-        int iconWidth = (int) (32 * context.getResources().getDisplayMetrics().density);
+        int gutter = dimen(context, R.dimen.list_item_gutter);
+        int marginVertical = dimen(context, R.dimen.note_row_margin_vertical);
 
         MaterialCardView card = new MaterialCardView(context);
         RecyclerView.LayoutParams cardParams = new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
-        cardParams.setMargins(spacingMd, spacingXs, spacingMd, spacingXs);
+        cardParams.setMargins(gutter, marginVertical, gutter, marginVertical);
         card.setLayoutParams(cardParams);
         applyFlatCardStyle(card, R.dimen.note_row_corner_radius);
         card.setCardBackgroundColor(context.getColor(R.color.surface_container));
@@ -67,7 +67,7 @@ final class NoteRowView {
         outer.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setPadding(spacingSm, spacingSm, spacingMd, spacingSm);
+        outer.setPadding(spacingMd, spacingMd, spacingMd, spacingMd);
         card.addView(outer);
 
         LinearLayout row = new LinearLayout(context);
@@ -76,13 +76,6 @@ final class NoteRowView {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         outer.addView(row);
-
-        TextView icon = new TextView(context);
-        icon.setLayoutParams(new LinearLayout.LayoutParams(iconWidth, ViewGroup.LayoutParams.WRAP_CONTENT));
-        icon.setGravity(Gravity.CENTER_HORIZONTAL);
-        icon.setText(R.string.note_icon_glyph);
-        icon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        row.addView(icon);
 
         TextView title = new TextView(context);
         LinearLayout.LayoutParams titleParams =
@@ -104,8 +97,7 @@ final class NoteRowView {
         LinearLayout tagsContainer = new LinearLayout(context);
         LinearLayout.LayoutParams tagsParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tagsParams.topMargin = spacingXs;
-        tagsParams.setMarginStart(iconWidth);
+        tagsParams.topMargin = spacingSm;
         tagsContainer.setLayoutParams(tagsParams);
         tagsContainer.setOrientation(LinearLayout.HORIZONTAL);
         tagsContainer.setVisibility(View.GONE);

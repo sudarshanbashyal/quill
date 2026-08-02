@@ -18,14 +18,22 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Quill">
+        <!-- The launcher entry point is the splash, which finishes itself into MainActivity once
+             its animation minimum and StartupTasks are both done. It carries its own theme so the
+             window the system draws before the first frame is already the splash's lavender. -->
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".ui.splash.SplashActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Quill.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
 
         <!-- Required by ImageEmbedder.openCamera(): it hands the camera app a content:// URI
              for a file in getFilesDir()/images. The authority must match what that code builds

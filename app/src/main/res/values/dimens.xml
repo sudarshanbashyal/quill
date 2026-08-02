@@ -24,6 +24,10 @@
     <!-- Search field (fragment_home / fragment_collection_detail) -->
     <dimen name="search_corner_radius">12dp</dimen>
 
+    <!-- Splash logo. This is the "Q" glyph's text size; QuillLogoView derives the dots' size and
+         spacing from the glyph's measured bounds, so this one value scales the whole mark. -->
+    <dimen name="splash_logo_size">96dp</dimen>
+
     <!-- Color swatch picker (TagPickerDialog) -->
     <dimen name="swatch_size">36dp</dimen>
     <dimen name="swatch_margin">8dp</dimen>
@@ -40,8 +44,32 @@
     <!-- Tag picker dialog (TagPickerDialog) -->
     <dimen name="tag_dot_size">14dp</dimen>
 
-    <!-- Pinned note cards (PinnedNoteCardView) -->
-    <dimen name="pinned_card_width">150dp</dimen>
+    <!-- Bottom navigation, excluding the gesture-bar inset the bar adds to itself (MainActivity
+         adds the two together). M3's own floor is 80dp, which was more than the three items need
+         and came out of the list above. -->
+    <dimen name="bottom_nav_height">56dp</dimen>
+    <dimen name="bottom_nav_item_padding_top">2dp</dimen>
+    <dimen name="bottom_nav_item_padding_bottom">2dp</dimen>
+
+    <!-- Scroll slack under the last list item so it can clear the FAB (56dp + its 24dp margin). -->
+    <dimen name="list_fab_clearance">88dp</dimen>
+
+    <!-- Home list rhythm. Item views carry list_item_gutter as their own margin and the
+         RecyclerView adds the same again as padding, so every item sits 16dp from the screen edge
+         while two collection cards in a row are 16dp apart — one value, no per-column margins. -->
+    <dimen name="list_item_gutter">8dp</dimen>
+    <dimen name="section_header_margin_top">28dp</dimen>
+    <dimen name="section_header_margin_bottom">12dp</dimen>
+    <dimen name="section_header_icon">18dp</dimen>
+    <!-- Doubles into the gap between two note rows. -->
+    <dimen name="note_row_margin_vertical">6dp</dimen>
+
+    <!-- Pinned note cards (PinnedNoteCardView). The height is fixed rather than wrapped: a card's
+         title runs to one or two lines and its tag row may be absent entirely, and letting that
+         drive the height left the row of cards visibly ragged. -->
+    <dimen name="pinned_card_width">164dp</dimen>
+    <dimen name="pinned_card_height">148dp</dimen>
+    <dimen name="pinned_card_gap">12dp</dimen>
 
     <!-- Home FAB expanding menu -->
     <dimen name="fab_option_radius">24dp</dimen>

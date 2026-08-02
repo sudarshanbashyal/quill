@@ -33,8 +33,16 @@ import mse.quill.data.model.Note;
 import mse.quill.ui.collections.CollectionDetailFragment;
 import mse.quill.ui.notes.NoteEditorFragment;
 import mse.quill.util.ColorUtils;
+import mse.quill.util.WindowInsetsUtils;
 
-public class HomeFragment extends Fragment {
+public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
+
+    /** The gradient header, not the root: the root is a transparent {@code FrameLayout}, so the
+     *  strip behind the status bar would show the window background rather than the gradient. */
+    @Override
+    public View topInsetTarget(View root) {
+        return root.findViewById(R.id.home_header);
+    }
 
     private NoteRepository noteRepository;
     private CollectionRepository collectionRepository;

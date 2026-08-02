@@ -7,6 +7,12 @@
     <color name="brand_purple">#7C6FEA</color>
     <color name="brand_purple_dark">#5C4DD6</color>
     <color name="brand_purple_light">#EFECFE</color>
+    <!-- The logo mark's own two colours, sampled from res/drawable/logo.png. They back the
+         launcher icon and the splash, which is why they are a pair of their own rather than
+         brand_purple_light/text_primary — the tile is cooler and the ink is more neutral than
+         either, and the launcher icon has to keep matching the splash it hands off to. -->
+    <color name="brand_lavender">#DFE7FB</color>
+    <color name="brand_ink">#2D2E37</color>
 
     <!-- Surfaces / backgrounds. The MSE Figma uses a white page throughout, with the tonal
          surface_container below doing the work of separating rows/cards from it — so
@@ -47,4 +53,8 @@
     <!-- Misc -->
     <color name="uncategorized_gray">#9E9E9E</color>
     <color name="divider">#EBE9F2</color>
+
+    <!-- Launcher icon / splash -->
+    <color name="ic_launcher_background">@color/brand_lavender</color>
+    <color name="splash_background">@color/brand_lavender</color>
 </resources>

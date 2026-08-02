@@ -662,3 +662,276 @@ counted wrong).
 **Note for next session:** a physical device (`34211FDH2005RG`) appeared on adb partway through, so
 emulator commands now need `ANDROID_SERIAL=emulator-5554` — an unqualified `adb` call fails with
 "more than one device/emulator" and, worse, could target the phone.
+
+## 2026-08-02 — App icon, and an animated splash drawn from the font
+
+Two related asks: use the new `res/drawable/logo.png` as the app icon, then show the same mark on
+launch — but with the font rather than the export, "because the exported img is too low quality".
+
+**The icon.** `logo.png` is a 157px tile whose "Q" sits low and left (67px of empty space above it,
+6px below), so feeding it to an adaptive icon whole would have let the mask clip the glyph. The
+background (`#DFE7FB`) is flat and uniform, so it keys out cleanly: the glyph was lifted onto
+transparency and re-composited centred inside the 66dp safe zone, at all five densities, plus a
+black-alpha `ic_launcher_monochrome` for themed icons (the adaptive XML had been pointing
+`<monochrome>` at the full-colour Android-robot vector, which would have rendered as a blob). The
+stock `.webp` robot icons and both `ic_launcher_*` vectors are gone; `minSdk` is 26, so the
+`mipmap-anydpi` adaptive icon wins everywhere and nothing else referenced them.
+
+**The splash.** `SplashActivity` is now the launcher entry point and finishes itself into
+`MainActivity`. It draws `QuillLogoView`, a custom `View` — a recorded exception to the Material 3
+rule, since no MDC component is a brand mark and a `MaterialTextView` plus two circle `View`s can't
+keep the dots locked to the glyph. It renders "Q" in **Caprasimo** (bundled at
+`font/caprasimo_regular.ttf`, OFL in `licenses/`) and derives *everything else* from
+`getTextBounds("Q")`, so `android:textSize` alone scales the mark. The dot ratios (0.30 of the Q box
+across, 0.70 of the way down it, gaps of 0.036 and 0.071) were measured off `logo.png` and then
+checked against a screenshot of the running app — the first pass was 0.05/0.065 and read very
+slightly wrong, which the measurement caught.
+
+The dots fade in left to right, hold, then fade out right to left, forever, driven by **one**
+`ValueAnimator` walking a cycle clock with each dot's alpha a pure function of it — an
+`AnimatorSet` per dot would drift apart over an unbounded number of repeats.
+
+**Built so the background checks can land later**: the splash waits on `max(2s minimum,
+StartupTasks)`, and `StartupTasks.run()` is an empty `AppExecutors.diskIO` block today. Real work
+goes in there and the splash simply holds longer, still animating, because none of it touches the
+main thread. The hand-off is also deferred while the Activity is stopped — Android 10+ blocks
+background activity starts, so a user who leaves mid-splash would otherwise land nowhere.
+
+**Non-obvious thing learned**: temporarily setting `splash_logo_size` to 300dp to harvest a
+high-resolution render produced a mark only ~40% of the expected size. The paint was correct
+(logged `textSize=667.5`, `getTextBounds` → 502×563) — the device simply does not *draw* glyphs
+above ~272px at the requested size, even though `getTextBounds` reports them honestly. Harmless at
+the shipped 96dp, but don't trust `QuillLogoView` (or any large `drawText`) past ~250px without
+checking. The 229px-tall render it did produce still beat the 84px glyph in `logo.png`, so the
+launcher icons were regenerated from *that* and are now downscaled rather than upscaled.
+
+**Verified on the phone** (`34211FDH2005RG`): launched from the home-screen icon, frame-by-frame
+screencaps show Q alone → one dot → two dots → dots shrinking away, then `topResumedActivity`
+becomes `MainActivity`. `drawable/logo.png` is now referenced by nothing — kept as the source asset.
+
+## 2026-08-02 (same session) — The logo flashing up before the animation
+
+The static logo was visible for a moment on every launch before the animated mark replaced it.
+Not our code: **Android 12+ draws its own splash screen** before the first frame of any activity,
+and by default puts the launcher icon on it — so the mark was being shown twice, statically then
+animated.
+
+It can't be made continuous: the platform centres its icon in the window, while `QuillLogoView`
+centres the whole mark, which leaves the "Q" alone sitting left of centre. The two can never line
+up, so `Theme.Quill.Splash` sets `windowSplashScreenAnimatedIcon` to an empty vector
+(`drawable/splash_system_icon.xml`) and `windowSplashScreenBackground` to the same lavender. The
+launch is now one unbroken lavender field that the animated mark appears on. Both attributes are
+API 31+ and carry `tools:targetApi="s"`; they live in the one style rather than a `values-v31`
+copy, since overlaying by qualifier would mean duplicating every other item in it.
+
+**Verified on the emulator**: frame-by-frame captures of a launch from the home-screen icon go
+home screen → two frames of flat lavender with nothing drawn (the system splash, icon suppressed)
+→ the animated mark.
+
+**Note for next session:** the user wants the **emulator** used for verification, not the phone,
+even when both show up in `adb devices`. Export `ANDROID_SERIAL=emulator-5554`. The phone also
+sleeps within seconds, and `screencap` returns solid black while its display is off — which looks
+exactly like a crash if you are only reading pixel values.
+
+## 2026-08-02 (same session) — Home screen UI pass
+
+Seven fixes, all on Home (two of them reaching the collection-detail screen, which shares
+`NoteRowView`).
+
+- **Greeting in Caprasimo.** The logo face now carries "Welcome back" too. No `textStyle`: the
+  family ships one weight and no italic, and the old `italic|bold` would make Android synthesise
+  both off a display serif. **Playfair Display is gone** — three font files and its OFL — it had
+  exactly one call site.
+- **Pinned cards are a fixed `pinned_card_width` × `pinned_card_height`.** Height alone wasn't
+  enough: the title also had to become `setLines(2)` rather than `setMaxLines(2)`, or a one-line
+  title pulls the date up and the *contents* sit at a different height inside equal-height cards.
+  A weighted spacer pins the tag row to the bottom so tagged and untagged cards agree.
+- **Pinned cards get neutral (white/dark) tag chips** via a new `TagChipView.renderNeutral` —
+  those cards are a pastel fill, and a tinted chip on a tinted card is colour on colour. Grey note
+  rows keep the tag's own colour.
+- **Spacing.** New `list_item_gutter` (8dp) is set as each item view's own margin *and* as the
+  RecyclerView's horizontal padding, so every item sits 16dp from the edge while two collection
+  cards are 16dp apart — one value, no per-column margin maths. Plus taller section headers
+  (`section_header_margin_top`/`_bottom`), 12dp between note rows, and 16dp padding inside them.
+- **Collection cards are `surface_container` grey**, dropping the per-collection pastel tint that
+  `HomeAdapter` used to apply — a grid of pastel tiles above grey note rows read as two different
+  kinds of thing.
+- **Collection cards summarise contents**: "3 notes · 12 flashcards · 2 quizzes". Notes always
+  show (even at zero); flashcards and quizzes only once they exist. Both counts are new subqueries
+  in `CollectionRepository.loadCollections` reaching through `notes` — flashcards and quizzes hang
+  off a note, not a collection — and skipping soft-deleted notes, as `note_count` already did.
+- **Section headers carry icons** (`ic_note`, `ic_collection`), and the 📝 emoji is gone from note
+  rows along with the string. The source PNGs are 512/1024px, so they can't be compound drawables
+  directly; `drawable/ic_section_{note,collection}.xml` are `layer-list` wrappers pinning them to
+  `section_header_icon` and giving them usable intrinsic bounds for both XML and code.
+
+**Gotcha worth remembering:** `<string name="count_separator"> · </string>` shipped as a bare "·" —
+aapt strips leading/trailing whitespace unless the value is quoted (`" · "`).
+
+**Verified on the emulator** against a seeded database (4 collections, 9 notes, 3 pinned, tags,
+flashcards, quizzes). Seeding: `adb exec-out run-as mse.quill cat databases/quill.db` out, edit
+with Python's `sqlite3`, `adb push` to `/data/local/tmp` and `run-as … cp` back, deleting
+`-journal` first. There is **no `sqlite3` binary on the emulator image**, and `quizzes.note_id` is
+UNIQUE — one quiz per note, so a collection's quiz count is really "notes that have a quiz".
+
+## 2026-08-02 (same session) — Lost new notes, a pinned-card gap, and a fat bottom bar
+
+**A new note left quickly wasn't saved.** `NoteEditorFragment.autoSave` only learned the note's id
+from `createNote`'s async callback, and guarded creation with an `AtomicBoolean` that made any
+autosave arriving *while* creation was in flight `return` outright — so the save `onPause` fires on
+the way out was dropped, and with it everything typed since creation started. There was a second,
+quieter half: even when it did save, `createNote` and the follow-up `saveNote` were two separate
+disk tasks with a main-thread hop between them, so `HomeFragment.onResume`'s `loadNotes` could slot
+into the queue *between* them and render the note without its body.
+
+Both go away by **minting the id on the main thread**: `NoteRepository.createNote` now takes the id
+(`NoteRepository.newNoteId()`) instead of generating one, `noteId` is valid immediately, and the
+insert and the save are enqueued back-to-back on the single disk thread before anything else can
+read. The `AtomicBoolean` and `OnNoteCreated` are gone.
+
+**Pinned cards** went back to `setMaxLines(2)` from `setLines(2)` — reserving the second line left
+short titles floating above a gap before their date. The fixed card height already keeps the row
+even, so the title doesn't have to hold the shape too.
+
+**The bottom bar was charging twice for the gesture inset.** `BottomNavigationView` pads itself by
+the bottom system-window inset, and `MainActivity` was *also* padding the root by it — so the bar
+drew its own inset-height strip and then sat on a second, empty one. The root now takes
+left/top/right only, and `applyBottomInset()` gives the bottom inset to the nav host instead
+whenever the bar is hidden (the editor, a review session), so those screens still clear the pill.
+The bar's height is also set in code as `bottom_nav_height` (64dp) + inset: at `wrap_content` M3
+floors it at 80dp, and `app:itemPaddingTop`/`Bottom` do **not** move that floor — measured, they
+changed nothing.
+
+Net on a 1080×2400 emulator: bottom bar 104dp → 88dp, nav host 762dp → 802dp, and the Home
+RecyclerView 296dp → 336dp of visible list.
+
+**Verified on the emulator**: typing in a new note and hitting back immediately, and again typing
+either side of the 500ms debounce, both land in `content_blob` in full (`AAABBB`), and the note is
+in the Home list on return. Bottom bar screenshot-checked for clipping at the smaller height.
+
+## 2026-08-02 (same session) — Bottom bar trimmed again, pin icon on Pinned Notes
+
+`bottom_nav_height` 64dp → **56dp** (80dp on screen once the bar adds its own gesture inset), with
+`bottom_nav_item_padding_top`/`_bottom` down to 2dp so the icon, active-indicator pill and label
+still fit. 56dp is the floor for a bar that keeps its labels — anything shorter means
+`app:labelVisibilityMode="unlabeled"`, which is a different decision, not a smaller number.
+
+Across both passes on a 1080×2400 emulator: bar 104dp → 80dp, Home's RecyclerView 296dp → 344dp.
+
+The **Pinned Notes** header now uses `ic_pin` (via a new `drawable/ic_section_pin.xml` size-pinning
+wrapper, same pattern as the other two) instead of `ic_note`. `ic_section_note.xml` is still in use
+— it's the "Notes" section header in `HomeAdapter`.
+
+**Also verified this pass:** the hidden-bar path added last round. In the editor, `nav_host_fragment`
+runs to the screen bottom (2400) but its content stops at 2337 — the 63px inset lands as padding,
+so the scroll view clears the gesture pill.
+
+## 2026-08-02 (same session) — Crash opening notes quickly, and notes silently deleted
+
+Reported as "click a note, go back, click another — crash", only when done fast. Two separate
+bugs, both **pre-existing** (`NoteReader.java` last changed in 38aadae; the delete branch in
+`autoSave` is older still), both needing speed to hit — which is why three-second-paced emulator
+runs missed them and only a chained `adb shell "input tap …; input keyevent …; input tap …"` with
+no sleeps between reproduced it.
+
+**The crash.** `NoteEditorFragment` builds a `NoteReader` per note screen; its `TextToSpeech`
+binds asynchronously, and `onDestroyView` → `shutdown()` sets `tts = null`. Leave fast enough and
+the engine's init callback lands after that:
+
+```
+NullPointerException: … 'int android.speech.tts.TextToSpeech.setLanguage(java.util.Locale)'
+  on a null object reference at NoteReader.lambda$new$0(NoteReader.java:58)
+  at android.speech.tts.TextToSpeech.dispatchOnInit
+```
+
+The callback now takes a local reference to the engine and returns early on a new `shutDown` flag,
+`shutdown()` clears `ready`, and every public entry point goes through `isUsable()`.
+`restorePreferredVoice` also tolerates a null `getVoices()`, which some engines return.
+
+**The data loss, found while testing the crash.** Rapid open/back had *soft-deleted three seeded
+notes*. `loadNote` is async, so a note opened and left before the read returns has an empty title
+and no segments — `autoSave`'s `hasContent` is false, and it takes the "user emptied this note"
+branch and calls `deleteNote`. A new `contentLoaded` flag (false from when an existing note's id is
+known until its read lands, true for a brand-new note) makes `autoSave` a no-op in that window.
+Empty fields there mean "not read yet", not "emptied".
+
+**Verified**: 4 runs × 3 rapid open/back cycles → 0 FATALs, 9 alive notes, 0 deleted, 0 emptied.
+The identical hammering before the fix gave 1 FATAL and 3 deleted notes.
+
+**Method worth reusing:** timing bugs need input chained inside a *single* `adb shell` call —
+separate `adb shell` invocations are ~200-400ms apart, which is slower than a person and hides
+exactly this class of bug.
+
+## 2026-08-02 (same session) — The bottom "nav space" was a dead band, not the bar
+
+The user's screenshot (`home.jpeg`) showed a note row clipped mid-height with a white gap below it
+before the bottom bar. Measuring the hierarchy: `nav_host_fragment` ran to 2190 but the content
+sheet and `recycler_home` stopped at **2043** — a 147px (56dp) dead band, exactly
+`content_sheet_overlap`.
+
+`LinearLayout.measureVertical` accumulates with
+`totalLength = max(totalLength, totalLength + childHeight + topMargin + bottomMargin + …)`. That
+`max` **swallows a negative margin on the weighted child**: the sheet's `layout_marginTop="-56dp"`
+still shifted it up 56dp, but contributed nothing back to the space handed to `layout_weight="1"`,
+so the sheet measured 56dp short of the bottom. Charging the same offset to the *header's*
+`layout_marginBottom` shortens `totalLength` for real, and the sheet now reaches 2190 exactly.
+
+Worth remembering generally: **a negative margin on a weighted LinearLayout child positions but
+does not measure.** Put it on the sibling above instead.
+
+Home's RecyclerView across the whole session: 296dp → 336dp (inset double-count) → 344dp (56dp
+bar) → **400dp** (this fix), +35%. The bar itself was only ever part of it.
+
+## 2026-08-02 (same session) — Status bar takes the colour of the screen under it
+
+`MainActivity` was padding its root by the *top* inset, which pushed every screen below the status
+bar and left the strip behind the clock showing the window background — white, on Home's purple
+header as much as anywhere. The root now applies only the side insets, and each screen hands the
+top inset to the view whose paint should run up behind the bar, via a new
+`util/WindowInsetsUtils.applyTopInset(View)` (captures the layout's own paddingTop once, so
+re-dispatched insets don't compound).
+
+- **Home** → the gradient header (`@+id/home_header`, new id), *not* the root: the root is a
+  transparent `FrameLayout`, so padding it would have kept the white strip.
+- **Everywhere else** → the fragment root, which already carries `@color/app_background`. Its
+  background paints through its own padding, so the bar reads white, matching the page.
+- **Note editor** → the `Toolbar`, because `KeyboardInsetsHandler.attach(view, …)` already owns the
+  root's insets listener. **A view has exactly one `OnApplyWindowInsetsListener`** — setting a
+  second silently replaces the first, and the back arrow ended up under the clock. The toolbar also
+  had to move from a fixed `layout_height="48dp"` to `wrap_content` + `minHeight`, or the padding
+  would have squeezed its contents instead of moving it down.
+
+Playfair Display was also restored (`git checkout` of the three font files and its OFL) for the
+"Welcome back" greeting — 24sp, `textStyle="italic|bold"`, the family's real cuts. Caprasimo stays
+for the splash mark.
+
+**Verified on the emulator**: Home's status strip samples #CCC6FA (the gradient) where it was
+#FFFFFF before; the editor, collection detail, flashcards and quizzes read white with their
+headers clear of the clock.
+
+## 2026-08-02 (same session) — Status-bar inset made reusable, and the clipped subtitle
+
+Two follow-ups to the status-bar work.
+
+**The greeting's subtitle disappeared.** The header is `wrap_content` with `minHeight=176dp`, and
+its content sits *under* that minimum — so adding the status-bar inset as padding didn't make the
+header taller, it pushed the contents down inside a fixed-height box, sliding the subtitle under
+the content sheet that overlaps the header's bottom 56dp. `applyTopInset` now grows the view's
+`minimumHeight` by the inset as well as its padding. Rule of thumb: **padding a view for an inset
+only moves its contents unless the view is free to grow** — check `minHeight` and fixed heights.
+
+**One registration instead of nine call sites.** `MainActivity.applyTopInsetToEveryScreen()`
+registers a single `FragmentManager.FragmentLifecycleCallbacks` (with `recursive = true`, because
+the screens live in the nav host's *child* fragment manager) that applies the inset in
+`onFragmentViewCreated`. Default target is the fragment's own root; a screen needing somewhere else
+implements `WindowInsetsUtils.TopInsetHost` and returns the view — only Home (gradient header) and
+the note editor (toolbar, since `KeyboardInsetsHandler` owns the root's listener) do. New screens
+now get this for free rather than having to remember a call.
+
+Ordering that makes it work: `onFragmentViewCreated` is dispatched *after* the fragment's own
+`onViewCreated`, so the editor's `KeyboardInsetsHandler.attach(root, …)` has already run — and
+since the editor's target is the toolbar, neither clobbers the other. `NavHostFragment` and
+`DialogFragment` are skipped.
+
+**Verified**: Home purple with the subtitle clear of the sheet; editor, flashcards and quizzes
+white with their headers clear of the clock.

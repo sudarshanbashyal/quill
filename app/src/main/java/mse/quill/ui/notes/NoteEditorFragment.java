@@ -28,7 +28,6 @@ import androidx.appcompat.widget.Toolbar;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import mse.quill.R;
 import com.google.android.material.snackbar.Snackbar;
@@ -59,8 +58,17 @@ import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.tags.TagPickerDialog;
 import mse.quill.util.ImageExporter;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.util.WindowInsetsUtils;
 
-public class NoteEditorFragment extends Fragment {
+public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
+
+    /** The toolbar, not the root: {@link KeyboardInsetsHandler} claims the root's insets listener,
+     *  and a view only gets one — the second to attach silently replaces the first. The editor's
+     *  page is the window background either way, so the status bar still matches it. */
+    @Override
+    public View topInsetTarget(View root) {
+        return root.findViewById(R.id.toolbar);
+    }
 
     public static final String ARG_NOTE_ID = "note_id";
     public static final String ARG_COLLECTION_ID = "collection_id";
@@ -98,8 +106,15 @@ public class NoteEditorFragment extends Fragment {
     private boolean hasQuiz;
     private String noteId;
     private String pendingCollectionId;
-    private final AtomicBoolean isCreatingNote = new AtomicBoolean(false);
     private boolean suppressAutoSave = false;
+    /**
+     * Whether the editor's fields hold the note they are supposed to. False from the moment an
+     * existing note's id is known until {@link #loadExistingNote()}'s read comes back — a window
+     * in which the title and body are empty <em>because nothing has been read yet</em>, not
+     * because the note is empty. A note opened and left again inside that window is not a note the
+     * user emptied. Always true for a new note: there is nothing to wait for.
+     */
+    private boolean contentLoaded = true;
 
     private View tagRowScroll;
     private LinearLayout tagRowContainer;
@@ -130,7 +145,6 @@ public class NoteEditorFragment extends Fragment {
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-
         noteTitle = view.findViewById(R.id.note_title);
         optionsButton = view.findViewById(R.id.note_options_button);
         noteEditorView = view.findViewById(R.id.note_editor_view);
@@ -198,6 +212,7 @@ public class NoteEditorFragment extends Fragment {
         });
 
         if (noteId != null) {
+            contentLoaded = false;
             loadExistingNote();
         } else {
             // Pre-filled default title, same format used elsewhere for untitled notes — also
@@ -413,6 +428,7 @@ public class NoteEditorFragment extends Fragment {
             }
             noteEditorView.loadSegments(segments);
             suppressAutoSave = false;
+            contentLoaded = true;
         });
         tagRepository.loadTagsForNote(noteId, tags -> {
             if (!isAdded()) return;
@@ -734,25 +750,29 @@ public class NoteEditorFragment extends Fragment {
     /** @param onSaved run on the main thread once the write lands; skipped if there was nothing
      *                worth writing (a blank note is never created, and an emptied one is deleted). */
     private void autoSave(Runnable onSaved) {
+        // An existing note whose read hasn't come back yet has empty fields that mean "not loaded",
+        // not "emptied" — saving would blank it and the !hasContent branch below would delete it
+        // outright. Opening a note and leaving again before it painted did exactly that.
+        if (!contentLoaded) return;
+
         String title = noteTitle.getText().toString().trim();
         List<NoteSegment> segments = noteEditorView.exportSegments();
         boolean hasContent = !title.isEmpty() || hasRealContent(segments);
 
         if (noteId == null) {
             if (!hasContent) return; // blank note — don't create a row for it
-            if (!isCreatingNote.compareAndSet(false, true)) return; // creation already in flight
 
-            String collectionForCreation = pendingCollectionId;
-            noteRepository.createNote(title, collectionForCreation, createdId -> {
-                noteId = createdId;
-                isCreatingNote.set(false);
-                noteRepository.saveNote(noteId, title, segments, onSaved);
+            // The id is minted here, on the main thread, so noteId is usable by every later save
+            // immediately — those saves then queue behind this insert on the repository's single
+            // disk thread and land in order. Waiting on a created-id callback instead meant a save
+            // arriving mid-creation had no id to write to and was dropped on the floor, taking
+            // everything typed since creation started with it. Leaving a new note quickly — a back
+            // gesture a moment after the first keystroke — is exactly that race.
+            noteId = NoteRepository.newNoteId();
+            noteRepository.createNote(noteId, title, pendingCollectionId, () -> {
                 if (isAdded()) renderTagRow();
             });
-            return;
-        }
-
-        if (!hasContent) {
+        } else if (!hasContent) {
             noteRepository.deleteNote(noteId, null);
             return;
         }

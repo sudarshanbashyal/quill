@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- See ic_section_note.xml — same size-pinning wrapper, for the 1024px ic_collection.png. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="@dimen/section_header_icon"
+        android:height="@dimen/section_header_icon"
+        android:drawable="@drawable/ic_collection"
+        android:gravity="center" />
+</layer-list>

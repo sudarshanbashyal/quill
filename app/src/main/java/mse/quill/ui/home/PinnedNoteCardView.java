@@ -33,14 +33,14 @@ final class PinnedNoteCardView {
 
     static View build(Context context, Note note, Listener listener) {
         int width = dimen(context, R.dimen.pinned_card_width);
+        int height = dimen(context, R.dimen.pinned_card_height);
+        int gap = dimen(context, R.dimen.pinned_card_gap);
         int spacingXs = dimen(context, R.dimen.spacing_xs);
-        int spacingSm = dimen(context, R.dimen.spacing_sm);
         int spacingMd = dimen(context, R.dimen.spacing_md);
 
         MaterialCardView card = new MaterialCardView(context);
-        LinearLayout.LayoutParams cardParams =
-                new LinearLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.setMarginEnd(spacingSm);
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(width, height);
+        cardParams.setMarginEnd(gap);
         card.setLayoutParams(cardParams);
         NoteRowView.applyFlatCardStyle(card, R.dimen.card_corner_radius);
         card.setCardBackgroundColor(ColorUtils.lighten(
@@ -49,10 +49,13 @@ final class PinnedNoteCardView {
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         content.setPadding(spacingMd, spacingMd, spacingMd, spacingMd);
         card.addView(content);
 
+        // Up to two lines, not always two: reserving the second line left a short title floating
+        // above a gap before its date. The card's own fixed height is what keeps the row even, so
+        // the title doesn't have to hold the shape as well.
         TextView title = new TextView(context);
         title.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -74,6 +77,13 @@ final class PinnedNoteCardView {
                 note.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS));
         content.addView(date);
 
+        // Pushes the tag row to the bottom of the card, so tagged and untagged cards agree on
+        // where the date sits rather than the tags floating directly under it.
+        View spacer = new View(context);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        content.addView(spacer);
+
         LinearLayout tagsContainer = new LinearLayout(context);
         LinearLayout.LayoutParams tagsParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -82,7 +92,7 @@ final class PinnedNoteCardView {
         tagsContainer.setOrientation(LinearLayout.HORIZONTAL);
         tagsContainer.setVisibility(View.GONE);
         content.addView(tagsContainer);
-        TagChipView.render(context, tagsContainer, note.tags);
+        TagChipView.renderNeutral(context, tagsContainer, note.tags);
 
         card.setOnClickListener(v -> listener.onClicked(note));
         card.setOnLongClickListener(v -> {

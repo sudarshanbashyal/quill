@@ -22,7 +22,6 @@ final class CollectionCardView {
     private CollectionCardView() {}
 
     static final class Views {
-        /** Exposed so the adapter can retint the fill per collection via setCardBackgroundColor. */
         final MaterialCardView root;
         final TextView nameView;
         final TextView countView;
@@ -37,18 +36,20 @@ final class CollectionCardView {
     }
 
     static Views build(Context context) {
-        int spacingSm = NoteRowView.dimen(context, R.dimen.spacing_sm);
+        int gutter = NoteRowView.dimen(context, R.dimen.list_item_gutter);
         int spacingXs = NoteRowView.dimen(context, R.dimen.spacing_xs);
         int spacingMd = NoteRowView.dimen(context, R.dimen.spacing_md);
-        int minHeight = (int) (110 * context.getResources().getDisplayMetrics().density);
+        int minHeight = (int) (124 * context.getResources().getDisplayMetrics().density);
 
         MaterialCardView root = new MaterialCardView(context);
         RecyclerView.LayoutParams rootParams = new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
-        rootParams.setMargins(spacingSm, spacingSm, spacingSm, spacingSm);
+        rootParams.setMargins(gutter, gutter, gutter, gutter);
         root.setLayoutParams(rootParams);
         root.setMinimumHeight(minHeight);
         NoteRowView.applyFlatCardStyle(root, R.dimen.card_corner_radius);
+        // The same tonal grey as note rows. The collection's own colour used to fill the card, but
+        // a grid of pastel tiles next to grey note rows read as two different kinds of thing.
         root.setCardBackgroundColor(context.getColor(R.color.surface_container));
 
         LinearLayout detailGroup = new LinearLayout(context);
@@ -67,12 +68,17 @@ final class CollectionCardView {
         name.setTypeface(name.getTypeface(), android.graphics.Typeface.BOLD);
         detailGroup.addView(name);
 
+        // Holds the dot-separated "N notes · N flashcards · N quizzes" summary, which runs to a
+        // second line on a half-width card once a collection has all three.
         TextView count = new TextView(context);
         LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         countParams.topMargin = spacingXs;
         count.setLayoutParams(countParams);
-        count.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        count.setMaxLines(2);
+        count.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        count.setTextColor(context.getColor(R.color.text_secondary));
+        count.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         detailGroup.addView(count);
 
         View spacer = new View(context);

@@ -19,6 +19,20 @@
         <item quantity="other">%d notes</item>
     </plurals>
 
+    <!-- The other two halves of a collection card's summary line. They are only shown when the
+         collection actually has them, so there is no zero-quantity string to match
+         notes_count_zero. -->
+    <plurals name="flashcards_count">
+        <item quantity="one">%d flashcard</item>
+        <item quantity="other">%d flashcards</item>
+    </plurals>
+    <plurals name="quizzes_count">
+        <item quantity="one">%d quiz</item>
+        <item quantity="other">%d quizzes</item>
+    </plurals>
+    <!-- Quoted so aapt keeps the spaces around the dot; unquoted it collapses to a bare "·". -->
+    <string name="count_separator" translatable="false">" · "</string>
+
     <string name="empty_notes">No notes yet — tap + to create one</string>
     <string name="empty_notes_in_collection">No notes in this collection yet</string>
 
@@ -49,7 +63,6 @@
     <string name="new_tag_hint">New tag name</string>
     <string name="dialog_add_existing_notes_title">Add existing notes</string>
 
-    <string name="note_icon_glyph">📝</string>
     <string name="untitled_note_with_date">Untitled Note - %s</string>
 
     <string name="recording_in_progress_title">Recording audio…</string>

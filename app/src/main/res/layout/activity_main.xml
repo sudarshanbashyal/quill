@@ -32,6 +32,8 @@
         android:background="@color/surface"
         app:elevation="0dp"
         app:itemIconTint="@color/bottom_nav_item"
+        app:itemPaddingBottom="@dimen/bottom_nav_item_padding_bottom"
+        app:itemPaddingTop="@dimen/bottom_nav_item_padding_top"
         app:itemTextColor="@color/bottom_nav_item"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/menu_bottom_nav"
