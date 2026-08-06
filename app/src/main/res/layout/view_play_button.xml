@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The play/pause control of a note's audio block. A one-view layout purely so the button can
+     carry Widget.Quill.Button.Play: a widget style can't be applied to a view constructed in code,
+     and the segment builds itself programmatically. Inflating keeps one definition of the control
+     shared with the now-playing bar. -->
+<com.google.android.material.button.MaterialButton
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Widget.Quill.Button.Play"
+    android:layout_width="@dimen/audio_play_button_size"
+    android:layout_height="@dimen/audio_play_button_size"
+    android:contentDescription="@string/action_play_audio" />

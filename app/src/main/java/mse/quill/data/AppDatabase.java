@@ -9,7 +9,12 @@ import android.util.Log;
 public class AppDatabase extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "quill.db";
-    private static final int DATABASE_VERSION = 4;
+    /**
+     * 6, not 5: both the flashcards branch and the whiteboard branch shipped a "version 4" meaning
+     * different things, so the next number has to clear the highest either of them used. See
+     * {@link #ensureAdditiveSchema} for why the migration doesn't trust this number alone.
+     */
+    private static final int DATABASE_VERSION = 6;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -79,16 +84,46 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "created_at INTEGER, " +
                 "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
 
+        // source_segment_id is the id of the Q&A block the card was generated from, as carried in
+        // the note's Markdown (```quill-qa:<id>). It's what makes re-syncing a note an update
+        // rather than a duplicate-generator: the card's SM-2 columns survive edits to its text.
         db.execSQL("CREATE TABLE flashcards (" +
                 "id TEXT PRIMARY KEY, " +
                 "note_id TEXT, " +
+                "source_segment_id TEXT, " +
                 "front TEXT, " +
                 "back TEXT, " +
                 "interval INTEGER DEFAULT 1, " +
                 "repetitions INTEGER DEFAULT 0, " +
                 "easiness REAL DEFAULT 2.5, " +
                 "next_review INTEGER, " +
+                "last_reviewed_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
+
+        // A quiz is a *marker*, not a question set: it records that a note was turned into one.
+        // The questions themselves are generated fresh from the note's Q&A blocks at the start of
+        // every attempt, so they can't go stale against an edited note and the options land in a
+        // different order each time.
+        db.execSQL("CREATE TABLE quizzes (" +
+                "id TEXT PRIMARY KEY, " +
+                "note_id TEXT NOT NULL, " +
+                "created_at INTEGER, " +
+                "FOREIGN KEY(note_id) REFERENCES notes(id))");
+
+        // total is stored per attempt rather than read off the quiz: a note gains and loses Q&A
+        // blocks over time, so "7 / 9" is only meaningful next to the 9 that was true that day.
+        // answered is what separates an abandoned attempt from a bad one — 2/12 having answered
+        // three questions and 2/12 having answered all twelve are not the same afternoon.
+        db.execSQL("CREATE TABLE quiz_attempts (" +
+                "id TEXT PRIMARY KEY, " +
+                "quiz_id TEXT NOT NULL, " +
+                "score INTEGER DEFAULT 0, " +
+                "answered INTEGER DEFAULT 0, " +
+                "total INTEGER DEFAULT 0, " +
+                "status TEXT, " +
+                "started_at INTEGER, " +
+                "finished_at INTEGER, " +
+                "FOREIGN KEY(quiz_id) REFERENCES quizzes(id))");
 
         db.execSQL("CREATE TABLE voice_memos (" +
                 "id TEXT PRIMARY KEY, " +
@@ -155,6 +190,11 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_whiteboards_note_id ON whiteboards(note_id)");
         db.execSQL("CREATE INDEX idx_strokes_whiteboard_id ON strokes(whiteboard_id)");
         db.execSQL("CREATE INDEX idx_flashcards_note_id ON flashcards(note_id)");
+        db.execSQL("CREATE INDEX idx_flashcards_source_segment_id ON flashcards(source_segment_id)");
+        // A note has at most one quiz — "Make quiz" on a note that already has one opens it rather
+        // than making a second, and the constraint is what guarantees that rather than a convention.
+        db.execSQL("CREATE UNIQUE INDEX idx_quizzes_note_id ON quizzes(note_id)");
+        db.execSQL("CREATE INDEX idx_quiz_attempts_quiz_id ON quiz_attempts(quiz_id)");
         db.execSQL("CREATE INDEX idx_voice_memos_note_id ON voice_memos(note_id)");
         db.execSQL("CREATE INDEX idx_note_segments_note_id ON note_segments(note_id)");
         db.execSQL("CREATE INDEX idx_note_tags_tag_id ON note_tags(tag_id)");
@@ -163,32 +203,101 @@ public class AppDatabase extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // v3 → v4 is additive (whiteboards gained title/created_at/updated_at), so it migrates in
-        // place rather than wiping the user's notes. Every other step is still the development-era
-        // destructive rebuild below; see Epic A in memory/requirements.md.
-        if (oldVersion == 3 && newVersion == 4) {
-            db.execSQL("ALTER TABLE whiteboards ADD COLUMN title TEXT");
-            db.execSQL("ALTER TABLE whiteboards ADD COLUMN created_at INTEGER");
-            db.execSQL("ALTER TABLE whiteboards ADD COLUMN updated_at INTEGER");
-            // Pre-existing rows have no timestamps; date them from their newest stroke so they
-            // don't all sort to the top of Home as "just now".
+        // v3 is the schema the Markdown migration shipped, so from there on upgrades are additive:
+        // dropping a user's notes to add columns to a table they've never filled would be a poor
+        // trade. Anything older is a development-era schema and still gets rebuilt.
+        if (oldVersion >= 3) {
+            ensureAdditiveSchema(db);
+            return;
+        }
+
+        rebuild(db);
+    }
+
+    /**
+     * Brings any v3-or-later database up to the current schema, by asking what it already has
+     * rather than by trusting its version number.
+     *
+     * <p>That indirection is not decoration. Two branches independently shipped a "version 4":
+     * on the flashcards line it meant {@code flashcards.source_segment_id}, on the whiteboard line
+     * it meant {@code whiteboards.title}. A device sitting at v4 is therefore ambiguous — a
+     * numbered ladder would run the wrong step for one of the two lineages and leave the other's
+     * columns missing, which surfaces later as a query against a column that isn't there. Checking
+     * for each column makes every step idempotent and the version number merely a trigger.
+     */
+    private void ensureAdditiveSchema(SQLiteDatabase db) {
+        // Links a flashcard back to the Q&A block it came from, and records when it was last seen.
+        addColumnIfMissing(db, "flashcards", "source_segment_id", "TEXT");
+        addColumnIfMissing(db, "flashcards", "last_reviewed_at", "INTEGER");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_flashcards_source_segment_id " +
+                "ON flashcards(source_segment_id)");
+
+        // Quizzes and their attempt history. New tables, so nothing existing is touched.
+        db.execSQL("CREATE TABLE IF NOT EXISTS quizzes (" +
+                "id TEXT PRIMARY KEY, " +
+                "note_id TEXT NOT NULL, " +
+                "created_at INTEGER, " +
+                "FOREIGN KEY(note_id) REFERENCES notes(id))");
+        db.execSQL("CREATE TABLE IF NOT EXISTS quiz_attempts (" +
+                "id TEXT PRIMARY KEY, " +
+                "quiz_id TEXT NOT NULL, " +
+                "score INTEGER DEFAULT 0, " +
+                "answered INTEGER DEFAULT 0, " +
+                "total INTEGER DEFAULT 0, " +
+                "status TEXT, " +
+                "started_at INTEGER, " +
+                "finished_at INTEGER, " +
+                "FOREIGN KEY(quiz_id) REFERENCES quizzes(id))");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_quizzes_note_id ON quizzes(note_id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_id " +
+                "ON quiz_attempts(quiz_id)");
+
+        // Whiteboards gained a name and timestamps so Home can list them: a board has no body text
+        // to derive a preview or a date from the way a note does.
+        boolean whiteboardsDated = !addColumnIfMissing(db, "whiteboards", "title", "TEXT");
+        addColumnIfMissing(db, "whiteboards", "created_at", "INTEGER");
+        addColumnIfMissing(db, "whiteboards", "updated_at", "INTEGER");
+        if (!whiteboardsDated) {
+            // Rows that predate the columns have no timestamps; date them from their strokes so
+            // they don't all sort to the top of Home as "just now". Guarded on NULL so a re-run
+            // can't overwrite a real timestamp.
             db.execSQL("UPDATE whiteboards SET created_at = COALESCE(" +
                     "(SELECT MIN(s.created_at) FROM strokes s WHERE s.whiteboard_id = whiteboards.id), " +
                     "CAST(strftime('%s','now') AS INTEGER) * 1000), " +
                     "updated_at = COALESCE(" +
                     "(SELECT MAX(s.created_at) FROM strokes s WHERE s.whiteboard_id = whiteboards.id), " +
-                    "CAST(strftime('%s','now') AS INTEGER) * 1000)");
-            return;
+                    "CAST(strftime('%s','now') AS INTEGER) * 1000) " +
+                    "WHERE created_at IS NULL OR updated_at IS NULL");
         }
+    }
 
-        // For development: simple destructive upgrade.
-        // For production: write proper ALTER TABLE / migration steps per version.
+    /**
+     * Adds a column unless the table already has it. SQLite has no
+     * {@code ALTER TABLE … ADD COLUMN IF NOT EXISTS}, and re-adding one throws.
+     *
+     * @return true if the column was added, false if it was already there.
+     */
+    private boolean addColumnIfMissing(SQLiteDatabase db, String table, String column, String type) {
+        try (android.database.Cursor cursor =
+                     db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+            int nameIndex = cursor.getColumnIndex("name");
+            while (cursor.moveToNext()) {
+                if (column.equals(cursor.getString(nameIndex))) return false;
+            }
+        }
+        db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
+        return true;
+    }
+
+    private void rebuild(SQLiteDatabase db) {
         db.execSQL("DROP TABLE IF EXISTS notes_fts");
         db.execSQL("DROP TABLE IF EXISTS note_tags");
         db.execSQL("DROP TABLE IF EXISTS tags");
         db.execSQL("DROP TABLE IF EXISTS note_segments");
         db.execSQL("DROP TABLE IF EXISTS outbox");
         db.execSQL("DROP TABLE IF EXISTS voice_memos");
+        db.execSQL("DROP TABLE IF EXISTS quiz_attempts");
+        db.execSQL("DROP TABLE IF EXISTS quizzes");
         db.execSQL("DROP TABLE IF EXISTS flashcards");
         db.execSQL("DROP TABLE IF EXISTS strokes");
         db.execSQL("DROP TABLE IF EXISTS whiteboards");

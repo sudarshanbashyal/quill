@@ -1,13 +1,9 @@
 package mse.quill.ui.collections;
 
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.text.format.DateUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,16 +16,21 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 import mse.quill.R;
+import mse.quill.util.RelativeTime;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Collection;
+import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
+import mse.quill.data.model.Tag;
 import mse.quill.ui.home.CollectionDialogs;
 import mse.quill.ui.home.NotesAdapter;
 import mse.quill.ui.notes.NoteEditorFragment;
+import mse.quill.ui.search.NoteFilter;
+import mse.quill.ui.search.SearchFilterBar;
+import mse.quill.ui.search.SearchFilterDialog;
 
 public class CollectionDetailFragment extends Fragment {
 
@@ -45,7 +46,11 @@ public class CollectionDetailFragment extends Fragment {
     private String collectionId;
     private List<Collection> allCollections = new ArrayList<>();
     private List<Note> allNotesInCollection = new ArrayList<>();
-    private String searchQuery = "";
+    private List<Tag> allTags = new ArrayList<>();
+    /** Same control and same rules as Home's — see {@link NoteFilter}. */
+    private final NoteFilter filter = new NoteFilter();
+    private SearchFilterBar searchBar;
+    private TagRepository tagRepository;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -62,6 +67,7 @@ public class CollectionDetailFragment extends Fragment {
         String collectionName = args.getString(ARG_COLLECTION_NAME);
 
         noteRepository = new NoteRepository(requireContext());
+        tagRepository = new TagRepository(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
 
         ((TextView) view.findViewById(R.id.toolbar_title)).setText(collectionName);
@@ -92,13 +98,21 @@ public class CollectionDetailFragment extends Fragment {
         });
         recyclerView.setAdapter(notesAdapter);
 
-        EditText searchInput = view.findViewById(R.id.search_input);
-        searchInput.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) {
-                searchQuery = s.toString().trim().toLowerCase(Locale.getDefault());
+        searchBar = view.findViewById(R.id.search_bar);
+        searchBar.setHint(R.string.search_hint_collection);
+        searchBar.setListener(new SearchFilterBar.Listener() {
+            @Override public void onQueryChanged(String query) {
+                filter.setQuery(query);
                 applyFilters();
+            }
+
+            @Override public void onFilterRequested() {
+                SearchFilterDialog.show(requireContext(), filter, allTags,
+                        CollectionDetailFragment.this::onFilterChanged);
+            }
+
+            @Override public void onFilterCleared() {
+                onFilterChanged();
             }
         });
 
@@ -120,8 +134,7 @@ public class CollectionDetailFragment extends Fragment {
             for (Collection c : collections) {
                 if (c.id.equals(collectionId)) {
                     toolbarSubtitle.setText(getString(R.string.updated_relative_format,
-                            DateUtils.getRelativeTimeSpanString(
-                                    c.lastActivityAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)));
+                            RelativeTime.past(requireContext(), c.lastActivityAt)));
                     break;
                 }
             }
@@ -162,20 +175,20 @@ public class CollectionDetailFragment extends Fragment {
             allNotesInCollection = notes;
             applyFilters();
         });
+        tagRepository.loadAllTags(tags -> {
+            if (!isAdded()) return;
+            allTags = tags;
+            onFilterChanged();
+        });
+    }
+
+    private void onFilterChanged() {
+        applyFilters();
+        searchBar.render(filter, allTags);
     }
 
     private void applyFilters() {
-        List<Note> filtered;
-        if (searchQuery.isEmpty()) {
-            filtered = allNotesInCollection;
-        } else {
-            filtered = new ArrayList<>();
-            for (Note n : allNotesInCollection) {
-                String title = n.title == null ? "" : n.title.toLowerCase(Locale.getDefault());
-                String preview = n.preview == null ? "" : n.preview.toLowerCase(Locale.getDefault());
-                if (title.contains(searchQuery) || preview.contains(searchQuery)) filtered.add(n);
-            }
-        }
+        List<Note> filtered = filter.apply(allNotesInCollection);
         notesAdapter.submitList(filtered);
         emptyNotesView.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
     }

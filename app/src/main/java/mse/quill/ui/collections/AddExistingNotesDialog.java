@@ -4,7 +4,6 @@ import android.content.Context;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 
 import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -20,6 +19,7 @@ import mse.quill.R;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Note;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.util.MaxHeightScrollView;
 import mse.quill.util.TextFieldUtils;
 
 /**
@@ -46,9 +46,12 @@ public final class AddExistingNotesDialog {
         LinearLayout checklistContainer = new LinearLayout(context);
         checklistContainer.setOrientation(LinearLayout.VERTICAL);
 
-        ScrollView scroll = new ScrollView(context);
+        // Tall enough for the notes there are, capped for the notes there might be. It used to be
+        // a fixed height, so a collection with three candidates opened a dialog sized for fifty.
+        MaxHeightScrollView scroll = new MaxHeightScrollView(context);
+        scroll.setMaxHeight(dp(context, R.dimen.note_picker_max_height));
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, R.dimen.note_picker_max_height));
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         scrollParams.topMargin = dp(context, R.dimen.spacing_md);
         scroll.setLayoutParams(scrollParams);
         scroll.addView(checklistContainer);

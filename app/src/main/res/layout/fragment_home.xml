@@ -11,9 +11,18 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
+        <!-- The sheet's overlap is a negative *bottom* margin here rather than a negative top
+             margin on the sheet itself. LinearLayout.measureVertical accumulates with
+             totalLength = max(totalLength, totalLength + childHeight + margins), and that max
+             swallows a negative margin on the weighted child: the sheet was pulled up 56dp but
+             measured 56dp short with it, leaving a dead band of exactly that height between the
+             end of the list and the bottom bar. Charged to this view instead, it shortens
+             totalLength for real and the sheet reaches the bottom. -->
         <LinearLayout
+            android:id="@+id/home_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/content_sheet_overlap"
             android:orientation="vertical"
             android:background="@drawable/bg_home_header"
             android:minHeight="@dimen/header_min_height"
@@ -21,6 +30,9 @@
             android:paddingTop="@dimen/spacing_lg"
             android:paddingBottom="@dimen/spacing_lg">
 
+            <!-- Playfair Display, the display serif from the MSE Figma file. Its font-family ships
+                 real italic and bold cuts (see font/playfair_display.xml), so the textStyle below
+                 selects them rather than making Android synthesise a slant. -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -33,7 +45,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_xs"
+                android:layout_marginTop="@dimen/spacing_sm"
                 android:text="@string/home_greeting_subtitle"
                 android:textSize="14sp"
                 android:textColor="@color/text_secondary" />
@@ -46,7 +58,6 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginTop="@dimen/content_sheet_overlap"
             android:background="@drawable/bg_content_sheet"
             android:orientation="vertical">
 
@@ -54,7 +65,6 @@
             android:id="@+id/pinned_section"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_sm"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -62,7 +72,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/spacing_md"
-                android:layout_marginTop="@dimen/spacing_md"
+                android:layout_marginTop="@dimen/section_header_margin_top"
+                android:layout_marginBottom="@dimen/section_header_margin_bottom"
+                android:drawableStart="@drawable/ic_section_pin"
+                android:drawablePadding="@dimen/spacing_sm"
+                android:drawableTint="@color/text_primary"
+                android:gravity="center_vertical"
                 android:text="@string/section_pinned_notes"
                 android:textColor="@color/text_primary"
                 android:textSize="18sp"
@@ -72,7 +87,6 @@
                 android:id="@+id/pinned_scroll"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
                 android:clipToPadding="false"
                 android:paddingHorizontal="@dimen/spacing_md"
                 android:scrollbars="none">
@@ -87,42 +101,23 @@
 
         </LinearLayout>
 
-        <!-- hintEnabled=false keeps the hint as static placeholder text inside the box (as the
-             Figma draws it) instead of animating it up into a floating label. -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/search_field"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        <mse.quill.ui.search.SearchFilterBar
+            android:id="@+id/search_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="@dimen/spacing_md"
-            app:boxCornerRadiusBottomEnd="@dimen/search_corner_radius"
-            app:boxCornerRadiusBottomStart="@dimen/search_corner_radius"
-            app:boxCornerRadiusTopEnd="@dimen/search_corner_radius"
-            app:boxCornerRadiusTopStart="@dimen/search_corner_radius"
-            app:hintEnabled="false"
-            app:startIconDrawable="@android:drawable/ic_menu_search"
-            app:startIconTint="@color/text_secondary">
+            android:layout_marginHorizontal="@dimen/spacing_md"
+            android:layout_marginTop="@dimen/spacing_lg" />
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/search_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/search_hint"
-                android:inputType="text"
-                android:maxLines="1"
-                android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_secondary"
-                android:textSize="14sp" />
-
-        </com.google.android.material.textfield.TextInputLayout>
-
+        <!-- paddingHorizontal pairs with the matching margin every item view sets on itself; see
+             list_item_gutter. -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler_home"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false"
-            android:paddingBottom="88dp" />
+            android:paddingHorizontal="@dimen/list_item_gutter"
+            android:paddingBottom="@dimen/list_fab_clearance" />
 
         </LinearLayout>
 

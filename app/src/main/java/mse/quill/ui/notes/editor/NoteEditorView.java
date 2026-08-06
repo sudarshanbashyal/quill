@@ -1,11 +1,14 @@
 package mse.quill.ui.notes.editor;
 
 import android.content.Context;
+import android.graphics.Rect;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.LinearLayout;
+
+import androidx.core.view.OneShotPreDrawListener;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -76,75 +79,20 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     // ── Public API ─────────────────────────────────────────────────────────
 
     public void insertImageAfterFocused(String filePath) {
-        int focusedIndex = getFocusedSegmentIndex();
+        int insertAt = splitFocusedTextForBlockInsert();
+        addImageSegment(null, filePath, 0, insertAt);
 
-        // If focused segment is a text segment, split it at cursor
-        if (focusedIndex >= 0 && segments.get(focusedIndex) instanceof TextSegmentView) {
-            TextSegmentView textView = (TextSegmentView) segments.get(focusedIndex);
-            android.widget.EditText editText = textView.getEditText();
-            int cursor = editText.getSelectionStart();
-
-            SpannableStringBuilder before = new SpannableStringBuilder(
-                    editText.getText().subSequence(0, cursor));
-            SpannableStringBuilder after = new SpannableStringBuilder(
-                    editText.getText().subSequence(cursor, editText.getText().length()));
-
-            // Update current segment with text before cursor
-            textView.setText(before);
-            textView.clearBulletContinuation();
-
-            // Insert image after current segment
-            int insertAt = focusedIndex + 1;
-            addImageSegment(null, filePath, 0, insertAt);
-
-            // Insert text segment after image with remaining text
-            addTextSegment(after, insertAt + 1);
-
-            // Focus the new text segment after image
-            ((TextSegmentView) segments.get(insertAt + 1)).focusAtStart();
-
-        } else {
-            // No focused text — append image + new text at end
-            addImageSegment(null, filePath, 0, segments.size());
-            addTextSegment(new SpannableStringBuilder(""), segments.size());
-            ((TextSegmentView) segments.get(segments.size() - 1)).focusAtStart();
-        }
+        // The caret continues in the text segment the split left after the image.
+        TextSegmentView trailing = (TextSegmentView) segments.get(insertAt + 1);
+        focusOnceVisible(trailing, trailing::focusAtStart);
     }
 
     public void insertAudioAfterFocused(String filePath, int durationMs) {
-        int focusedIndex = getFocusedSegmentIndex();
+        int insertAt = splitFocusedTextForBlockInsert();
+        addAudioSegment(null, filePath, durationMs, insertAt);
 
-        // If focused segment is a text segment, split it at cursor
-        if (focusedIndex >= 0 && segments.get(focusedIndex) instanceof TextSegmentView) {
-            TextSegmentView textView = (TextSegmentView) segments.get(focusedIndex);
-            android.widget.EditText editText = textView.getEditText();
-            int cursor = editText.getSelectionStart();
-
-            SpannableStringBuilder before = new SpannableStringBuilder(
-                    editText.getText().subSequence(0, cursor));
-            SpannableStringBuilder after = new SpannableStringBuilder(
-                    editText.getText().subSequence(cursor, editText.getText().length()));
-
-            // Update current segment with text before cursor
-            textView.setText(before);
-            textView.clearBulletContinuation();
-
-            // Insert audio after current segment
-            int insertAt = focusedIndex + 1;
-            addAudioSegment(null, filePath, durationMs, insertAt);
-
-            // Insert text segment after audio with remaining text
-            addTextSegment(after, insertAt + 1);
-
-            // Focus the new text segment after audio
-            ((TextSegmentView) segments.get(insertAt + 1)).focusAtStart();
-
-        } else {
-            // No focused text — append audio + new text at end
-            addAudioSegment(null, filePath, durationMs, segments.size());
-            addTextSegment(new SpannableStringBuilder(""), segments.size());
-            ((TextSegmentView) segments.get(segments.size() - 1)).focusAtStart();
-        }
+        TextSegmentView trailing = (TextSegmentView) segments.get(insertAt + 1);
+        focusOnceVisible(trailing, trailing::focusAtStart);
     }
 
     /**
@@ -155,7 +103,36 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     public void insertQaBlockAfterFocused() {
         int insertAt = splitFocusedTextForBlockInsert();
         addQaSegment(null, new SpannableStringBuilder(""), new SpannableStringBuilder(""), insertAt);
-        ((QASegmentView) segments.get(insertAt)).focusQuestion();
+        QASegmentView block = (QASegmentView) segments.get(insertAt);
+        focusOnceVisible(block, block::focusQuestion);
+    }
+
+    /**
+     * Focuses a just-inserted block and scrolls it into view, but only on the first frame where it
+     * actually has layout bounds.
+     *
+     * <p>Focusing it inline instead — which is what this used to do — asks the ScrollView to reveal
+     * a child that has not been measured yet, so it scrolls to where a zero-sized child nominally
+     * sits: the top of the note. Nothing corrected it afterwards either, because the keyboard is
+     * already up when a block is inserted, so no inset change fired the editor's own reveal and the
+     * block stayed behind the keyboard. Waiting for pre-draw means the block has real bounds.
+     *
+     * <p>The reveal is deliberately <em>not</em> immediate. Splitting the segment above moved that
+     * field's caret, and a TextView brings its caret into view from its own pre-draw pass — which,
+     * registered first, is already running as a smooth scroll by the time this one goes. An
+     * immediate {@code scrollBy} lands correctly and is then simply animated away by that scroller
+     * on the next draw. Asking for a non-immediate scroll routes through {@code smoothScrollBy},
+     * which takes the in-flight scroller over instead of racing it.
+     *
+     * <p>The rectangle is the whole block rather than the caret line, so the block arrives fully on
+     * screen above the keyboard rather than with just its first line peeking over it.
+     */
+    private void focusOnceVisible(BaseSegmentView block, Runnable focusAction) {
+        OneShotPreDrawListener.add(block, () -> {
+            focusAction.run();
+            block.requestRectangleOnScreen(
+                    new Rect(0, 0, block.getWidth(), block.getHeight()), false);
+        });
     }
 
     /**
@@ -166,8 +143,10 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     private int splitFocusedTextForBlockInsert() {
         int focusedIndex = getFocusedSegmentIndex();
         if (focusedIndex < 0 || !(segments.get(focusedIndex) instanceof TextSegmentView)) {
+            // Nothing to split: the trailing text segment goes on the end, and the block takes the
+            // index it was appended at — pushing it down to sit after the block.
             int insertAt = segments.size();
-            addTextSegment(new SpannableStringBuilder(""), insertAt + 1);
+            addTextSegment(new SpannableStringBuilder(""), insertAt);
             return insertAt;
         }
 
@@ -181,11 +160,27 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
                 editText.getText().subSequence(cursor, editText.getText().length()));
 
         textView.setText(before);
+        // setText drops the caret to 0, and this field still has focus — leave it there and the
+        // editor scrolls back to the segment's first line, which on a long paragraph means the top
+        // of the note. The caret belongs at the split point anyway.
+        editText.setSelection(before.length());
         textView.clearBulletContinuation();
 
         int insertAt = focusedIndex + 1;
         addTextSegment(after, insertAt);
         return insertAt;
+    }
+
+    /** Focuses the top of the body — where the title field's "next" key should land. Falls through
+     *  to {@link #focusEnd()} for a note that opens on a block, which has no line to start on. */
+    public void focusBodyStart() {
+        for (BaseSegmentView view : segments) {
+            if (view instanceof TextSegmentView) {
+                ((TextSegmentView) view).focusAtStart();
+                return;
+            }
+        }
+        focusEnd();
     }
 
     /** Focuses the end of the last segment — used when the user taps empty space below the
@@ -313,11 +308,12 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         return exported;
     }
 
-    /** Stops any audio segment currently playing back — used when the editor screen is no
-     *  longer visible so playback doesn't keep running behind it. */
-    public void stopAllAudioPlayback() {
+    /** Names every recording in this note after the note itself. A clip carries no name of its own,
+     *  and once playback follows the user out of the editor the pill and the lock screen have to
+     *  call it something — "the audio from Lecture 7" is the only thing that means anything. */
+    public void setAudioClipTitle(String noteTitle) {
         for (BaseSegmentView view : segments) {
-            if (view instanceof AudioSegmentView) ((AudioSegmentView) view).stopIfPlaying();
+            if (view instanceof AudioSegmentView) ((AudioSegmentView) view).setClipTitle(noteTitle);
         }
     }
 

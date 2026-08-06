@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The icon set ships as density-less PNGs, whose intrinsic size is their pixel size at mdpi —
+     around 85dp on a 3x screen. Everywhere else they're drawn into an ImageView with a fixed size,
+     but a menu item asks the drawable how big it is and believes the answer, which blows the popup
+     out to the width of the icon. This wrapper is the answer to that question. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/ic_flashcard"
+        android:width="@dimen/menu_icon_size"
+        android:height="@dimen/menu_icon_size"
+        android:gravity="center" />
+</layer-list>

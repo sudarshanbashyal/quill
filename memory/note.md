@@ -22,8 +22,18 @@ Design source: the **MSE** Figma file — see [references.md](references.md).
 
 Single Activity (`MainActivity`) hosting a `NavHostFragment` (`nav_graph.xml`):
 
+Three of them are **top-level**, reachable from a `BottomNavigationView` in `activity_main`:
+`homeFragment`, `flashcardDecksFragment` and `quizzesFragment`. The bar hides on every other
+destination. The menu's item ids *are* the destination ids, which is what lets `NavigationUI`
+own selection and the back stack.
+
 - `HomeFragment` (start destination) — collections grid + notes list/search + up to
   `NoteRepository.MAX_PINNED_NOTES` (3) pinned-note cards.
+- `FlashcardDecksFragment` — one row per note that has flashcards (see "Flashcards").
+- `FlashcardsFragment` (args: `note_id` required) — the review session for one note's deck.
+- `QuizzesFragment` — one row per note that has a quiz (see "Quizzes").
+- `QuizDetailFragment` (args: `quiz_id` required) — attempt history and the Start button.
+- `QuizSessionFragment` (args: `quiz_id` required) — the timed run and its marked paper.
 - `NoteEditorFragment` (args: `note_id` nullable, `collection_id` nullable) — the rich
   text editor. Null `note_id` means "new note, not yet persisted."
 - `CollectionDetailFragment` (args: `collection_id`, `collection_name`)
@@ -73,11 +83,15 @@ Core, actively used:
   created from Home stands on its own, one opened from a note belongs to it. `strokes(id,
   whiteboard_id, author_id, tool, color, width, points_blob, created_at)`.
 - `tags(id, name, color, created_at)`, `note_tags(note_id, tag_id)` join table.
+- `flashcards(id, note_id, source_segment_id, front, back, …)` + SM-2 columns
+  (`interval`, `repetitions`, `easiness`, `next_review`, `last_reviewed_at`) — live since
+  schema v4, written by `FlashcardRepository`.
+- `quizzes(id, note_id, created_at)` and `quiz_attempts(id, quiz_id, score, answered,
+  total, status, started_at, finished_at)` — schema v5, written by `QuizRepository`. See
+  "Quizzes" for why a quiz holds no questions.
 
 Present in schema, **not wired to any repository/DAO/UI yet** (forward-looking
 scaffolding, not dead code to delete casually — check before assuming it's unused):
-- `flashcards` (front/back + SM-2-style spaced-repetition columns: `interval`,
-  `repetitions`, `easiness`, `next_review`)
 - `voice_memos` (superseded in practice by `note_segments` TYPE_AUDIO — audio embeds
   in the actual editor go through segments, not this table)
 - `outbox` (`type`, `payload_blob`, `target_device_id`) — looks like a staged sync/
@@ -210,7 +224,7 @@ callback pattern. `WhiteboardFragment` still uses `WhiteboardDao`/`StrokeDao` on
 because `strokes` has a foreign key onto that row and the stroke writes run on their own unordered
 threads. `updated_at` is bumped on draw/undo/clear so the Home section sorts by real recency.
 
-## Markdown note format — implemented; flashcards still planned
+## Markdown note format — implemented, flashcards included
 
 **Storage: done (2026-07-28).** The "Full" option below was chosen: a note is one
 Markdown document in `notes.content_blob`, `note_segments` demoted to a media asset
@@ -227,7 +241,7 @@ registry. See "Note content model" above for how it actually works, and
 | Bullet list | `- item` |
 | Image | `![](quill://image/<asset-id>)` |
 | Audio | `![audio](quill://audio/<asset-id>)` |
-| Q&A block | fenced ` ```quill-qa `, question, `---`, answer, ` ``` ` |
+| Q&A block | fenced ` ```quill-qa:<block-id> `, question, `---`, answer, ` ``` ` |
 
 Note this differs from the original sketch: embeds reference an **asset id**, not a file
 path or an HTML tag, because the metadata (width, duration, transcript) has to live on a
@@ -239,28 +253,13 @@ round-trip is hand-written in `MarkdownSerializer`.
 **Still to design/build** (Epic D): the whiteboard embed, reserved as
 `![whiteboard](quill://whiteboard/<id>)`.
 
-**Flashcard generation & sync**: "Create/Sync Flashcards" on the note screen turns every
-`TYPE_QA` segment into a row in the (already-existing, currently-unused) `flashcards`
-table. Flashcards link back via a new `flashcards.source_segment_id`; the segment-
-identity fix this depended on has since landed (see "Note content model"), so this is no
-longer blocked. Two sync modes, user-selectable **per note** (default: Manual):
-- **Manual** — nothing happens until the user taps "Sync Flashcards."
-- **Automatic** — sync runs on note save, but must never touch a card the user is
-  actively reviewing: a review session snapshots its due-card queue at session start,
-  and auto-sync only writes to the table, never into an in-progress session's queue —
-  otherwise editing a note mid-review could rewrite the card someone's looking at.
+See "Flashcards" below for how the Q&A fence's info string ended up being used.
 
-Re-syncing a note is an update, not a duplicate-generator: existing linked segments
-overwrite only `front`/`back` text on their flashcard, never the SM-2 scheduling state
-(`interval`/`repetitions`/`easiness`/`next_review`). A flashcard whose source segment
-disappeared (block deleted from the note) is left alone rather than silently deleted —
-someone's review progress shouldn't evaporate because a note got tidied up; surface it
-as orphaned instead and let the user decide.
+## Quizzes — scored, auto-graded, no free-text matching
 
-## Planned: Quizzes — scored, auto-graded, no free-text matching
-
-**Status: design agreed, not yet implemented.** Tracked as Epic E in
-[requirements.md](requirements.md).
+**Status: built 2026-08-01** (per-note MCQ quizzes, timed, with attempt history; the
+collection/tag scopes and True/False fallback below are still outstanding). Tracked as
+Epic E in [requirements.md](requirements.md).
 
 Two tempting approaches were deliberately rejected up front:
 - **Free-text typed answers graded by string match** — real answers vary too much
@@ -282,18 +281,86 @@ locally from the flashcard pool**, so no string matching or AI is ever required:
   notes/collections too small for MCQ.
 - **Matching mode** (later, optional) — N questions + N shuffled answers to pair up.
 
-**Flashcards and quizzes share one data model, not two.** `flashcards` stays the single
-source of truth for Q/A content (see the Epic D section above); two separate *modes*
-sit on top of it:
-- **Review** — spaced repetition, self-graded (Again/Hard/Good/Easy), private, drives
-  SM-2 scheduling. No matching problem here at all — the human is always the judge.
-- **Quiz** — user picks a scope (a note / a collection / a tag), the app auto-builds N
-  MCQ/True-False questions from that scope's flashcards, and tracks a score.
+**What was built differs from the sketch above in one important way: quizzes read the
+note's Q&A blocks directly, not the `flashcards` table.** The plan had both modes sitting
+on one content model, and that's still true of the *content* — `FlashcardRepository
+.reviewableQa` is the single definition of a usable block, shared by both — but a quiz
+doesn't need a card to exist first. Requiring one would have meant "Make quiz" silently
+generating flashcards as a side effect, and a note's quiz history depending on whether its
+deck had since been deleted. What the two features actually share is the rule, not the rows.
 
-New schema needed (none of this exists yet): something like
-`quiz_attempts(id, scope_type, scope_id, score, total, taken_at)`, optionally
-`quiz_attempt_answers(attempt_id, flashcard_id, was_correct)` if per-question review
-after a quiz is wanted.
+**A quiz stores nothing but the fact that it exists.** `quizzes(id, note_id, created_at)`,
+one row per note (a unique index on `note_id`, so "Make quiz" is idempotent and becomes
+"Open quiz"). Questions are regenerated from the note at the start of every attempt, which
+is what makes a quiz incapable of drifting out of step with an edited note — the whole
+`source_segment_id` sync problem the flashcard side has to solve doesn't arise, because
+nothing derived is kept. It also means the options land in a different order every time.
+
+**Schema (v5, additive from v4).** `quiz_attempts(id, quiz_id, score, answered, total,
+status, started_at, finished_at)`. Three departures from the sketched shape, each earned:
+- No `scope_type`/`scope_id` — the scope is a note, and a column that can only hold one
+  value is a column that lies about being flexible. Collection/tag scopes can add it.
+- `total` is per attempt, not read off the quiz: a note gains and loses Q&A blocks, so
+  "2 / 6" only means something next to the 6 that was true that day.
+- `answered` distinguishes an abandoned attempt from a bad one. 2/12 having answered three
+  questions and 2/12 having answered twelve are not the same afternoon.
+- No `quiz_attempt_answers`. The marked paper is shown at the end from the in-memory
+  session; nothing yet reopens a past attempt, and a table written for a screen that
+  doesn't exist is a table that will be wrong when it does.
+
+**The row is written when the attempt starts.** Otherwise walking out of a quiz leaves no
+trace, which silently rewards giving up. Leaving marks it abandoned with what was answered;
+a killed process leaves it in progress, and a sweep on the next load retires it — "too old
+to still be running" is *computable* here rather than arbitrary, since a quiz is time-boxed
+at `total × QUESTION_TIME_MS` plus a grace period.
+
+**Everything tunable lives in `QuizRules`**: `MIN_QA_BLOCKS = 5`, `OPTIONS_PER_QUESTION =
+4`, `QUESTION_TIME_MS = 15s`, `WARNING_TIME_MS = 10s`, `ABANDON_GRACE_MS`. The first two are
+not independent — a question needs its own answer plus three from other blocks, so four
+options need four blocks, and the fifth is what stops every question from reusing the same
+three distractors. The option views *and* the indicator pips are built in code from those
+constants rather than nailed into the layout, so changing either actually changes the quiz.
+
+**One clock for the whole run, not one per question** (`QuizRules.totalTimeMs` = 15s ×
+questions; 6 questions gives 1:30, shown on both the detail screen and the session header so
+the two agree). A per-question timer forces the same pace onto a one-line recall and a
+question worth thinking about. More importantly it's what makes the rest of the screen
+possible: with nothing sealed when a question is left, questions can be answered in any
+order, revisited and changed.
+
+**The answer sheet, not a conveyor belt.** `QuizSession` holds selections for every question
+and a cursor; Previous/Next move without requiring an answer, tapping an option again clears
+it (on a revisitable paper, the alternative to undo is leaving a mis-tap wrong), and the pip
+row across the top shows answered/blank/current — that row exists because "did I leave
+anything blank?" would otherwise cost a page-through that the clock is charging for. Pips
+are tappable, so it's navigation as well as status, and the row scrolls to keep the current
+one visible rather than shrinking below readable.
+
+**Running out of time completes the attempt, it doesn't abandon it.** Every question was
+put; the blanks are answers the user didn't get to, and the paper is marked as it stands
+under a "Time's up" heading. Under `WARNING_TIME_MS` the clock and its bar turn red and a
+line spells out what running out costs — latched once rather than re-applied per tick, so it
+gets attention instead of fighting for it. The clock pauses behind any dialog and resumes
+from where it stopped: time spent answering the *app's* question isn't the user's to pay for.
+
+**Handing in with blanks is allowed, but it asks first.** Free movement makes forgetting a
+question easy, so `Submit quiz` counts the blanks and says how many will be marked wrong —
+`Submit anyway` or `Keep answering`. Blanks are marked wrong rather than excluded: a score
+out of "the ones I attempted" would flatter exactly the run that ran out of time.
+
+**Marked at the end, never per question.** A quiz is a measurement; grading each answer as
+it's given turns it into a study session, and the remaining answers get given by someone who
+has just been coached. (It's also what lets an answer be changed at all — feedback would
+make revisiting a question a free second guess.) The results list restates the correct
+answer for wrong answers only: repeating it under a right one is noise, omitting it entirely
+makes the list a scolding.
+
+**Screens.** `QuizzesFragment` (third bottom-nav tab, `ic_stopwatch`) → `QuizDetailFragment`
+(question count, attempt history, Start) → `QuizSessionFragment` (timer, single-select
+options, Submit, then the marked paper in the same panel). The detail screen reads the
+question count from the *note* on every resume, so it can say "only 3 complete Q&A blocks —
+5 are needed" rather than letting Start fail. Deliberately shaped like the flashcards
+screens next door: same row idiom, same delete-with-confirmation, same empty states.
 
 ## Material 3 UI migration
 
@@ -560,6 +627,398 @@ a block insert leaves behind mid-note are structural gaps, not invitations; repe
 prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points it from
 `insertSegment`/`removeSegment`, the two places the list can change shape.
 
+## Timestamps
+
+**`util/RelativeTime` is the only way the app phrases a time** (2026-08-06). It replaced scattered
+`DateUtils.getRelativeTimeSpanString` calls across the note rows, pinned cards, collection cards and
+subtitle, deck rows and quiz rows — which were inconsistent exactly where they are read most: a note
+saved seconds ago rendered as **"Updated 0 minutes ago"**, because that method's minute resolution
+floors to zero instead of saying so in words.
+
+The ladder: `now` · `5 min ago` · `3 hours ago` · `yesterday` · `12 Jun` (`12 Jun 2025` once the
+year differs). `future()` mirrors it (`in 5 min`, `tomorrow`) for a deck's next review. The short
+date's pattern comes from `getBestDateTimePattern`, so field order follows the locale.
+
+Three things worth not re-deriving:
+- **Under a day is elapsed time; "yesterday" is a calendar question.** Mixing them is what stops 30
+  hours ago reading as yesterday when two midnights have passed, and stops 2am reporting
+  "yesterday" for something three hours old.
+- **The day difference is rounded, not truncated** — midnight to midnight is 23 or 25 hours across
+  a daylight-saving change, a bug that would surface twice a year and nowhere else.
+- **A negative distance reads as `now`**, so a record stamped a moment ahead of the clock doesn't
+  render as a date.
+
+Choosing the rung is split from wording it (`Bucket`, package-private) so the boundaries are unit
+tested on the JVM — `RelativeTimeTest`, 8 cases. Wording is a resource lookup and needs a Context.
+
+## Search, filtering and sorting
+
+**Status: built 2026-08-06.** One control, `ui/search/SearchFilterBar`, used by Home and a
+collection's detail screen — they had drifted into two copies of the search field alone. It is a
+compound view holding the box, the filter button and the active-filter chip row.
+
+**The box follows the Figma's HomePage 2 frame** (node `32:600`): white, 1px hairline outline, no
+start icon, with the filter button *outside* it to the right. The magnifying glass was the one
+thing making the screen look like a stock Android search widget, and it was
+`@android:drawable/ic_menu_search` — a framework drawable, against the M3 rule below. The button
+sits outside because the box is for typing and the button opens a different surface; inside, it
+read as part of the field.
+
+**The bar holds no state.** The screen owns a `NoteFilter` and passes it to `render()`; the bar
+reports typing and taps. Filtering runs in memory because both screens already hold every note they
+show — pushing it into SQL would be a round trip per keystroke.
+
+**What it filters and sorts:** query (title + preview), any-of tag selection, pinned-only, and four
+orderings (most recent, oldest, title A–Z, Z–A). Two decisions worth keeping:
+- **Tags are any-of, not all-of.** Picking a second tag should widen, not empty, the list.
+- **Collections ignore tag and pinned filters**, since both are properties of a note — a collection
+  vanishing because none of its notes carried a tag looks like it was deleted. Sorting still
+  applies, so the two lists agree on what "oldest" means. Collections sort on `lastActivityAt`,
+  the value their card already shows.
+
+**Selected tags in the filter sheet are shown by border colour alone, and the border is always
+there.** Two things had to be got right, in order:
+- The chips are tinted with the tag's own colour at rest, so Material's default checked treatment —
+  a background change — lands on a colour already doing something else and reads as no change.
+- The obvious fixes then cause a *layout* problem. A checked icon adds a glyph plus its padding, and
+  a stroke that only appears when selected re-measures the chip; either way the row visibly reflows
+  on every tap. So every chip carries the stroke at all times, painted the same colour as its fill
+  when unselected — present but invisible. Selection changes exactly one colour and nothing
+  re-measures.
+
+Driven by a `ColorStateList` rather than set on toggle, so the chip restyles itself without a
+listener.
+
+**A dialog's list should size to its content, up to a ceiling** (`util/MaxHeightScrollView`). The
+add-existing-notes picker set a *fixed* `note_picker_max_height`, so three candidate notes opened a
+dialog sized for fifty. `WRAP_CONTENT` alone breaks the opposite case — a long list grows past the
+screen and pushes the dialog's buttons off it. Measuring `AT_MOST` against the ceiling gives both.
+Reuse this rather than a fixed height for any dialog list.
+
+## Export — PDF and Markdown
+
+**Status: built 2026-08-06.** Options menu → **Export** (`ic_share`) opens a second `PopupMenu`
+offering **PDF** (`ic_pdf`) and **Markdown** (`ic_markdown`). Both write into
+`Downloads/Quill/<title>_<timestamp>.<ext>` via `util/NoteExportStore`, which is `ImageExporter`'s
+sibling — MediaStore with `IS_PENDING` on API 29+, a plain file plus `WRITE_EXTERNAL_STORAGE` below
+it. Segments are read on the main thread and the file written on the disk thread, so an export is
+of what's on screen, not of the last autosave. Nothing is saved first: unlike flashcards or a quiz,
+exporting shouldn't be what creates a note's row.
+
+**Markdown (`MarkdownExporter`) is deliberately thin** — the note already *is* Markdown, so text
+passes straight through `MarkdownSerializer`. The work is only the parts that are Quill's rather
+than Markdown's, and each is resolved toward "readable elsewhere" rather than "reloadable here"
+(the database is the copy that round-trips): `quill://` embeds become italic placeholder lines,
+```` ```quill-qa ```` fences become bold **Q:**/**A:** paragraphs, and the title — which lives on the
+note's row, not in the document — is prepended as an H1.
+
+**PDF (`PdfExporter`) preserves styling almost for free**, because the note's text is already a
+`Spanned` and `StaticLayout` draws bold, italic, underline and bullets natively. Only headings need
+translating: the editor stores them as invisible line markers and derives size/weight at display
+time, so the exporter re-derives the same spans at `RichTextField`'s scales (1.6 / 1.3). Copying
+into a `SpannableStringBuilder` first is what makes deleting the markers safe — it moves the
+existing spans as characters are removed.
+
+Two things worth knowing about the layout code:
+- **Coordinates are PostScript points at 72dpi** (A4 = 595×842), never dp. A PDF has no screen
+  density, and using dp would make the output depend on the device that produced it.
+- **Pagination draws the whole layout clipped**, translated so the first wanted line lands at the
+  cursor, rather than re-laying out a slice — re-measuring a subrange would re-wrap it and lose the
+  bullet gutter. `drawLines` returns the first line it didn't draw.
+
+**Audio becomes "Embedded Audio Recording - m:ss"** in both formats — in the PDF as a filled block,
+so a reader skimming sees the same shape of document the note has. It is the one part of a recording
+a reader can still act on.
+
+**Fixed on the way**: `MarkdownSerializer` was encoding a heading's *derived* bold span, because its
+skip-guard only recognised a span starting at `lineContentStart` while `RichTextField` applies it
+from `lineStart` — the invisible marker included. Invisible in the app (a heading is re-bolded from
+its marker on load) but it surfaced in an export as `# **Heading**`. The guard now accepts either
+bound.
+
+**The confirmation is a dialog, not a Snackbar** (`dialog_export_complete`): format badge, filename,
+and **Open** / Done. A Snackbar took the useful action away again after a few seconds — long enough
+to miss, and unrecoverable, since nothing in the app lists past exports. The badge springs in
+(`OvershootInterpolator`, 320ms) and the two lines rise behind it; the buttons are usable
+throughout.
+
+**Opening needs a uri, so `NoteExportStore.save` returns `Saved(displayName, uri)`.** On API 29+
+that's the MediaStore row's own uri; below it, a `FileProvider` uri — hence the `external-path`
+entry for `Download/Quill/` added to `file_paths.xml`, since a `file://` uri can't be handed to
+another app.
+
+**Markdown is opened with two attempts.** Almost nothing registers for `text/markdown` — a stock
+emulator image has *no* handler at all, while everything handles `text/plain` — so the accurate
+type is tried first and the readable one is the fallback. Without it, Open on a Markdown export was
+a button that could only ever fail. PDF needs no fallback (Google's viewer handles it).
+
+**Performance is a non-issue for text**, measured on the emulator: 4.9K chars → 35ms; 38K → 43ms;
+**304K chars (a 75-page PDF) → 150ms**, Markdown 49ms. It runs on the disk thread regardless.
+Images are the cost that would matter — each is decoded to ≤1600px and drawn — and that has not
+been measured.
+
+**Not done: sharing.** Export writes a file and offers to open it; it does not offer a share sheet,
+despite the share icon. Images in a Markdown export are a placeholder, not a file — a single `.md`
+can't carry them, and a folder-based export was out of scope.
+
+## Who owns a press on a waveform
+
+**A waveform is only a scrubber while its clip is loaded** (`WaveformBarsView.setScrubbable`, driven
+from `AudioSegmentView.render()` with `AudioPlayback.isCurrent`). The two modes exist because the
+same pixels mean different things:
+
+- **Live clip** — seek on `ACTION_DOWN` and follow the finger. Immediacy is the whole point, and the
+  view claims the gesture from the scrolling note up front.
+- **Dormant clip** — the card's long press (**delete the recording**) has to be reachable, so
+  nothing happens on the way down. A hold past `ViewConfiguration.getLongPressTimeout()` delegates
+  to the parent's `performLongClick()`; a lift before that seeks (which starts the clip); a
+  horizontal drag past the slop becomes a scrub and claims the gesture *then*, not before; a
+  **vertical** drag past the slop returns `false` and lets the scrolling note intercept.
+
+The bug this fixes: `onTouchEvent` consumed `ACTION_DOWN` unconditionally, so a long press anywhere
+over the waveform never reached the segment's long-click listener — and because seeking a dormant
+clip *starts* it, holding to delete instead began playing the recording at whatever point the finger
+landed. The delete gesture was only reachable on the card's padding, the play button and the time
+label.
+
+Worth remembering generally: **a child that consumes `ACTION_DOWN` silently removes its parent's
+long press.** Any time a custom view sits inside a card with a long-press action, it owns that
+decision whether or not it means to.
+
+## Audio that finishes closes itself
+
+**Both players tear down at the end of their audio** (2026-08-06), so the now-playing bar is never
+a control for nothing. Read-aloud already did — `NoteReader` fires `onReadingFinished` on the last
+chunk and `ReadAloud` clears. `AudioPlayback` deliberately did the opposite, staying loaded so the
+bar could offer to replay a finished clip; it now reaches the same end state as ✕, notification and
+foreground service included. The replay affordance lives on the note's own card, which resets to a
+play button and the clip's full length as soon as it stops being the current clip.
+
+The close is **posted, not run inline** — the callback comes from the `MediaPlayer` that `close()`
+is about to release — and **keyed to the path that finished**, because a tap queued ahead of that
+post can have started a different clip by the time it runs.
+
+**A test-data trap that cost real time here.** The seeded clip in the emulator's
+`files/audio/*.m4a` was an **Ogg Vorbis file with an `.m4a` extension** (`afinfo` says
+`File type ID: Oggf`). Android plays it, reports a 30s duration, then pins `getCurrentPosition()`
+near 29s and **never fires `onCompletion`** — which reads exactly like "the audio keeps replaying
+and the bar never closes", i.e. like a bug in this code. If a clip won't end, check the container
+before the logic: `run-as mse.quill cat files/audio/<f>` out and run `afinfo` on it. A clip made
+with `say -o clip.m4a --data-format=aac …` completes properly.
+
+## Read-aloud
+
+**Status: made screen-independent 2026-08-06.**
+
+**Who owns the voice.** `audio/ReadAloud` is a process-wide singleton holding one
+`audio/NoteReader` (the `TextToSpeech` wrapper) for the life of the app. It is the TTS counterpart
+of `AudioPlayback`, and it exists for the same reason: the engine used to be a **field on
+`NoteEditorFragment`**, stopped in `onPause` and shut down in `onDestroyView`, so a reading died the
+instant you navigated anywhere. Now the editor only *asks* for a reading and the now-playing bar
+controls it from every screen. `NoteReader` moved out of `ui.notes.editor` into `audio` to match —
+it is an engine, not a part of a screen.
+
+**Nothing is cached that the reader already knows.** `isActive()`, `isPlaying()` and `progress()`
+read straight through to the reader, so `MiniPlayerView` and the note's own menu cannot disagree
+about whether a voice is speaking. The earlier design pushed state *into* `ReadAloud` via
+`started`/`update`/`ended` and had to be re-pushed after every control; those are gone.
+
+**A reading is identified by note id**, which is what lets the editor's menu offer "Stop reading"
+for *its* note and "Play aloud" while a different note reads on in the background. Two seams keep
+that id honest: a note read before it was ever saved starts with a null id and picks one up from
+`ReadAloud.noteIdMinted` at the moment `autoSave` mints it, and renaming a note that is being read
+calls `retitle` so the bar doesn't keep the old name.
+
+**One voice at a time**, enforced at both ends: starting a reading closes `AudioPlayback` first, and
+`AudioSegmentView` calls `ReadAloud.stopOther()` before playing a clip. The bar's clip-wins
+tie-break is therefore a belt-and-braces branch, not a case that should occur.
+
+**Opening flashcards or a quiz no longer stops the reading.** It used to, on the reasoning that
+those screens are "a different mode" — but that reasoning came from the era when a reading belonged
+to the open note, and the bar is present on those screens like everywhere else.
+
+**Not done: the lock screen.** `AudioPlaybackService` (foreground service + `MediaSession`) is still
+written entirely against `AudioPlayback`, so a reading has no notification and no lock-screen
+controls; it survives in-app navigation, not the app going away. Giving read-aloud the same
+treatment means generalising that service over both sources.
+
+## Flashcards
+
+**Status: built 2026-07-30** (Epic D's generation/sync and the per-note review screen; the
+global cross-note session and reminders are still outstanding).
+
+**Entry point.** The note editor's toolbar carries an options button (`ic_option`, ⋮) where
+the read-aloud button used to sit. Its menu is "Play aloud" (title/icon toggle to "Stop
+reading" while *this note* is being read — see "Read-aloud" — hidden when there is nothing to
+read) and "Turn into flashcards" —
+which becomes **"Review flashcards"** once the note has cards. That flag is re-asked on every
+`onResume` rather than cached at load, so deleting a deck puts the label back.
+The voice picker is still a **long-press** on that button, exactly as it was on the button it
+replaced — a setting used once doesn't earn a line in a two-item menu. The button lives in
+the toolbar rather than beside the title so it stays put as the note scrolls.
+
+**A block's id is stored in the fence.** ` ```quill-qa:<uuid> `. This is the piece everything
+else hangs off, and it isn't cosmetic: segment ids are minted by `BaseSegmentView`, so a
+reload used to give every Q&A block a brand new one. A card keyed to that id would have lost
+its review history on the next parse — and re-syncing would have inserted a duplicate every
+single time. Old fences without an id still parse (they get one, which the next save writes
+back), and a fence typed into ordinary prose is escaped whether or not it carries an id.
+
+**Only complete pairs become cards.** Both halves have to be non-blank. A question with no
+answer has nothing to turn over, and half-written is a normal state mid-note, so it's skipped
+silently rather than flagged. A note can therefore hold Q&A and still have no deck — that's
+what the Snackbar on "Turn into flashcards" explains. The option is deliberately *not* hidden
+in that case: a missing menu item leaves someone hunting for a feature they were told exists.
+
+**Sync is an update, never a duplicate-generator.** `FlashcardRepository.syncFromNote` matches
+on `source_segment_id` and writes only `front`/`back` when they've changed — the SM-2 columns
+are never touched, so fixing a typo in a question doesn't throw away what's known about how
+well it's known. A card whose block has been deleted is left in the table (review progress
+shouldn't evaporate because a note got tidied up); it simply stops appearing in the deck.
+Front/back are stored as **Markdown**, not plain text, so a bolded term or bulleted answer
+looks on the card the way it looks in the note.
+
+**Two clocks, deliberately.** `FlashcardScheduler` (SM-2) decides when a card comes back in
+*days*; `ReviewSession` decides what happens for the rest of the *sitting*. A missed card goes
+to the back of the session queue and has to be answered right before the session ends — being
+shown the answer and immediately moving on is how people finish a deck having learned nothing.
+Only a card's **first** answer feeds the schedule: without that, missing a card and getting it
+right two cards later would look to SM-2 like a clean recall and push it weeks out.
+
+**Why two buttons, not SM-2's six grades.** SM-2 grades 0–5; Quill offers right/wrong and maps
+them to 5 and 2, the two ends of the boundary the algorithm actually turns on. Self-rating
+recall on a six-point scale mid-review is the part of SM-2 people get wrong most often and the
+part that matters least — the interval ladder (1 day → 6 days → ×easiness) does the work.
+Easiness floors at 1.3, below which intervals stop growing and it degenerates into daily
+drilling.
+
+**The Flashcards tab** (`FlashcardDecksFragment`) is the app's second top-level destination, added
+alongside Home in a `BottomNavigationView` wired by `NavigationUI` — the bottom menu's item ids
+*are* the destination ids, which is what gives correct tab-switching and back-stack behaviour
+without a click listener. The bar hides itself on every other destination. One row per note that
+has cards, ordered decks-with-something-to-do first: a due-count badge (the "reviews left" number,
+which is what you scan a list like this for), then `N due now · M cards` with either the unseen
+count or when the deck next comes back. Counted in SQL, not by loading cards.
+
+**Deleting a deck is a hard delete**, against the app's soft-delete convention. A card is *derived*
+from a Q&A block that the delete doesn't touch, so a tombstone would either be resurrected by the
+next sync or, worse, block that note from ever making cards again. What's actually lost is review
+history — which is what the shared confirmation (`DeleteFlashcardsDialog`, used by both the decks
+list and the review screen) warns about.
+
+**Schema v4** adds `flashcards.source_segment_id` and `last_reviewed_at`. Note that
+`onUpgrade` is **no longer unconditionally destructive**: from v3 (the Markdown schema)
+upgrades are additive, and only pre-v3 development-era databases are rebuilt. Wiping a user's
+notes to add two columns isn't a trade worth making.
+
+**The editor now navigates forward, and that exposed a latent bug.** `NoteEditorFragment` read the
+note id straight out of its arguments in `onViewCreated`. For a note created *during* the session
+the arguments have no id — the editor was opened without one — and until there was somewhere to
+navigate to, nothing ever rebuilt the view to notice. Going to the review screen and back does: the
+fragment instance survives on the back stack and only its view is recreated, so the read wiped the
+id, showed a blank page, and autosaved itself into a **second, empty note**. The id is now taken
+from the arguments only when the fragment doesn't already have one, with `onSaveInstanceState` as
+the third fallback for a genuine recreation. Anything else added to the editor that navigates away
+inherits this fix — don't re-introduce an unconditional read from `getArguments()`.
+
+**UI gotchas worth remembering**, all hit and fixed on the emulator:
+- A `ScrollView` consumes taps whether or not it has anything to scroll, so the card's click
+  listener only fired on its margins. Fixed with a `GestureDetector` on the scroll view that
+  watches touches without consuming them — a long answer still scrolls, a tap still flips.
+- The icon set ships as **density-less PNGs**, whose intrinsic size is their pixel size at
+  mdpi (~85dp on a 3x screen). Everywhere else they're drawn into a fixed-size `ImageView`,
+  but a menu item asks the drawable how big it is and believes it — which blew the popup out
+  to the icon's width and truncated the labels. `ic_menu_*.xml` wrap them in a size-pinned
+  `layer-list`; do the same for any new menu icon. (A `BottomNavigationView` doesn't need this —
+  it sets the icon's bounds from `itemIconSize` itself.)
+- Running `connectedAndroidTest` **clears the app's data** on the device, so manual test data set
+  up on the emulator is gone after a test run. Seed first, or test first — not the other way round.
+- **Never ask `TextToSpeech.isSpeaking()` whether *your* reader is speaking.** It reports the engine
+  service's global state, shared across every client in the process and outliving any one of them,
+  so a note screen opened right after another one had been reading could inherit "busy" and offer to
+  "Stop reading" with nothing playing (reported 2026-07-30 on a physical device). `NoteReader` now
+  tracks its own flag, which starts false — right by construction, since a new reader has not been
+  asked to read anything. The emulator's Google TTS settles fast enough that it never showed the
+  symptom, so this one can only be confirmed on a real device.
+- **An icon-only `MaterialButton` does not centre its icon by default.** The button lays the icon
+  out relative to its *text* block and insets its own background (6dp top/bottom, plus a horizontal
+  inset in the icon-button styles), so at a fixed square size the fill comes out as an ellipse with
+  the glyph sitting up and toward the start — which is exactly what the flashcard grading buttons
+  did. The recipe that works: `android:padding="0dp"`, all four `android:inset*="0dp"`,
+  `android:minWidth/minHeight="0dp"`, `app:iconPadding="0dp"`, `app:iconGravity="textStart"`, and an
+  explicit `app:cornerRadius` of half the size for a true circle. Worth measuring rather than eyeing:
+  `adb shell uiautomator dump` gives the button's exact bounds, and cropping the screenshot to those
+  bounds shows immediately whether the glyph sits at the centre.
+
+## Brand, splash and window insets
+
+**The mark.** `res/font/caprasimo_regular.ttf` (OFL in `licenses/`) is the logo face. The splash
+draws it live rather than shipping a raster: `ui/splash/QuillLogoView` renders "Q" with the
+typeface and derives the two dots entirely from `getTextBounds("Q")` — 0.30 of the glyph box
+across, 0.70 of the way down it, gaps of 0.036 and 0.071 — so `android:textSize` alone scales the
+whole mark and it stays sharp at any size. One `ValueAnimator` walks a cycle clock and each dot's
+alpha is a pure function of it; an `AnimatorSet` per dot drifts apart over unbounded repeats.
+Playfair Display is still the display serif for Home's greeting — the two are not
+interchangeable.
+
+**A device won't `drawText` glyphs much above ~250px** at the size you asked for, even though
+`Paint`/`getTextBounds` report the large size honestly (measured: `textSize=667.5`, bounds
+502×563, drawn ~229px). Harmless at the shipped 96dp, but don't trust large `drawText`.
+
+**Launcher icon** is an adaptive icon in `mipmap-anydpi` (minSdk 26, so it wins everywhere) with
+foreground/monochrome PNGs per density under `drawable-*dpi/`. `<monochrome>` must be a real
+alpha-only glyph, not the colour foreground, or themed icons render a blob.
+
+**Splash.** `SplashActivity` is the launcher entry point and finishes into `MainActivity` on
+`max(2s, StartupTasks)` — `StartupTasks` is the seam for real startup work and completes
+immediately today. Android 12+ draws its *own* splash before it, so
+`Theme.Quill.Splash` sets `windowSplashScreenAnimatedIcon` to an empty vector: the mark cannot be
+shown statically and then animated without a visible stutter.
+
+**Window insets — the rules that cost time here:**
+- `MainActivity` applies only the **side** insets to its root. The **top** goes to each screen
+  (see below) and the **bottom** to whichever view actually reaches the screen bottom —
+  `BottomNavigationView` pads *itself* by it, so padding the root too charged for it twice.
+- **A view has exactly one `OnApplyWindowInsetsListener`.** A second `setOnApplyWindowInsetsListener`
+  silently replaces the first. The note editor's root is already claimed by
+  `KeyboardInsetsHandler`, which is why its status-bar inset goes on the toolbar.
+- **Padding a view for an inset only moves its contents unless the view can grow.** A fixed
+  `layout_height` squeezes; a `minHeight` taller than the content pushes the contents down inside
+  the same box. `WindowInsetsUtils.applyTopInset` grows `minimumHeight` for that reason, and the
+  editor toolbar had to move from `48dp` to `wrap_content` + `minHeight`.
+- Screens get the top inset automatically from one
+  `FragmentManager.FragmentLifecycleCallbacks` in `MainActivity` (`recursive = true` — the screens
+  live in the nav host's *child* manager). Default target is the fragment root; implement
+  `WindowInsetsUtils.TopInsetHost` to name another view. Only Home (gradient header) and the note
+  editor (toolbar) do. **Don't re-add per-fragment calls.**
+
+**A negative margin on a weighted `LinearLayout` child positions but does not measure.**
+`measureVertical` accumulates `totalLength = max(totalLength, totalLength + childHeight + margins)`
+and that `max` swallows it, so the child is pulled up *and* measured short — Home's content sheet
+stopped 56dp above the bottom bar. Put the offset on the sibling above instead (the header's
+`layout_marginBottom`).
+
+## Two races that only show up when the user is fast
+
+Both pre-date the work above and both need input faster than a hand-paced emulator run; chain
+taps inside a **single** `adb shell "input …; input …"` call to reproduce (separate `adb shell`
+invocations are 200-400ms apart, slower than a person).
+
+- **`NoteReader` / TTS.** `TextToSpeech` binds asynchronously and `onDestroyView` → `shutdown()`
+  nulled the field; leaving a note before the bind completed crashed the app in the init callback.
+  The callback now takes a local reference and bails on a `shutDown` flag. Any per-screen async
+  engine handle needs the same shape. *(The reader is no longer per-screen — see "Read-aloud" — so
+  nothing calls `shutdown()` in normal operation and this race can't fire today. The guards stay:
+  they are what makes the class safe to release at all.)*
+- **`NoteEditorFragment.autoSave` deleting the note you just opened.** `loadNote` is async, so a
+  note opened and left before the read returns has an empty title and no segments — `hasContent`
+  was false and it took the "user emptied this" branch. Guarded by `contentLoaded`. Empty fields
+  before a read means "not loaded", never "emptied".
+- Relatedly, `NoteRepository.createNote` now takes an id the caller minted
+  (`NoteRepository.newNoteId()`) instead of generating one behind an async callback. `noteId` is
+  usable immediately, and the insert and the first save queue in order on the one disk thread —
+  a save arriving mid-creation used to be dropped.
+
 ## Conventions worth following
 
 - **All UI is Material 3 — no exceptions without a recorded reason.** Every new or edited
@@ -586,3 +1045,11 @@ prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points i
   anything user-facing (matches `notes.deleted_at`).
 - IDs are `UUID.randomUUID().toString()` throughout, not autoincrement — consistent
   with the schema anticipating multi-device sync later.
+- **Verify on the emulator (`ANDROID_SERIAL=emulator-5554`), not the phone**, even when both are
+  attached — the phone is the user's. Its screen also sleeps within seconds, and `screencap`
+  returns solid black while the display is off, which reads as a crash if you only sample pixels.
+- Sizing wrappers for oversized PNG icons: a `layer-list` with `android:width/height` (see
+  `drawable/ic_section_note.xml`). The raw assets are 256-1024px and cannot be compound drawables
+  directly.
+- `aapt` strips leading/trailing whitespace from a string resource unless the value is quoted —
+  `<string name="count_separator">" · "</string>`.

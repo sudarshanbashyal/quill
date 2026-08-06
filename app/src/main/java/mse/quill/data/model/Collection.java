@@ -9,5 +9,8 @@ public class Collection {
 
     /** Query-derived, not stored columns. */
     public int noteCount;
+    /** Flashcards and quizzes belonging to this collection's notes, for the card's summary line. */
+    public int flashcardCount;
+    public int quizCount;
     public long lastActivityAt;
 }

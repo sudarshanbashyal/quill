@@ -3,6 +3,13 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Playing a recording outlives the screen it started on: the foreground service is what keeps
+         the process alive once Quill isn't visible (a locked phone, another app), and the
+         notification it must show is also the lock-screen control. POST_NOTIFICATIONS is asked for
+         at the moment the first clip is played — denying it costs the controls, not the audio. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Only for saving an image out to the gallery below API 29. From 29 on, scoped storage
          lets an app add its own entries to MediaStore without asking. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -18,14 +25,29 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Quill">
+        <!-- The launcher entry point is the splash, which finishes itself into MainActivity once
+             its animation minimum and StartupTasks are both done. It carries its own theme so the
+             window the system draws before the first frame is already the splash's lavender. -->
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".ui.splash.SplashActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Quill.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+
+        <!-- Not exported: nothing outside the app has any business starting playback. Its actions
+             arrive from its own notification's PendingIntents and from the media session. -->
+        <service
+            android:name=".audio.AudioPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Required by ImageEmbedder.openCamera(): it hands the camera app a content:// URI
              for a file in getFilesDir()/images. The authority must match what that code builds

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        The back arrow, defined once. Every screen that can be left used to draw its own — a
+        TextView holding a literal "←" — which meant five slightly different arrows in five
+        different headers, and the note editor showing the platform's default arrow instead of any
+        of them. Backing out of a screen is one gesture, so it gets one control: this style, with
+        ic_back inside a Material icon button (an actual button, with its own ripple and touch
+        target, rather than a glyph that happens to be clickable).
+
+        Screens supply only an id and a click listener.
+    -->
+    <style name="Widget.Quill.Button.Back" parent="Widget.Material3.Button.IconButton">
+        <item name="icon">@drawable/ic_back</item>
+        <item name="iconSize">@dimen/back_icon_size</item>
+        <item name="iconTint">@color/text_primary</item>
+        <item name="android:contentDescription">@string/action_back</item>
+    </style>
+
+    <!--
+        Play/pause, wherever it appears — the audio block in a note and the now-playing bar.
+
+        No filled circle behind it: the glyph carries the colour instead. A tinted disc made the
+        control the loudest thing on a page of text, and in the bar it competed with the note title
+        it sits next to. The button keeps its full touch target and ripple, it just doesn't draw a
+        background, so the icon runs bigger than a bordered one would to stay easy to hit visually.
+    -->
+    <style name="Widget.Quill.Button.Play" parent="Widget.Material3.Button.IconButton">
+        <item name="icon">@drawable/ic_play</item>
+        <item name="iconSize">@dimen/play_icon_size</item>
+        <item name="iconTint">@color/brand_purple</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconGravity">textStart</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+</resources>

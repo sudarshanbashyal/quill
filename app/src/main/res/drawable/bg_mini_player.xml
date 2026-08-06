@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The now-playing bar sits above every screen, so it has to end somewhere the eye can see: a
+     plain surface with a hairline along the bottom, the same divider the rest of the app uses.
+     Nothing rounded — it spans the full width and belongs to the window, not to the content. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface" />
+        </shape>
+    </item>
+    <item android:gravity="bottom">
+        <shape android:shape="rectangle">
+            <size android:height="1dp" />
+            <solid android:color="@color/divider" />
+        </shape>
+    </item>
+</layer-list>

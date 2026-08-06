@@ -2,12 +2,9 @@ package mse.quill.ui.home;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -21,7 +18,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 
 import mse.quill.R;
@@ -29,15 +25,28 @@ import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Collection;
+import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
+import mse.quill.data.model.Tag;
 import mse.quill.model.Whiteboard;
 import mse.quill.ui.collections.CollectionDetailFragment;
 import mse.quill.ui.notes.NoteEditorFragment;
+import mse.quill.ui.search.NoteFilter;
+import mse.quill.ui.search.SearchFilterBar;
+import mse.quill.ui.search.SearchFilterDialog;
 import mse.quill.ui.whiteboard.WhiteboardFragment;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.util.WindowInsetsUtils;
 
-public class HomeFragment extends Fragment {
+public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
+
+    /** The gradient header, not the root: the root is a transparent {@code FrameLayout}, so the
+     *  strip behind the status bar would show the window background rather than the gradient. */
+    @Override
+    public View topInsetTarget(View root) {
+        return root.findViewById(R.id.home_header);
+    }
 
     private NoteRepository noteRepository;
     private CollectionRepository collectionRepository;
@@ -50,7 +59,11 @@ public class HomeFragment extends Fragment {
     private List<Collection> allCollections = new ArrayList<>();
     private List<Whiteboard> allWhiteboards = new ArrayList<>();
     private List<Note> allNotes = new ArrayList<>();
-    private String searchQuery = "";
+    private List<Tag> allTags = new ArrayList<>();
+    /** Survives a reload; the list is re-derived from it rather than the other way round. */
+    private final NoteFilter filter = new NoteFilter();
+    private SearchFilterBar searchBar;
+    private TagRepository tagRepository;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -64,6 +77,7 @@ public class HomeFragment extends Fragment {
 
         noteRepository = new NoteRepository(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
+        tagRepository = new TagRepository(requireContext());
         whiteboardRepository = new WhiteboardRepository(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
@@ -104,13 +118,19 @@ public class HomeFragment extends Fragment {
         pinnedSection = view.findViewById(R.id.pinned_section);
         pinnedCardsContainer = view.findViewById(R.id.pinned_cards_container);
 
-        EditText searchInput = view.findViewById(R.id.search_input);
-        searchInput.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) {
-                searchQuery = s.toString().trim().toLowerCase(Locale.getDefault());
+        searchBar = view.findViewById(R.id.search_bar);
+        searchBar.setListener(new SearchFilterBar.Listener() {
+            @Override public void onQueryChanged(String query) {
+                filter.setQuery(query);
                 applyFilters();
+            }
+
+            @Override public void onFilterRequested() {
+                SearchFilterDialog.show(requireContext(), filter, allTags, HomeFragment.this::onFilterChanged);
+            }
+
+            @Override public void onFilterCleared() {
+                onFilterChanged();
             }
         });
 
@@ -267,6 +287,7 @@ public class HomeFragment extends Fragment {
         reloadWhiteboards();
         reloadNotes();
         reloadPinnedNotes();
+        reloadTags();
     }
 
     private void reloadWhiteboards() {
@@ -320,34 +341,35 @@ public class HomeFragment extends Fragment {
         });
     }
 
+    /** Re-runs the filter and redraws the chip row — everything that changing a filter implies. */
+    private void onFilterChanged() {
+        applyFilters();
+        searchBar.render(filter, allTags);
+    }
+
     private void applyFilters() {
-        if (searchQuery.isEmpty()) {
-            homeAdapter.submitCollections(allCollections);
-            homeAdapter.submitWhiteboards(allWhiteboards);
-            homeAdapter.submitNotes(allNotes);
-            return;
-        }
+        homeAdapter.submitCollections(filter.applyToCollections(allCollections));
+        // Boards are matched on their *displayed* title, so searching "untitled" finds the unnamed
+        // ones — the fallback name is what the card shows.
+        homeAdapter.submitWhiteboards(filter.applyToWhiteboards(allWhiteboards,
+                board -> NoteDisplayUtils.resolveWhiteboardTitle(requireContext(), board)));
+        homeAdapter.submitNotes(filter.apply(allNotes));
+    }
 
-        List<Collection> filteredCollections = new ArrayList<>();
-        for (Collection c : allCollections) {
-            if (c.name.toLowerCase(Locale.getDefault()).contains(searchQuery)) filteredCollections.add(c);
-        }
-        homeAdapter.submitCollections(filteredCollections);
-
-        // Matched on the displayed title, so searching "untitled" finds the unnamed boards too.
-        List<Whiteboard> filteredWhiteboards = new ArrayList<>();
-        for (Whiteboard w : allWhiteboards) {
-            String title = NoteDisplayUtils.resolveWhiteboardTitle(requireContext(), w);
-            if (title.toLowerCase(Locale.getDefault()).contains(searchQuery)) filteredWhiteboards.add(w);
-        }
-        homeAdapter.submitWhiteboards(filteredWhiteboards);
-
-        List<Note> filteredNotes = new ArrayList<>();
-        for (Note n : allNotes) {
-            String title = n.title == null ? "" : n.title.toLowerCase(Locale.getDefault());
-            String preview = n.preview == null ? "" : n.preview.toLowerCase(Locale.getDefault());
-            if (title.contains(searchQuery) || preview.contains(searchQuery)) filteredNotes.add(n);
-        }
-        homeAdapter.submitNotes(filteredNotes);
+    private void reloadTags() {
+        tagRepository.loadAllTags(tags -> {
+            if (!isAdded()) return;
+            allTags = tags;
+            // A tag deleted elsewhere would otherwise stay in the filter as a chip that can't be
+            // resolved to a name, silently hiding every note.
+            for (String selected : new ArrayList<>(filter.tagIds())) {
+                boolean stillExists = false;
+                for (Tag tag : allTags) {
+                    if (tag.id.equals(selected)) { stillExists = true; break; }
+                }
+                if (!stillExists) filter.removeTag(selected);
+            }
+            onFilterChanged();
+        });
     }
 }

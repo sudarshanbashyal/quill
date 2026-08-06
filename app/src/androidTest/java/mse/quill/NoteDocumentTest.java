@@ -72,8 +72,7 @@ public class NoteDocumentTest {
                         ((TextSegment) before).content.toString(),
                         ((TextSegment) after).content.toString());
             } else if (before instanceof QaSegment) {
-                // A Q&A carries no id through the document — it's content, not an asset reference
-                // — so it's compared by what it says.
+                assertEquals("qa id at " + i, before.id, after.id);
                 assertEquals("question at " + i,
                         ((QaSegment) before).question.toString(),
                         ((QaSegment) after).question.toString());
@@ -214,6 +213,7 @@ public class NoteDocumentTest {
         QaSegment result = (QaSegment) restored.get(0);
         assertEquals("question", question, result.question.toString());
         assertEquals("answer", answer, result.answer.toString());
+        assertEquals("id (markdown was:\n" + markdown + "\n)", segments.get(0).id, result.id);
     }
 
     @Test
@@ -228,9 +228,57 @@ public class NoteDocumentTest {
 
         String markdown = NoteDocument.toMarkdown(segments);
         assertTrue("expected a fenced quill-qa block, got:\n" + markdown,
-                markdown.startsWith("```quill-qa\n"));
+                markdown.startsWith("```quill-qa:" + segments.get(0).id + "\n"));
         assertTrue("expected a divider between the two halves:\n" + markdown,
                 markdown.contains("\n---\n"));
+    }
+
+    /** The id in the fence is what a flashcard's review history hangs off, so it has to outlive an
+     *  edit to the block's text — not just a save. */
+    @Test
+    public void qaIdSurvivesAnEditToItsContent() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(qa("first draft", "answer"));
+        String id = segments.get(0).id;
+
+        QaSegment reloaded = (QaSegment) NoteDocument.fromMarkdown(
+                NoteDocument.toMarkdown(segments), new HashMap<>()).get(0);
+        reloaded.question = new SpannableStringBuilder("second draft");
+
+        List<NoteSegment> edited = new ArrayList<>();
+        edited.add(reloaded);
+        QaSegment afterEdit = (QaSegment) NoteDocument.fromMarkdown(
+                NoteDocument.toMarkdown(edited), new HashMap<>()).get(0);
+
+        assertEquals(id, afterEdit.id);
+        assertEquals("second draft", afterEdit.question.toString());
+    }
+
+    /** Blocks written before ids were stored still parse — they just get one. */
+    @Test
+    public void qaFenceWithoutAnIdStillParses() {
+        List<NoteSegment> restored = NoteDocument.fromMarkdown(
+                "```quill-qa\nquestion\n---\nanswer\n```", new HashMap<>());
+
+        assertEquals(1, restored.size());
+        QaSegment result = (QaSegment) restored.get(0);
+        assertEquals("question", result.question.toString());
+        assertEquals("answer", result.answer.toString());
+        assertTrue("should have been given an id", result.id != null && !result.id.isEmpty());
+    }
+
+    /** An id-carrying fence typed into prose must stay prose, exactly as the bare one does. */
+    @Test
+    public void literalFenceWithIdInBodyTextIsEscaped() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(text("```quill-qa:abc123"));
+
+        List<NoteSegment> restored = NoteDocument.fromMarkdown(
+                NoteDocument.toMarkdown(segments), new HashMap<>());
+
+        assertEquals(1, restored.size());
+        assertEquals(NoteSegment.TYPE_TEXT, restored.get(0).type());
+        assertEquals("```quill-qa:abc123", ((TextSegment) restored.get(0)).content.toString());
     }
 
     @Test

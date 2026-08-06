@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Contents of the now-playing bar; MiniPlayerView inflates this into itself and owns the
+     background and padding. -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:parentTag="android.widget.LinearLayout">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/mini_player_toggle"
+        style="@style/Widget.Quill.Button.Play"
+        android:layout_width="@dimen/mini_player_button_size"
+        android:layout_height="@dimen/mini_player_button_size"
+        android:contentDescription="@string/action_pause_audio" />
+
+    <!-- Title over progress: the title says what followed you out of its note, and the strip below
+         it is the waveform for a recording or a plain bar for a reading. -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/mini_player_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/mini_player_title_text_size"
+            android:textStyle="bold"
+            tools:text="Lecture 7 — Android lifecycle" />
+
+        <mse.quill.ui.audio.WaveformBarsView
+            android:id="@+id/mini_player_waveform"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/mini_player_waveform_height"
+            android:layout_marginTop="2dp" />
+
+        <!-- Read-aloud has no waveform to draw and nothing to scrub to, so it gets a plain
+             determinate bar showing how far through the note the voice has read. -->
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/mini_player_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:layout_marginBottom="@dimen/spacing_xs"
+            android:visibility="gone"
+            app:indicatorColor="@color/brand_purple"
+            app:trackColor="@color/waveform_unplayed"
+            app:trackCornerRadius="2dp"
+            app:trackThickness="4dp" />
+
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/mini_player_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/audio_time_text_size"
+        tools:text="0:14 / 1:02" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/mini_player_close"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="@dimen/mini_player_button_size"
+        android:layout_height="@dimen/mini_player_button_size"
+        android:layout_marginStart="@dimen/spacing_xs"
+        android:contentDescription="@string/action_close_audio"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:padding="0dp"
+        app:icon="@drawable/ic_clear"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconSize="@dimen/mini_player_icon_size"
+        app:iconTint="@color/text_secondary" />
+
+</merge>

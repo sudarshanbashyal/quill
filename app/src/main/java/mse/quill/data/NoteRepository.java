@@ -29,7 +29,6 @@ public class NoteRepository {
 
     public static final int MAX_PINNED_NOTES = 3;
 
-    public interface OnNoteCreated { void onCreated(String noteId); }
     public interface OnNoteLoaded { void onLoaded(Note note, List<NoteSegment> segments); }
     public interface OnNotesLoaded { void onLoaded(List<Note> notes); }
     public interface OnPinResult { void onPinned(); void onLimitReached(); }
@@ -42,22 +41,34 @@ public class NoteRepository {
         this.executors = AppExecutors.getInstance();
     }
 
-    public void createNote(String title, String collectionId, OnNoteCreated cb) {
+    /**
+     * Inserts an empty note row under an id the caller has already minted.
+     *
+     * <p>The id is a parameter rather than something generated in here so the caller holds it the
+     * moment it asks for the note, instead of one disk round-trip later. Everything it then sends
+     * to {@link #saveNote} queues behind this insert on the shared single disk thread, so the
+     * writes land in order without the caller having to track whether creation is still in flight.
+     */
+    public void createNote(String noteId, String title, String collectionId, Runnable onCreated) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
-            String id = UUID.randomUUID().toString();
             long now = System.currentTimeMillis();
 
             ContentValues cv = new ContentValues();
-            cv.put("id", id);
+            cv.put("id", noteId);
             if (collectionId != null) cv.put("collection_id", collectionId);
             cv.put("title", title);
             cv.put("created_at", now);
             cv.put("updated_at", now);
             db.insert("notes", null, cv);
 
-            if (cb != null) executors.mainThread(() -> cb.onCreated(id));
+            if (onCreated != null) executors.mainThread(onCreated);
         });
+    }
+
+    /** Mints an id for a note that is about to be created. */
+    public static String newNoteId() {
+        return UUID.randomUUID().toString();
     }
 
     public void loadNote(String noteId, OnNoteLoaded cb) {

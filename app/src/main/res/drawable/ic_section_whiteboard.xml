@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- See ic_section_note.xml: ic_whiteboard.png is a full-size asset and has to be pinned to the
+     section-header icon size before it can be a compound drawable. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="@dimen/section_header_icon"
+        android:height="@dimen/section_header_icon"
+        android:drawable="@drawable/ic_whiteboard"
+        android:gravity="center" />
+</layer-list>

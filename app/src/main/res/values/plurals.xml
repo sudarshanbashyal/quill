@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Counted phrasings. Hours are pluralised properly rather than abbreviated like minutes: "1 hours
+     ago" on a note you edited an hour back is the kind of wrong that gets noticed. -->
+<resources>
+
+    <plurals name="time_hours_ago">
+        <item quantity="one">%1$d hour ago</item>
+        <item quantity="other">%1$d hours ago</item>
+    </plurals>
+
+    <plurals name="time_in_hours">
+        <item quantity="one">in %1$d hour</item>
+        <item quantity="other">in %1$d hours</item>
+    </plurals>
+
+</resources>

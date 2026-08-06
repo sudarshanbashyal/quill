@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's top-level places. Item ids are deliberately the *destination* ids from
+     nav_graph.xml — that's what lets NavigationUI wire selection, reselection and the back stack
+     without a click listener of our own. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/homeFragment"
+        android:icon="@drawable/ic_home"
+        android:title="@string/nav_home" />
+
+    <item
+        android:id="@+id/flashcardDecksFragment"
+        android:icon="@drawable/ic_flashcard"
+        android:title="@string/nav_flashcards" />
+
+    <item
+        android:id="@+id/quizzesFragment"
+        android:icon="@drawable/ic_stopwatch"
+        android:title="@string/nav_quizzes" />
+
+</menu>

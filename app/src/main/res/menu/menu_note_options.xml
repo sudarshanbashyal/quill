@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Whole-note actions, shown from the toolbar's options button. Icons are forced on (see
+     NoteEditorFragment) so the items read at a glance rather than as a wall of text. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/action_play_aloud"
+        android:icon="@drawable/ic_menu_play"
+        android:title="@string/action_read_aloud" />
+
+    <item
+        android:id="@+id/action_turn_into_flashcards"
+        android:icon="@drawable/ic_menu_flashcard"
+        android:title="@string/action_turn_into_flashcards" />
+
+    <item
+        android:id="@+id/action_make_quiz"
+        android:icon="@drawable/ic_menu_quiz"
+        android:title="@string/action_make_quiz" />
+
+    <!-- Opens a second menu (menu_note_export) rather than listing PDF and Markdown here: the
+         choice of format is a detail of exporting, and two more rows would make the note's
+         actions harder to scan for the sake of it. -->
+    <item
+        android:id="@+id/action_export"
+        android:icon="@drawable/ic_menu_share"
+        android:title="@string/action_export" />
+
+</menu>

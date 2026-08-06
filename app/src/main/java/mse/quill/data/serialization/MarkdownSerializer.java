@@ -104,7 +104,7 @@ public final class MarkdownSerializer {
             if (first == '#' || first == '-') out.append('\\');
         }
 
-        encodeInline(text, contentStart, lineEnd, headingLevel > 0, out);
+        encodeInline(text, lineStart, contentStart, lineEnd, headingLevel > 0, out);
     }
 
     private static boolean hasBullet(Spanned text, int lineStart, int lineEnd) {
@@ -116,13 +116,13 @@ public final class MarkdownSerializer {
      * every open marker is closed (in reverse order) and the new set reopened — more markers than
      * a minimal encoding in some cases, but always correctly nested.
      */
-    private static void encodeInline(Spanned text, int start, int end, boolean isHeading,
-                                     StringBuilder out) {
+    private static void encodeInline(Spanned text, int lineStart, int start, int end,
+                                     boolean isHeading, StringBuilder out) {
         int active = 0;
         int runStart = start;
 
         for (int i = start; i <= end; i++) {
-            int formats = i < end ? formatsAt(text, i, isHeading, start, end) : 0;
+            int formats = i < end ? formatsAt(text, i, isHeading, lineStart, start, end) : 0;
             if (i < end && formats == active) continue;
 
             appendEscaped(text, runStart, i, out);
@@ -134,15 +134,23 @@ public final class MarkdownSerializer {
     }
 
     private static int formatsAt(Spanned text, int index, boolean isHeading,
-                                 int lineContentStart, int lineEnd) {
+                                 int lineStart, int lineContentStart, int lineEnd) {
         int formats = 0;
         for (StyleSpan span : text.getSpans(index, index + 1, StyleSpan.class)) {
-            if (text.getSpanStart(span) > index || text.getSpanEnd(span) <= index) continue;
+            int spanStart = text.getSpanStart(span);
+            if (spanStart > index || text.getSpanEnd(span) <= index) continue;
             // A heading's bold styling is re-derived from the line marker on load, so encoding it
             // would double up. It's identified the same way the editor identifies it for removal:
             // by exactly matching the line's bounds, not by type.
+            //
+            // Either bound counts as "the whole line". The editor applies its derived span from
+            // lineStart — the invisible heading marker included — while a span decoded from a
+            // previous save starts after it, at lineContentStart. Accepting only the latter is
+            // what used to let the derived bold through: harmless in the app, where a heading is
+            // re-bolded from its marker anyway, but it surfaced in an exported file as
+            // `# **Heading**`.
             if (isHeading && span.getStyle() == Typeface.BOLD
-                    && text.getSpanStart(span) == lineContentStart
+                    && (spanStart == lineContentStart || spanStart == lineStart)
                     && text.getSpanEnd(span) == lineEnd) {
                 continue;
             }

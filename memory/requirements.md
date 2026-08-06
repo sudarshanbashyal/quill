@@ -5,7 +5,7 @@ implemented vs. what the schema/comments anticipate but nothing builds yet (see
 [note.md](note.md) for the architecture detail behind these gaps). Requirements below
 mix **feature** work and **architecture/quality** work — the one-pager treats "secure
 and efficient" and platform-capability depth as first-class goals, not an afterthought.
-
+[conversation.md](conversation.md)
 Each epic states *why it's sequenced where it is* — read that before reordering.
 Checkboxes are for tracking; nesting = task → subtask.
 
@@ -51,9 +51,11 @@ masquerading as migration bugs).
         `new Thread(...)` calls onto the shared `AppExecutors.diskIO()` used by the
         other repositories
   - [ ] Audit all fragments for any accidental main-thread `SQLiteDatabase` access
-- [ ] **Automated test coverage** *(70 instrumented tests as of 2026-07-29, up from 2
-      placeholders — all under `app/src/androidTest`, run with
-      `./gradlew :app:connectedDebugAndroidTest`)*
+- [ ] **Automated test coverage** *(70 instrumented tests under `app/src/androidTest` as of
+      2026-07-29, run with `./gradlew :app:connectedDebugAndroidTest`; plus 30 JVM unit
+      tests under `app/src/test` as of 2026-08-01, run with
+      `./gradlew :app:testDebugUnitTest` — the study logic is deliberately Android-free so
+      it can be tested without a device)*
   - [x] Markdown round-trip (`MarkdownSerializerTest`): headings, bullets, blank-line
         runs, overlapping spans, and escaping of text that looks like syntax
   - [x] Document ↔ segments (`NoteDocumentTest`): embed ordering, asset rejoining,
@@ -68,6 +70,12 @@ masquerading as migration bugs).
         scaffolding-lookalike escaping, unterminated fence
   - [x] Q&A field capabilities (`QaFieldCapabilitiesTest`): headings refused for real,
         inline formatting and bullets still available
+  - [x] Review session and SM-2 (`ReviewSessionTest`, `FlashcardSchedulerTest`) — JVM
+  - [x] Quiz generation (`QuizGeneratorTest`): one question per block, the floor at
+        `MIN_QA_BLOCKS`, distractors only ever other blocks' answers, no repeated option,
+        the correct answer not always in the same slot, shuffled question order — JVM
+  - [x] Quiz scoring (`QuizSessionTest`): one pass with no requeue, a timeout counted as
+        wrong rather than skipped, an abandoned run scoring what it reached — JVM
   - [ ] Collection/Tag repository CRUD — still uncovered
   - [ ] `NoteEditorView` segment split/merge/delete (image/audio insertion mid-text,
         backspace-merge at segment boundary) — still uncovered
@@ -189,31 +197,49 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
         audio are refused. Delivered by extracting `RichTextField` out of `TextSegmentView`
         so both segment types share one implementation — see [note.md](note.md)'s
         "Q&A blocks"
-  - [x] Markdown form: fenced ` ```quill-qa `, question, `---`, answer, ` ``` `. The divider
-        (rather than per-line `Q:`/`A:` prefixes) is what keeps both halves ordinary
-        multi-line Markdown. Info string still extensible for `:<flashcard-id>`
+  - [x] Markdown form: fenced ` ```quill-qa:<block-id> `, question, `---`, answer, ` ``` `.
+        The divider (rather than per-line `Q:`/`A:` prefixes) is what keeps both halves
+        ordinary multi-line Markdown. The reserved info-string slot is now **used**, and
+        carries the *block's* id rather than a flashcard id — see below
   - [ ] Numbered lists inside a Q&A (bullets only today, same as body text)
-- [ ] **Flashcard generation & sync** *(no longer blocked — Q&A segments and stable
-      segment ids both exist now)*
-  - [ ] `FlashcardRepository` (CRUD), following the existing callback-based async
-        pattern used by `NoteRepository`/`TagRepository`
-  - [ ] `flashcards.source_segment_id` (nullable) linking a generated card back to its
-        source Q&A segment — depends on the segment-identity fix above
-  - [ ] Per-note sync mode, user-selectable, default **Manual**: "Sync Flashcards"
-        button (manual) vs. "Sync Automatically" (syncs on every note save)
-  - [ ] Sync logic: unlinked Q&A segments → create a flashcard; linked segments →
-        update `front`/`back` only, never touch SM-2 scheduling state; flashcards whose
-        source segment disappeared → flagged as orphaned, not silently deleted
+- [x] **Flashcard generation & sync** *(done 2026-07-30)*
+  - [x] `FlashcardRepository` (sync + record-review), following the existing
+        callback-based async pattern used by `NoteRepository`/`TagRepository`
+  - [x] `flashcards.source_segment_id` linking a generated card back to its source Q&A
+        block (schema v4, additive migration from v3 — no data wipe). The link only holds
+        because the **block's id is now persisted in the fence's info string**: segment
+        ids are minted by the view, so before this a reload gave every block a new id and
+        a card's history would have survived exactly one session
+  - [x] Sync logic: unlinked Q&A blocks → create a flashcard; linked ones → update
+        `front`/`back` only, never touch SM-2 scheduling state; a card whose source block
+        disappeared is left alone (it just stops appearing in the note's deck)
+  - [x] Only Q&A blocks with **both** halves non-blank become cards — a question with no
+        answer has nothing to turn over, and half-written is a normal editing state
+  - [ ] Per-note sync mode: not built. Sync is unconditional and runs when the review
+        screen opens, which is the Manual default in all but name — there is no automatic
+        on-save sync, so the in-progress-session hazard below hasn't arisen yet
   - [ ] Automatic mode must not disrupt an in-progress review session — a session
         snapshots its due-card queue at start; auto-sync writes to the table but never
         mutates a card the user is actively looking at mid-session
-  - [ ] "Create/Sync Flashcards" entry point on the note screen, hidden when the note
-        has no Q&A segments, with concrete feedback ("3 created, 1 updated — View
-        flashcards") rather than a bare toast
+  - [x] Entry point: **"Turn into flashcards"** in the note screen's new options menu
+        (⋮), becoming **"Review flashcards"** once the note has cards. Shown always rather
+        than hidden — a note with Q&A but no complete pair explains itself in a Snackbar,
+        where a missing menu item would leave the user looking for a feature they'd been
+        told existed
+  - [x] Deleting a note's cards, from the decks list and from the review screen. A hard
+        delete (the cards are derived data; a tombstone would either be resurrected by the
+        next sync or block that note from making cards again), so the confirmation says
+        review progress is what's lost
 - [ ] **Review & study surfaces**
-  - [ ] Per-note flashcard list (manage/inspect what a specific note produced)
-  - [ ] Global review session screen — today's due cards across *all* notes (this is
-        what actually exercises SM-2 scheduling, not the per-note list)
+  - [x] Per-note review session (`FlashcardsFragment`): flip card, right/wrong grading,
+        SM-2 scheduling, due-first with an "all caught up / review anyway" state, and
+        missed cards re-queued within the sitting
+  - [x] Decks list (`FlashcardDecksFragment`), a top-level destination alongside Home in a
+        new bottom navigation bar: one row per note that has cards, with the due count,
+        totals and next-review time
+  - [ ] Per-card management (inspect/edit/delete an individual card, rather than a note's
+        whole deck)
+  - [ ] Global review session screen — today's due cards across *all* notes
 - [ ] **Reminders (background infrastructure, reusable beyond flashcards)**
   - [ ] Notification channel setup
   - [ ] WorkManager/AlarmManager job to notify when cards are due
@@ -230,21 +256,51 @@ Deliberately avoids free-text answer grading and AI-generated content — see
 [note.md](note.md)'s "Planned: Quizzes" section for the reasoning; quizzes are built
 entirely from auto-gradable question types generated locally from the flashcard pool.
 
-- [ ] **Data layer**
-  - [ ] `quiz_attempts(id, scope_type, scope_id, score, total, taken_at)` — new table,
-        not yet in the schema
-  - [ ] Optional `quiz_attempt_answers(attempt_id, flashcard_id, was_correct)` if
-        per-question review after a quiz is wanted
+**Per-note MCQ quizzes landed 2026-08-01.** The scope picker, True/False fallback and
+matching mode below are what's left. One design change against the plan: quizzes read the
+note's Q&A blocks directly rather than the `flashcards` table — see [note.md](note.md)'s
+"Quizzes" section for why sharing the *rule* beat sharing the *rows*.
+
+- [x] **Data layer** *(schema v5, additive from v4 — no data wipe)*
+  - [x] `quizzes(id, note_id, created_at)` — a quiz is a marker that a note is one; the
+        unique index on `note_id` is what makes "Make quiz" idempotent ("Open quiz" after)
+  - [x] `quiz_attempts(id, quiz_id, score, answered, total, status, started_at,
+        finished_at)`. No `scope_type`/`scope_id` until a second scope exists; `total` is
+        per attempt because a note's block count moves; `answered` is what separates an
+        abandoned attempt from a bad one
+  - [x] Attempt opened at start, not on completion, so walking out is recorded rather
+        than rewarded. A killed process leaves it in progress; a sweep on next load retires
+        it, using the quiz's own time budget as the staleness rule
+  - [ ] `quiz_attempt_answers(attempt_id, …)` — still not built, and not wanted until a
+        screen reopens a past attempt's answers. The marked paper is shown from the live
+        session at the end of a run
 - [ ] **Question generation** (all local, no AI, no free-text matching)
-  - [ ] MCQ via cross-card distractors: sample 3 wrong options from other flashcards'
-        `back` text in the same scope (same note; fall back to the same collection if
-        there aren't enough sibling cards)
-  - [ ] True/False fallback for scopes too small for a good MCQ (needs only 2 cards)
+  - [x] MCQ via cross-block distractors (`QuizGenerator`): the correct answer plus 3 real
+        answers from *other* Q&A blocks in the same note, deduplicated case- and
+        whitespace-insensitively so a question can't have two right answers. Question order
+        and option order are both shuffled per attempt
+  - [x] Minimum of 5 complete blocks (`QuizRules.MIN_QA_BLOCKS`) — four options need four
+        blocks, and the fifth stops every question reusing the same three distractors.
+        Enforced at the entry point with a Snackbar, and again on the detail screen
+  - [ ] True/False fallback for notes too small for a good MCQ (needs only 2 blocks)
   - [ ] Matching mode (later/optional): N questions + N shuffled answers to pair up
 - [ ] **Quiz-taking UX**
-  - [ ] Scope picker: quiz a single note, a whole collection, or a tag
-  - [ ] Quiz session UI + scoring, written to `quiz_attempts` on completion
-  - [ ] Quiz history screen (past attempts/scores per scope)
+  - [ ] Scope picker: quiz a whole collection or a tag. Today the scope is always one note
+  - [x] Entry point: **"Make quiz"** in the note's options menu (⋮), becoming **"Open
+        quiz"** once the note has one — same pattern as the flashcard item beside it
+  - [x] Quiz session (`QuizSessionFragment`): single-select options on an answer sheet that
+        can be filled in any order — Previous/Next without answering, tappable
+        answered/blank indicators across the top, answers changeable and clearable — marked
+        all at once on submit so the run measures rather than teaches
+  - [x] One clock for the whole run (`QuizRules.totalTimeMs` = 15s × questions), turning red
+        with a warning under `WARNING_TIME_MS`, pausing behind dialogs, and completing the
+        attempt (not abandoning it) when it expires
+  - [x] Submitting with blanks, behind a confirmation that counts them — blanks are marked
+        wrong rather than excluded from the score
+  - [x] Quizzes tab (`QuizzesFragment`) as a third top-level destination, and per-quiz
+        history (`QuizDetailFragment`): every attempt with its score, date and whether it
+        was completed or abandoned, plus delete-with-confirmation
+  - [ ] Reopening a past attempt to see its questions again (needs the answers table above)
 
 ---
 
@@ -376,5 +432,8 @@ worth following". The items below are the migration itself; the convention outli
 - Epic D's storage-scope decision (Minimal vs. Full) is intentionally left open in the
   checklist above — do not start that work until it's resolved in discussion.
 - Epic E's MCQ distractor quality depends on a note/collection having enough
-  topically-related flashcards to draw plausible wrong answers from — very small or
-  very mixed-topic scopes may only ever qualify for True/False, not MCQ.
+  topically-related Q&A blocks to draw plausible wrong answers from — very small or
+  very mixed-topic scopes may only ever qualify for True/False, not MCQ. Handled for the
+  note scope by refusing to build a quiz below `QuizRules.MIN_QA_BLOCKS`; the same
+  question returns when a collection/tag scope is added, since a mixed collection can
+  clear the count while still producing obviously-wrong options.

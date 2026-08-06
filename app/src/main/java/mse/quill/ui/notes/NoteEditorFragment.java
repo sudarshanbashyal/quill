@@ -1,8 +1,11 @@
 package mse.quill.ui.notes;
 
 import android.Manifest;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.graphics.Rect;
 import android.os.Bundle;
 import androidx.activity.result.ActivityResultLauncher;
@@ -17,56 +20,82 @@ import android.speech.tts.Voice;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
+import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import androidx.appcompat.widget.Toolbar;
+import android.widget.TextView;
+import androidx.appcompat.widget.PopupMenu;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import mse.quill.R;
 import com.google.android.material.snackbar.Snackbar;
 
+import mse.quill.audio.AudioPlayback;
+import mse.quill.audio.ReadAloud;
 import mse.quill.data.AppExecutors;
+import mse.quill.data.FlashcardRepository;
 import mse.quill.data.NoteRepository;
+import mse.quill.data.QuizRepository;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
+import mse.quill.ui.flashcards.FlashcardsFragment;
+import mse.quill.ui.quiz.QuizDetailFragment;
+import mse.quill.ui.quiz.QuizRules;
 import mse.quill.ui.notes.editor.AudioRecorder;
 import mse.quill.ui.notes.editor.FormattingToolbarController;
 import mse.quill.ui.notes.editor.ImageEmbedder;
 import mse.quill.ui.notes.editor.KeyboardInsetsHandler;
 import mse.quill.ui.notes.editor.NoteEditorView;
-import mse.quill.ui.notes.editor.NoteReader;
 import mse.quill.ui.notes.editor.RecordingDialog;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.ui.notes.editor.model.QaSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.tags.TagPickerDialog;
 import mse.quill.util.ImageExporter;
+import mse.quill.util.MarkdownExporter;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.util.NoteExportStore;
+import mse.quill.util.PdfExporter;
+import mse.quill.util.WindowInsetsUtils;
 
-public class NoteEditorFragment extends Fragment {
+public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
+
+    /** The header, not the root: {@link KeyboardInsetsHandler} claims the root's insets listener,
+     *  and a view only gets one — the second to attach silently replaces the first. The editor's
+     *  page is the window background either way, so the status bar still matches it. */
+    @Override
+    public View topInsetTarget(View root) {
+        return root.findViewById(R.id.header);
+    }
 
     public static final String ARG_NOTE_ID = "note_id";
     public static final String ARG_COLLECTION_ID = "collection_id";
 
+    private static final String STATE_NOTE_ID = "state_note_id";
+    private static final String STATE_COLLECTION_ID = "state_collection_id";
+
     private EditText noteTitle;
-    private Button readAloudButton;
-    private NoteReader noteReader;
+    private View optionsButton;
     private FormattingToolbarController toolbarController;
     private LinearLayout formattingToolbar;
     private ScrollView scrollView;
     private ActivityResultLauncher<String> storagePermissionLauncher;
     private String pendingExportPath;
     private BaseSegmentView.ExportResult pendingExportResult;
+    /** What to resume once {@code storagePermissionLauncher} comes back granted. */
+    private Runnable pendingStorageAction;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
 
@@ -79,10 +108,24 @@ public class NoteEditorFragment extends Fragment {
 
     private NoteRepository noteRepository;
     private TagRepository tagRepository;
+    private FlashcardRepository flashcardRepository;
+    private QuizRepository quizRepository;
+    /** Whether this note has already generated cards — decides which of the two flashcard labels
+     *  the menu shows. Refreshed on resume, so deleting a deck reverts the label. */
+    private boolean hasFlashcards;
+    /** The same, for the quiz item: "Make quiz" until there is one, "Open quiz" after. */
+    private boolean hasQuiz;
     private String noteId;
     private String pendingCollectionId;
-    private final AtomicBoolean isCreatingNote = new AtomicBoolean(false);
     private boolean suppressAutoSave = false;
+    /**
+     * Whether the editor's fields hold the note they are supposed to. False from the moment an
+     * existing note's id is known until {@link #loadExistingNote()}'s read comes back — a window
+     * in which the title and body are empty <em>because nothing has been read yet</em>, not
+     * because the note is empty. A note opened and left again inside that window is not a note the
+     * user emptied. Always true for a new note: there is nothing to wait for.
+     */
+    private boolean contentLoaded = true;
 
     private View tagRowScroll;
     private LinearLayout tagRowContainer;
@@ -96,8 +139,13 @@ public class NoteEditorFragment extends Fragment {
         storagePermissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(),
                 granted -> {
-                    if (granted) {
-                        runExport();
+                    // Two things queue behind this permission now — saving an image out of a
+                    // segment, and exporting the whole note — so what to resume is held as the
+                    // pending action rather than assumed.
+                    Runnable action = pendingStorageAction;
+                    pendingStorageAction = null;
+                    if (granted && action != null) {
+                        action.run();
                     } else {
                         abandonExport();
                     }
@@ -113,9 +161,8 @@ public class NoteEditorFragment extends Fragment {
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-
         noteTitle = view.findViewById(R.id.note_title);
-        readAloudButton = view.findViewById(R.id.read_aloud_button);
+        optionsButton = view.findViewById(R.id.note_options_button);
         noteEditorView = view.findViewById(R.id.note_editor_view);
         formattingToolbar = view.findViewById(R.id.formatting_toolbar);
         scrollView = view.findViewById(R.id.scroll_view);
@@ -124,39 +171,44 @@ public class NoteEditorFragment extends Fragment {
 
         noteRepository = new NoteRepository(requireContext());
         tagRepository = new TagRepository(requireContext());
+        flashcardRepository = new FlashcardRepository(requireContext());
+        quizRepository = new QuizRepository(requireContext());
 
-        Bundle args = getArguments();
-        noteId = args != null ? args.getString(ARG_NOTE_ID) : null;
-        pendingCollectionId = args != null ? args.getString(ARG_COLLECTION_ID) : null;
+        // The note's id can come from three places, and the order matters. A note created *during*
+        // this editing session has no id in the arguments — the editor was opened without one — so
+        // reading the arguments first would wipe it every time the view is rebuilt. That's exactly
+        // what happens on the way back from the review screen: the fragment instance survives on
+        // the back stack and only its view is recreated. Left alone, it would forget which note it
+        // was editing, show a blank page, and autosave itself into a *second*, empty note.
+        if (noteId == null && savedInstanceState != null) {
+            // The other rebuild: a genuine recreation (process death, configuration change), where
+            // the fields are gone but saved state isn't.
+            noteId = savedInstanceState.getString(STATE_NOTE_ID);
+            pendingCollectionId = savedInstanceState.getString(STATE_COLLECTION_ID);
+        }
+        if (noteId == null) {
+            Bundle args = getArguments();
+            noteId = args != null ? args.getString(ARG_NOTE_ID) : null;
+            if (pendingCollectionId == null) {
+                pendingCollectionId = args != null ? args.getString(ARG_COLLECTION_ID) : null;
+            }
+        }
 
-        noteReader = new NoteReader(requireContext(), new NoteReader.ReadingListener() {
-            @Override public void onReadingStarted() {
-                readAloudButton.setText(R.string.action_stop_reading_glyph);
-            }
-            @Override public void onReadingFinished() {
-                readAloudButton.setText(R.string.action_read_aloud_glyph);
-            }
-            @Override public void onReadingFailed() {
-                readAloudButton.setText(R.string.action_read_aloud_glyph);
-                // TODO: show a snackbar "Could not read note aloud"
-            }
-        });
-        readAloudButton.setOnClickListener(v -> {
-            if (noteReader.isSpeaking()) {
-                noteReader.stop();
-                readAloudButton.setText(R.string.action_read_aloud_glyph);
-            } else {
-                noteReader.speak(buildSpokenText());
-            }
-        });
-        readAloudButton.setOnLongClickListener(v -> {
+        // The voice itself belongs to ReadAloud, not to this screen — a reading carries on when you
+        // leave the note, controlled from the now-playing bar. Bind the engine now so a long-press
+        // on the options button has voices to offer before anything has been spoken.
+        ReadAloud.warmUp(requireContext());
+        optionsButton.setOnClickListener(this::showOptionsMenu);
+        // Long-press still opens the voice picker, as it did on the read-aloud button this control
+        // replaced — a setting for one menu item doesn't earn a line in a two-item menu.
+        optionsButton.setOnLongClickListener(v -> {
             showVoicePickerDialog();
             return true;
         });
 
         noteEditorView.setContentChangeListener(() -> {
             scheduleAutoSave();
-            updateReadAloudVisibility();
+            stopReadingIfNothingLeft();
             updateToolbarState();
         });
         // Heading/bullet markers describe the caret's line, so they have to follow the caret and
@@ -164,22 +216,35 @@ public class NoteEditorFragment extends Fragment {
         noteEditorView.setSelectionChangeListener(this::updateToolbarState);
         noteEditorView.setMediaExportListener(this::exportMedia);
         view.findViewById(R.id.note_editor_content).setOnClickListener(v -> noteEditorView.focusEnd());
+        // The title sits in the header now, so the next focusable after it is the formatting
+        // toolbar — pressing "next" landed on the italic button. Send the caret where the key
+        // means to send it.
+        noteTitle.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_NEXT) return false;
+            noteEditorView.focusBodyStart();
+            return true;
+        });
         noteTitle.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override public void afterTextChanged(Editable s) {
                 scheduleAutoSave();
-                updateReadAloudVisibility();
+                // Renaming the note renames its recordings, including one already playing, and the
+                // reading if this note is the one being read.
+                noteEditorView.setAudioClipTitle(clipTitle());
+                if (ReadAloud.isReadingNote(noteId)) ReadAloud.retitle(clipTitle());
             }
         });
 
         if (noteId != null) {
+            contentLoaded = false;
             loadExistingNote();
         } else {
-            // Pre-filled default title, same format used elsewhere for untitled notes — also
-            // what makes the note (and its "add tag" option) exist immediately rather than only
-            // once the user has typed something themselves.
-            noteTitle.setText(NoteDisplayUtils.untitledWithDate(requireContext(), System.currentTimeMillis()));
+            // The default name is a hint, not text. It used to be typed into the field for real,
+            // which meant naming a note began with selecting a sentence and deleting it — the one
+            // moment the user definitely wants to just type. Left untouched it stays empty, and
+            // every list resolves an empty title to this same string via NoteDisplayUtils.
+            showUntitledHint(System.currentTimeMillis());
         }
 
         imageEmbedder = new ImageEmbedder(this, new ImageEmbedder.ImageResultListener() {
@@ -208,6 +273,7 @@ public class NoteEditorFragment extends Fragment {
                 toolbarController.setRecordingState(false);
                 dismissRecordingDialog();
                 noteEditorView.insertAudioAfterFocused(filePath, durationMs);
+                noteEditorView.setAudioClipTitle(clipTitle());
             }
 
             @Override
@@ -272,17 +338,15 @@ public class NoteEditorFragment extends Fragment {
                 }
         );
 
-        setupToolbar(view);
+        setupHeader(view);
         setupKeyboardBehaviour(view);
     }
 
-    private void setupToolbar(View view) {
-        Toolbar toolbar = view.findViewById(R.id.toolbar);
-        toolbar.setNavigationOnClickListener(v ->
+    private void setupHeader(View view) {
+        view.findViewById(R.id.back_button).setOnClickListener(v ->
                 NavHostFragment.findNavController(this).navigateUp()
         );
     }
-
 
 
     private void setupKeyboardBehaviour(View view) {
@@ -344,14 +408,163 @@ public class NoteEditorFragment extends Fragment {
     private void exportMedia(String filePath, BaseSegmentView.ExportResult result) {
         pendingExportPath = filePath;
         pendingExportResult = result;
-        if (ImageExporter.requiresStoragePermission()
-                && ContextCompat.checkSelfPermission(requireContext(),
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    != PackageManager.PERMISSION_GRANTED) {
-            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        if (needsStoragePermissionFor(this::runExport)) return;
+        runExport();
+    }
+
+    /**
+     * Requests {@code WRITE_EXTERNAL_STORAGE} if this device still needs it, remembering what to do
+     * once it is granted.
+     *
+     * @return true if the caller should stop and wait for the permission result.
+     */
+    private boolean needsStoragePermissionFor(Runnable action) {
+        if (!ImageExporter.requiresStoragePermission()) return false;
+        if (ContextCompat.checkSelfPermission(requireContext(),
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+            return false;
+        }
+        pendingStorageAction = action;
+        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        return true;
+    }
+
+    private enum ExportFormat { PDF, MARKDOWN }
+
+    /**
+     * Writes the note out as a file in Downloads/Quill.
+     *
+     * <p>The segments are read on the main thread and the file written on the disk thread: what is
+     * exported is what is on screen right now, not what was last saved, so an export never lags a
+     * keystroke behind. Nothing is saved first — unlike flashcards or a quiz, this doesn't need the
+     * note to have a row, and exporting shouldn't be the thing that creates one.
+     */
+    private void exportNote(ExportFormat format) {
+        List<NoteSegment> segments = noteEditorView.exportSegments();
+        String title = clipTitle();
+        if (segments.isEmpty() && title.trim().isEmpty()) {
+            Snackbar.make(requireView(), R.string.export_empty, Snackbar.LENGTH_SHORT).show();
             return;
         }
-        runExport();
+        if (needsStoragePermissionFor(() -> writeExport(format, title, segments))) return;
+        writeExport(format, title, segments);
+    }
+
+    private void writeExport(ExportFormat format, String title, List<NoteSegment> segments) {
+        Context appContext = requireContext().getApplicationContext();
+        String audioLabel = getString(R.string.export_audio_placeholder);
+        String imageLabel = getString(R.string.export_image_placeholder);
+
+        AppExecutors executors = AppExecutors.getInstance();
+        executors.diskIO(() -> {
+            NoteExportStore.Saved saved;
+            if (format == ExportFormat.PDF) {
+                saved = NoteExportStore.save(appContext, title, PdfExporter.EXTENSION,
+                        PdfExporter.MIME_TYPE,
+                        out -> PdfExporter.write(title, segments, audioLabel, out));
+            } else {
+                String markdown = MarkdownExporter.toMarkdown(title, segments, audioLabel, imageLabel);
+                saved = NoteExportStore.save(appContext, title, MarkdownExporter.EXTENSION,
+                        MarkdownExporter.MIME_TYPE,
+                        out -> out.write(markdown.getBytes(StandardCharsets.UTF_8)));
+            }
+            executors.mainThread(() -> {
+                if (!isAdded()) return;
+                if (saved == null) {
+                    Snackbar.make(requireView(), R.string.export_failed, Snackbar.LENGTH_LONG).show();
+                } else {
+                    showExportComplete(format, saved);
+                }
+            });
+        });
+    }
+
+    /**
+     * Confirms an export and offers to open it.
+     *
+     * <p>A dialog rather than the Snackbar this replaced: the useful action here is opening the
+     * file, and a Snackbar takes that away again after a few seconds — long enough to miss, and
+     * unrecoverable once gone since nothing in the app lists past exports.
+     *
+     * <p>The animation is deliberately small — the badge springs in and the two lines follow it up.
+     * It exists to make the moment land, not to be watched, so it is over in a third of a second
+     * and the buttons are usable throughout.
+     */
+    private void showExportComplete(ExportFormat format, NoteExportStore.Saved saved) {
+        View content = getLayoutInflater().inflate(R.layout.dialog_export_complete, null);
+        ((ImageView) content.findViewById(R.id.export_badge_icon)).setImageResource(
+                format == ExportFormat.PDF ? R.drawable.ic_pdf : R.drawable.ic_markdown);
+        ((TextView) content.findViewById(R.id.export_filename)).setText(
+                getString(R.string.export_complete_location, saved.displayName));
+
+        androidx.appcompat.app.AlertDialog dialog =
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setView(content)
+                        .setPositiveButton(R.string.action_open_export,
+                                (d, which) -> openExport(saved, format))
+                        .setNegativeButton(R.string.action_done, null)
+                        .create();
+        dialog.setOnShowListener(d -> animateExportDialog(content));
+        dialog.show();
+    }
+
+    /** Badge springs in, then the title and filename rise into place a beat behind it. */
+    private void animateExportDialog(View content) {
+        View badge = content.findViewById(R.id.export_badge);
+        badge.setScaleX(0.6f);
+        badge.setScaleY(0.6f);
+        badge.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                .setDuration(320)
+                .setInterpolator(new android.view.animation.OvershootInterpolator(2f))
+                .start();
+
+        float rise = getResources().getDimension(R.dimen.export_dialog_gap);
+        int delay = 90;
+        for (int id : new int[]{R.id.export_title, R.id.export_filename}) {
+            View line = content.findViewById(id);
+            line.setTranslationY(rise);
+            line.animate().alpha(1f).translationY(0f)
+                    .setStartDelay(delay)
+                    .setDuration(220)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
+            delay += 60;
+        }
+    }
+
+    /**
+     * Hands the exported file to whatever on the device can display it.
+     *
+     * <p>Markdown is tried twice. Almost nothing registers for {@code text/markdown} — a stock
+     * emulator image has no handler for it at all, while every device has something for
+     * {@code text/plain} — so the accurate type is offered first and the readable one is the
+     * fallback. Without that, Open on a Markdown export was a button that could only ever fail.
+     */
+    private void openExport(NoteExportStore.Saved saved, ExportFormat format) {
+        if (format == ExportFormat.PDF) {
+            if (!startViewer(saved.uri, PdfExporter.MIME_TYPE)) noViewer();
+            return;
+        }
+        if (!startViewer(saved.uri, MarkdownExporter.MIME_TYPE)
+                && !startViewer(saved.uri, "text/plain")) {
+            noViewer();
+        }
+    }
+
+    private boolean startViewer(Uri uri, String mimeType) {
+        Intent intent = new Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, mimeType)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivity(intent);
+            return true;
+        } catch (android.content.ActivityNotFoundException e) {
+            return false;
+        }
+    }
+
+    private void noViewer() {
+        Snackbar.make(requireView(), R.string.export_no_viewer, Snackbar.LENGTH_LONG).show();
     }
 
     private void runExport() {
@@ -385,17 +598,37 @@ public class NoteEditorFragment extends Fragment {
             suppressAutoSave = true;
             if (note != null) {
                 noteTitle.setText(note.title);
+                // A note saved without a title reads as "Untitled Note - <date>" everywhere else,
+                // so the editor labels it the same way rather than showing a blank field — but as
+                // a hint, so it stays as easy to name as it was on the day it was created.
+                showUntitledHint(note.createdAt);
                 pendingCollectionId = note.collectionId;
             }
             noteEditorView.loadSegments(segments);
+            noteEditorView.setAudioClipTitle(clipTitle());
             suppressAutoSave = false;
-            updateReadAloudVisibility();
+            contentLoaded = true;
         });
         tagRepository.loadTagsForNote(noteId, tags -> {
             if (!isAdded()) return;
             currentTags = tags;
             renderTagRow();
         });
+    }
+
+    /** Puts the generated "Untitled Note - <date>" name in the title field's hint, where an empty
+     *  title is one keystroke from being replaced rather than a sentence to delete first. */
+    private void showUntitledHint(long createdAt) {
+        noteTitle.setHint(NoteDisplayUtils.untitledWithDate(requireContext(), createdAt));
+    }
+
+    /** What a recording from this note is called once it is playing somewhere else — the note's
+     *  title, or the same generated name the lists show it under while it hasn't got one. */
+    private String clipTitle() {
+        String title = noteTitle.getText().toString().trim();
+        if (!title.isEmpty()) return title;
+        CharSequence hint = noteTitle.getHint();
+        return hint == null ? "" : hint.toString();
     }
 
     private void renderTagRow() {
@@ -436,6 +669,37 @@ public class NoteEditorFragment extends Fragment {
     }
 
     @Override
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // Carries the in-session note id across the fragment being torn down and rebuilt from the
+        // back stack — see the restore in onViewCreated.
+        outState.putString(STATE_NOTE_ID, noteId);
+        outState.putString(STATE_COLLECTION_ID, pendingCollectionId);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        refreshStudyState();
+    }
+
+    /** Asked on every resume rather than cached from load, so coming back from the review or quiz
+     *  screen having deleted what was there puts the menu's "make it" labels back. */
+    private void refreshStudyState() {
+        if (noteId == null) {
+            hasFlashcards = false;
+            hasQuiz = false;
+            return;
+        }
+        flashcardRepository.countForNote(noteId, count -> {
+            if (isAdded()) hasFlashcards = count > 0;
+        });
+        quizRepository.existsForNote(noteId, exists -> {
+            if (isAdded()) hasQuiz = exists;
+        });
+    }
+
+    @Override
     public void onPause() {
         super.onPause();
         if (saveRunnable != null) {
@@ -445,42 +709,174 @@ public class NoteEditorFragment extends Fragment {
         audioRecorder.cancelIfRecording();
         dismissRecordingDialog();
         toolbarController.setRecordingState(false);
-        noteEditorView.stopAllAudioPlayback();
-        noteReader.stop();
-        readAloudButton.setText(R.string.action_read_aloud_glyph);
+        // Neither a playing recording nor a reading in progress is touched here. Both belong to
+        // process-wide players (AudioPlayback, ReadAloud) rather than to this screen, and following
+        // the user out of the note is the point — the now-playing bar is where they get paused or
+        // closed from once the note is behind them.
         autoSave();
     }
 
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        noteReader.shutdown();
+    /**
+     * The note's whole-document actions. Kept behind one control rather than a row of buttons: the
+     * set will keep growing (quizzes, export), and none of it is used often enough to earn
+     * permanent space beside the title.
+     */
+    private void showOptionsMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(requireContext(), anchor);
+        menu.inflate(R.menu.menu_note_options);
+
+        menu.getMenu().findItem(R.id.action_turn_into_flashcards).setTitle(
+                hasFlashcards ? R.string.action_review_flashcards
+                              : R.string.action_turn_into_flashcards);
+        menu.getMenu().findItem(R.id.action_make_quiz).setTitle(
+                hasQuiz ? R.string.action_open_quiz : R.string.action_make_quiz);
+
+        MenuItem playAloud = menu.getMenu().findItem(R.id.action_play_aloud);
+        // Specifically *this* note's reading: another note left reading in the background is the
+        // bar's business, and this menu offering to stop it would be a lie about whose voice it is.
+        boolean speaking = ReadAloud.isReadingNote(noteId);
+        playAloud.setTitle(speaking ? R.string.action_stop_reading : R.string.action_read_aloud);
+        playAloud.setIcon(speaking ? R.drawable.ic_menu_pause : R.drawable.ic_menu_play);
+        // Reading an empty note would just be silence, so the item goes away rather than misleading.
+        playAloud.setVisible(speaking || !buildSpokenText().isEmpty());
+
+        menu.setForceShowIcon(true);
+        menu.setOnMenuItemClickListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.action_play_aloud) {
+                toggleReadAloud();
+                return true;
+            }
+            if (id == R.id.action_turn_into_flashcards) {
+                openFlashcards();
+                return true;
+            }
+            if (id == R.id.action_make_quiz) {
+                openQuiz();
+                return true;
+            }
+            if (id == R.id.action_export) {
+                showExportMenu(anchor);
+                return true;
+            }
+            return false;
+        });
+        menu.show();
+    }
+
+    /** The formats a note can leave in. Anchored to the same button, so it reads as the options
+     *  menu going one level deeper rather than as an unrelated popup. */
+    private void showExportMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(requireContext(), anchor);
+        menu.inflate(R.menu.menu_note_export);
+        menu.setForceShowIcon(true);
+        menu.setOnMenuItemClickListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.action_export_pdf) {
+                exportNote(ExportFormat.PDF);
+                return true;
+            }
+            if (id == R.id.action_export_markdown) {
+                exportNote(ExportFormat.MARKDOWN);
+                return true;
+            }
+            return false;
+        });
+        menu.show();
+    }
+
+    private void toggleReadAloud() {
+        if (ReadAloud.isReadingNote(noteId)) {
+            ReadAloud.stop();
+        } else {
+            // One voice at a time: a recording playing under a note being read aloud is just noise,
+            // and both would be fighting for the same bar.
+            AudioPlayback.get(requireContext()).close();
+            ReadAloud.start(requireContext(), noteId, clipTitle(), buildSpokenText());
+        }
+    }
+
+    /**
+     * Opens the review screen for this note's Q&amp;A blocks.
+     *
+     * <p>Only blocks with <em>both</em> halves filled in become cards — a question with no answer
+     * has nothing to turn over — so a note can hold Q&amp;A and still have no deck, and that's the
+     * case the message covers. The save is forced through first because the review screen reads the
+     * note back from storage: it needs the blocks' ids, and for a brand-new note, a row to read at
+     * all.
+     */
+    private void openFlashcards() {
+        List<NoteSegment> segments = noteEditorView.exportSegments();
+        // A note whose blocks have all been emptied still has its old cards, so the deck is worth
+        // opening even when there's nothing left to generate from.
+        if (!hasFlashcards && FlashcardRepository.reviewableQa(segments).isEmpty()) {
+            Snackbar.make(requireView(), R.string.flashcards_no_qa_message, Snackbar.LENGTH_LONG)
+                    .show();
+            return;
+        }
+
+        saveNow(() -> {
+            if (!isAdded() || noteId == null) return;
+            Bundle args = new Bundle();
+            args.putString(FlashcardsFragment.ARG_NOTE_ID, noteId);
+            NavHostFragment.findNavController(this).navigate(R.id.flashcardsFragment, args);
+        });
+    }
+
+    /**
+     * Opens this note's quiz, making it on the first run.
+     *
+     * <p>The five-block minimum is a property of how questions are built, not a rule for its own
+     * sake: every wrong option is another block's answer, so a note with four of them can only ever
+     * offer the same three distractors and the quiz becomes a memory game about the note's layout.
+     * A note that already has a quiz opens it regardless — that screen can explain a shortfall
+     * better than a Snackbar on the way out can.
+     */
+    private void openQuiz() {
+        List<NoteSegment> segments = noteEditorView.exportSegments();
+        int usable = FlashcardRepository.reviewableQa(segments).size();
+        if (!hasQuiz && usable < QuizRules.MIN_QA_BLOCKS) {
+            Snackbar.make(requireView(),
+                            getString(R.string.quiz_not_enough_qa_message, QuizRules.MIN_QA_BLOCKS),
+                            Snackbar.LENGTH_LONG)
+                    .show();
+            return;
+        }
+
+        saveNow(() -> {
+            if (!isAdded() || noteId == null) return;
+            quizRepository.ensureForNote(noteId, quiz -> {
+                if (!isAdded()) return;
+                hasQuiz = true;
+                Bundle args = new Bundle();
+                args.putString(QuizDetailFragment.ARG_QUIZ_ID, quiz.id);
+                NavHostFragment.findNavController(this).navigate(R.id.quizDetailFragment, args);
+            });
+        });
     }
 
     /** Body text only — the title is often just the auto-generated "Untitled Note - <date>"
      *  placeholder, which shouldn't be read aloud (and, since it's never actually empty, would
-     *  otherwise make the read-aloud button appear "has content" even for a genuinely blank note). */
+     *  otherwise make a blank note look like it has something to say). */
     private String buildSpokenText() {
         return noteEditorView.getPlainText().trim();
     }
 
-    /** The read-aloud button only makes sense when there's text to read — hides it otherwise,
-     *  and halts a reading in progress if its last bit of text just got deleted out from under it. */
-    private void updateReadAloudVisibility() {
-        boolean hasText = !buildSpokenText().isEmpty();
-        if (!hasText && noteReader.isSpeaking()) {
-            noteReader.stop();
+    /** Halts a reading in progress if its last bit of text just got deleted out from under it.
+     *  Only this note's — emptying one note is no reason to silence another. */
+    private void stopReadingIfNothingLeft() {
+        if (ReadAloud.isReadingNote(noteId) && buildSpokenText().isEmpty()) {
+            ReadAloud.stop();
         }
-        readAloudButton.setVisibility(hasText ? View.VISIBLE : View.GONE);
     }
 
-    /** Long-press on the read-aloud button — lets the user swap out the engine's default
+    /** Long-press on the options button — lets the user swap out the engine's default
      *  ("robotic") voice for another one installed on the device. */
     private void showVoicePickerDialog() {
-        List<Voice> voices = noteReader.getAvailableVoices();
+        List<Voice> voices = ReadAloud.availableVoices(requireContext());
         if (voices.isEmpty()) return; // TTS engine not ready yet, or no voices for this locale
 
-        Voice current = noteReader.getCurrentVoice();
+        Voice current = ReadAloud.currentVoice(requireContext());
         String[] labels = new String[voices.size()];
         int checkedIndex = -1;
         for (int i = 0; i < voices.size(); i++) {
@@ -492,7 +888,7 @@ public class NoteEditorFragment extends Fragment {
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.dialog_choose_voice_title)
                 .setSingleChoiceItems(labels, checkedIndex, (dialog, which) -> {
-                    noteReader.setVoice(voices.get(which));
+                    ReadAloud.setVoice(requireContext(), voices.get(which));
                     dialog.dismiss();
                 })
                 .setNegativeButton(R.string.action_cancel, null)
@@ -552,36 +948,67 @@ public class NoteEditorFragment extends Fragment {
     }
 
     private void autoSave() {
+        autoSave(null);
+    }
+
+    /**
+     * Flushes the pending debounce and saves right now, calling back once the note is on disk.
+     *
+     * <p>Used by anything that has to hand the note off to another screen: they read it back by id,
+     * so waiting for the 500ms debounce would show them the note as it was before the last edit —
+     * or, for a note that has never been saved, no note at all.
+     */
+    private void saveNow(Runnable onSaved) {
+        if (saveRunnable != null) {
+            handler.removeCallbacks(saveRunnable);
+            saveRunnable = null;
+        }
+        autoSave(onSaved);
+    }
+
+    /** @param onSaved run on the main thread once the write lands; skipped if there was nothing
+     *                worth writing (a blank note is never created, and an emptied one is deleted). */
+    private void autoSave(Runnable onSaved) {
+        // An existing note whose read hasn't come back yet has empty fields that mean "not loaded",
+        // not "emptied" — saving would blank it and the !hasContent branch below would delete it
+        // outright. Opening a note and leaving again before it painted did exactly that.
+        if (!contentLoaded) return;
+
         String title = noteTitle.getText().toString().trim();
         List<NoteSegment> segments = noteEditorView.exportSegments();
         boolean hasContent = !title.isEmpty() || hasRealContent(segments);
 
         if (noteId == null) {
             if (!hasContent) return; // blank note — don't create a row for it
-            if (!isCreatingNote.compareAndSet(false, true)) return; // creation already in flight
 
-            String collectionForCreation = pendingCollectionId;
-            noteRepository.createNote(title, collectionForCreation, createdId -> {
-                noteId = createdId;
-                isCreatingNote.set(false);
-                noteRepository.saveNote(noteId, title, segments, null);
+            // The id is minted here, on the main thread, so noteId is usable by every later save
+            // immediately — those saves then queue behind this insert on the repository's single
+            // disk thread and land in order. Waiting on a created-id callback instead meant a save
+            // arriving mid-creation had no id to write to and was dropped on the floor, taking
+            // everything typed since creation started with it. Leaving a new note quickly — a back
+            // gesture a moment after the first keystroke — is exactly that race.
+            noteId = NoteRepository.newNoteId();
+            // A reading can have been started before the note had an id; hand it the one just
+            // minted so the menu still recognises the voice as this note's.
+            ReadAloud.noteIdMinted(noteId);
+            noteRepository.createNote(noteId, title, pendingCollectionId, () -> {
                 if (isAdded()) renderTagRow();
             });
-            return;
-        }
-
-        if (!hasContent) {
+        } else if (!hasContent) {
             noteRepository.deleteNote(noteId, null);
             return;
         }
 
-        noteRepository.saveNote(noteId, title, segments, null);
+        noteRepository.saveNote(noteId, title, segments, onSaved);
     }
 
     private boolean hasRealContent(List<NoteSegment> segments) {
         for (NoteSegment segment : segments) {
             if (segment instanceof ImageSegment) return true;
             if (segment instanceof AudioSegment) return true;
+            // A note whose only content is a Q&A block is a note with content — it used to survive
+            // solely because the auto-generated title is never empty.
+            if (segment instanceof QaSegment) return true;
             if (segment instanceof TextSegment
                     && !((TextSegment) segment).content.toString().trim().isEmpty()) {
                 return true;
