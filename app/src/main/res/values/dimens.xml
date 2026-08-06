@@ -27,6 +27,14 @@
 
     <!-- Search field (fragment_home / fragment_collection_detail) -->
     <dimen name="search_corner_radius">12dp</dimen>
+    <!-- The filter button beside the search box, and the chips under it. -->
+    <dimen name="search_filter_button_size">44dp</dimen>
+    <dimen name="search_filter_icon_size">22dp</dimen>
+    <dimen name="filter_chip_close_size">14dp</dimen>
+    <!-- Ring around a selected tag in the filter sheet. -->
+    <dimen name="filter_chip_selected_stroke">2dp</dimen>
+    <!-- Ceiling for the filter sheet's scrolling body; it is shorter when there are few tags. -->
+    <dimen name="filter_sheet_max_height">380dp</dimen>
 
     <!-- Splash logo. This is the "Q" glyph's text size; QuillLogoView derives the dots' size and
          spacing from the glyph's measured bounds, so this one value scales the whole mark. -->

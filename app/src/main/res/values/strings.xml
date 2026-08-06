@@ -7,6 +7,20 @@
     <string name="home_greeting">Welcome back</string>
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
     <string name="search_hint">Search notes or collections…</string>
+    <string name="search_hint_collection">Search notes in this collection…</string>
+
+    <!-- Search filtering and sorting -->
+    <string name="action_filter_and_sort">Filter and sort</string>
+    <string name="action_apply">Apply</string>
+    <string name="action_clear_filters">Clear all</string>
+    <string name="filter_sort_by">Sort by</string>
+    <string name="filter_by_tag">Filter by tag</string>
+    <string name="filter_other">Other</string>
+    <string name="filter_pinned_only">Pinned only</string>
+    <string name="sort_recent">Most recent</string>
+    <string name="sort_oldest">Oldest first</string>
+    <string name="sort_title_asc">Title A–Z</string>
+    <string name="sort_title_desc">Title Z–A</string>
 
     <string name="section_pinned_notes">Pinned Notes</string>
     <string name="section_collections">Collections</string>
@@ -16,6 +30,13 @@
     <string name="action_create_collection">Collection</string>
     <string name="notes_count_zero">No notes</string>
     <string name="updated_relative_format">Updated %s</string>
+
+    <!-- Relative timestamps (RelativeTime). Kept short: these sit on list rows and cards. -->
+    <string name="time_now">now</string>
+    <string name="time_minutes_ago">%1$d min ago</string>
+    <string name="time_yesterday">yesterday</string>
+    <string name="time_in_minutes">in %1$d min</string>
+    <string name="time_tomorrow">tomorrow</string>
 
     <plurals name="notes_count">
         <item quantity="one">%d note</item>

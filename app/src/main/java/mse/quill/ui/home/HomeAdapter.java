@@ -3,7 +3,6 @@ package mse.quill.ui.home;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
-import android.text.format.DateUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -19,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.RelativeTime;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
 import mse.quill.ui.tags.TagChipView;
@@ -211,8 +211,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         void bind(Note note, Listener listener) {
             titleView.setText(NoteDisplayUtils.resolveTitle(itemView.getContext(), note));
-            timestampView.setText(DateUtils.getRelativeTimeSpanString(
-                    note.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS));
+            timestampView.setText(RelativeTime.past(itemView.getContext(), note.updatedAt));
             TagChipView.render(itemView.getContext(), tagsContainer, note.tags);
 
             itemView.setOnClickListener(v -> listener.onNoteClicked(note));
@@ -240,8 +239,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             countView.setText(formatContents(itemView.getContext(), collection));
             updatedView.setText(itemView.getContext().getString(
                     R.string.updated_relative_format,
-                    DateUtils.getRelativeTimeSpanString(
-                            collection.lastActivityAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)));
+                    RelativeTime.past(itemView.getContext(), collection.lastActivityAt)));
 
             itemView.setOnClickListener(v -> listener.onCollectionClicked(collection.id, collection.name));
             itemView.setOnLongClickListener(v -> {

@@ -2,7 +2,6 @@ package mse.quill.ui.home;
 
 import android.content.Context;
 import android.text.TextUtils;
-import android.text.format.DateUtils;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,6 +11,7 @@ import android.widget.TextView;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
+import mse.quill.util.RelativeTime;
 import mse.quill.data.model.Note;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.util.ColorUtils;
@@ -73,8 +73,7 @@ final class PinnedNoteCardView {
         date.setLayoutParams(dateParams);
         date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         date.setAlpha(0.7f);
-        date.setText(DateUtils.getRelativeTimeSpanString(
-                note.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS));
+        date.setText(RelativeTime.past(context, note.updatedAt));
         content.addView(date);
 
         // Pushes the tag row to the bottom of the card, so tagged and untagged cards agree on

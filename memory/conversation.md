@@ -1239,3 +1239,69 @@ it to 1 when done. The user took over checking the animation.
 
 **Restored:** the Lecture 7 note's original text (the doubling had left ~300K chars of lorem ipsum
 in it), animation scales, and `Downloads/Quill` emptied of test output.
+
+## 2026-08-06 (same session) — Search bar redesign, filtering/sorting, and a dialog that sized wrong
+
+**Asks:** drop the magnifying glass and restyle the search bar to the Figma; add tag filtering and
+sorting behind `ic_filter`; show the active tag filters under the box; use the same bar on the
+collection screen; and make the add-existing-notes dialog size to its content with a ceiling.
+
+**Figma reference:** HomePage 2, node `32:600` in the MSE file. The box is white with a 1px
+hairline, no start icon, and the filter button sits *outside* it to the right; selected tags render
+as pastel chips underneath — which is exactly the "filtered tags at the bottom of the searchbar"
+that was asked for, so the chip row follows the tag's own colour via the existing `TagChipView`.
+
+**Built:** `ui/search/SearchFilterBar` (compound view, shared by Home and collection detail),
+`NoteFilter` (query + any-of tags + pinned-only + four sorts, applied in memory), `SearchFilterDialog`,
+`FilterChips`, and `util/MaxHeightScrollView`. The old field was
+`@android:drawable/ic_menu_search` — a framework drawable, which the M3 convention forbids anyway.
+
+**Two judgement calls, both recorded in note.md:** tags filter as *any-of* (a second tag widens
+rather than empties), and collections ignore tag/pinned filters (they're note properties; a
+collection disappearing looks like deletion) while still following the sort.
+
+**Two mid-task corrections from the user, both mine.** First: selected tags in the filter sheet
+weren't distinguishable — the chips carry the tag's colour as their resting background, so
+Material's default checked styling (a background change) landed on a colour already doing something
+else. I added a ring plus the checked icon. Second: that made the chips *grow* on selection and the
+row reflow on every tap. Final shape is border-only, with the stroke present on every chip at all
+times and painted the same colour as the fill when unselected — selection changes exactly one
+colour and nothing re-measures. Verified by cropping the chip row in both states: the unselected
+"Urgent" chip sits at an identical x, so the width is provably unchanged.
+
+**The dialog bug was a one-liner with a general lesson.** `AddExistingNotesDialog` gave its
+`ScrollView` a *fixed* height from `note_picker_max_height` — a max in name only. `WRAP_CONTENT`
+alone would break the long list instead. `MaxHeightScrollView` measures `AT_MOST` against the
+ceiling, which handles both; use it for any dialog list rather than a fixed height.
+
+**Verified on emulator-5554:** bar renders without the glass on both screens; filter sheet shows
+sort/tags/pinned; selecting Uni + Title A–Z filtered notes to the Uni-tagged two and re-sorted
+collections alphabetically; chips appear under the box in tag colours and remove on tap; selected
+chips are visibly ringed; the picker shrank from six rows to one when filtered.
+
+## 2026-08-06 (same session) — One way to phrase a timestamp
+
+**Ask:** times were inconsistent — a just-saved note said "Updated 0 minutes ago". Wanted a ladder
+(now / x min / x hour / yesterday / short date), as a reusable util, used everywhere dates show.
+
+**Cause:** every screen called `DateUtils.getRelativeTimeSpanString(..., MINUTE_IN_MILLIS)`, whose
+minute resolution floors a seconds-old timestamp to zero rather than saying "now".
+
+**`util/RelativeTime`** now owns it, with `past()` and a mirrored `future()` for a deck's next
+review. Migrated all seven call sites (note rows, home rows, pinned cards, collection cards,
+collection subtitle, deck rows, quiz rows); no `getRelativeTimeSpanString` remains in the codebase.
+
+**Two details that would be easy to get wrong twice:** under a day is *elapsed* time but
+"yesterday" is a *calendar* question (otherwise 30 hours ago reads as yesterday when two midnights
+have passed, and 2am reports "yesterday" for something three hours old); and the calendar-day
+difference is rounded, not truncated, because midnight-to-midnight is 23 or 25 hours across a DST
+change.
+
+**Testing note:** the emulator wouldn't let me move the clock (`date: Operation not permitted`, no
+`su` on this image), so "yesterday" couldn't be produced on device. Instead the rung choice is split
+from the wording — package-private `Bucket` + `bucket()` — and covered by a JVM test
+(`RelativeTimeTest`, 8 cases, including the 30h-vs-40h calendar distinction). On device I confirmed
+now / x min ago / x hours ago / short date in a single Home screenshot.
+
+**Left alone:** `NoteDisplayUtils.untitledWithDate`, which formats an absolute date into a note's
+default *name* ("Untitled Note - Aug 6, 2026"). It isn't a relative timestamp and shouldn't drift.

@@ -5,7 +5,6 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
 import android.os.Bundle;
-import android.text.format.DateUtils;
 import android.view.GestureDetector;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -27,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.RelativeTime;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Flashcard;
@@ -272,8 +272,7 @@ public class FlashcardsFragment extends Fragment {
         String body = next == 0
                 ? getString(R.string.flashcards_caught_up_message)
                 : getString(R.string.flashcards_caught_up_message_format,
-                        DateUtils.getRelativeTimeSpanString(
-                                next, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS));
+                        RelativeTime.future(requireContext(), next));
         showMessage(R.string.flashcards_caught_up_title, body,
                 () -> startSession(new ArrayList<>(deck)),
                 R.string.flashcards_action_review_anyway,

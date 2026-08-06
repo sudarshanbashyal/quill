@@ -100,36 +100,14 @@
 
     </LinearLayout>
 
-    <!-- See fragment_home.xml for why hintEnabled is off. -->
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/search_field"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+    <mse.quill.ui.search.SearchFilterBar
+        android:id="@+id/search_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="@dimen/spacing_md"
-        app:boxCornerRadiusBottomEnd="@dimen/search_corner_radius"
-        app:boxCornerRadiusBottomStart="@dimen/search_corner_radius"
-        app:boxCornerRadiusTopEnd="@dimen/search_corner_radius"
-        app:boxCornerRadiusTopStart="@dimen/search_corner_radius"
-        app:hintEnabled="false"
-        app:startIconDrawable="@android:drawable/ic_menu_search"
-        app:startIconTint="@color/text_secondary"
         app:layout_constraintTop_toBottomOf="@id/header"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/search_input"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/search_hint"
-            android:inputType="text"
-            android:maxLines="1"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_secondary"
-            android:textSize="14sp" />
-
-    </com.google.android.material.textfield.TextInputLayout>
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_notes"
@@ -139,7 +117,7 @@
         android:paddingHorizontal="@dimen/list_item_gutter"
         android:paddingTop="@dimen/spacing_sm"
         android:paddingBottom="@dimen/spacing_lg"
-        app:layout_constraintTop_toBottomOf="@id/search_field"
+        app:layout_constraintTop_toBottomOf="@id/search_bar"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -151,7 +129,7 @@
         android:text="@string/empty_notes_in_collection"
         android:textColor="@color/text_secondary"
         android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/search_field"
+        app:layout_constraintTop_toBottomOf="@id/search_bar"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

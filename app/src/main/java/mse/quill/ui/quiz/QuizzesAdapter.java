@@ -2,7 +2,6 @@ package mse.quill.ui.quiz;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.text.format.DateUtils;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -14,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.RelativeTime;
 import mse.quill.data.model.Quiz;
 
 /** The quizzes list: one row per note that has been turned into a quiz. */
@@ -84,8 +84,7 @@ public class QuizzesAdapter extends RecyclerView.Adapter<QuizzesAdapter.QuizHold
             views.meta.setVisibility(taken ? View.VISIBLE : View.GONE);
             if (taken) {
                 views.meta.setText(context.getString(R.string.quiz_row_last_taken_format,
-                        DateUtils.getRelativeTimeSpanString(quiz.lastAttemptAt,
-                                System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)));
+                        RelativeTime.past(context, quiz.lastAttemptAt)));
             }
 
             views.root.setOnClickListener(v -> listener.onQuizClicked(quiz));

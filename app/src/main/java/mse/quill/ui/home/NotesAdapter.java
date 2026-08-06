@@ -1,6 +1,5 @@
 package mse.quill.ui.home;
 
-import android.text.format.DateUtils;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -14,6 +13,7 @@ import java.util.List;
 import mse.quill.data.model.Note;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.util.RelativeTime;
 
 public class NotesAdapter extends RecyclerView.Adapter<NotesAdapter.NoteViewHolder> {
 
@@ -66,8 +66,7 @@ public class NotesAdapter extends RecyclerView.Adapter<NotesAdapter.NoteViewHold
         void bind(Note note) {
             titleView.setText(NoteDisplayUtils.resolveTitle(itemView.getContext(), note));
 
-            timestampView.setText(DateUtils.getRelativeTimeSpanString(
-                    note.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS));
+            timestampView.setText(RelativeTime.past(itemView.getContext(), note.updatedAt));
             TagChipView.render(itemView.getContext(), tagsContainer, note.tags);
 
             itemView.setOnClickListener(v -> listener.onNoteClicked(note));

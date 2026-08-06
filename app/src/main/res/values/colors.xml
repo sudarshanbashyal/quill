@@ -57,6 +57,9 @@
     <!-- Misc -->
     <color name="uncategorized_gray">#9E9E9E</color>
     <color name="divider">#EBE9F2</color>
+    <!-- Search box outline: the Figma's rgba(37,38,42,0.17) flattened onto white, so the box reads
+         as an outlined field without Material's heavier default stroke. -->
+    <color name="search_stroke">#D7D6D9</color>
 
     <!-- Launcher icon / splash -->
     <color name="ic_launcher_background">@color/brand_lavender</color>

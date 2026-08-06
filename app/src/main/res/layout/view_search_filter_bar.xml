@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Body of SearchFilterBar. The filter button sits *outside* the box rather than as an end icon
+     inside it, as the Figma draws it: the box is for typing, the button opens a different surface,
+     and putting it inside made it read as part of the field.
+
+     No start icon. The magnifying glass was the one thing making this look like a stock Android
+     search widget rather than the app's own. -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- hintEnabled=false keeps the hint as static placeholder text inside the box (as the
+             Figma draws it) instead of animating it up into a floating label. -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/search_field"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            app:boxBackgroundColor="@color/surface"
+            app:boxCornerRadiusBottomEnd="@dimen/search_corner_radius"
+            app:boxCornerRadiusBottomStart="@dimen/search_corner_radius"
+            app:boxCornerRadiusTopEnd="@dimen/search_corner_radius"
+            app:boxCornerRadiusTopStart="@dimen/search_corner_radius"
+            app:boxStrokeColor="@color/search_stroke"
+            app:boxStrokeWidth="1dp"
+            app:boxStrokeWidthFocused="1dp"
+            app:hintEnabled="false">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/search_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/search_hint"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:textSize="14sp" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/filter_button"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="@dimen/search_filter_button_size"
+            android:layout_height="@dimen/search_filter_button_size"
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:contentDescription="@string/action_filter_and_sort"
+            android:insetBottom="0dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:insetTop="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp"
+            app:icon="@drawable/ic_filter"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="@dimen/search_filter_icon_size"
+            app:iconTint="@color/text_primary" />
+
+    </LinearLayout>
+
+    <!-- Active filters, under the box. Hidden entirely when nothing is filtering, so the bar is
+         one row in the common case. -->
+    <HorizontalScrollView
+        android:id="@+id/active_filters_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_sm"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/active_filters_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+
+    </HorizontalScrollView>
+
+</merge>

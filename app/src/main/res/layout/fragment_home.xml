@@ -101,35 +101,12 @@
 
         </LinearLayout>
 
-        <!-- hintEnabled=false keeps the hint as static placeholder text inside the box (as the
-             Figma draws it) instead of animating it up into a floating label. -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/search_field"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        <mse.quill.ui.search.SearchFilterBar
+            android:id="@+id/search_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/spacing_md"
-            android:layout_marginTop="@dimen/spacing_lg"
-            app:boxCornerRadiusBottomEnd="@dimen/search_corner_radius"
-            app:boxCornerRadiusBottomStart="@dimen/search_corner_radius"
-            app:boxCornerRadiusTopEnd="@dimen/search_corner_radius"
-            app:boxCornerRadiusTopStart="@dimen/search_corner_radius"
-            app:hintEnabled="false"
-            app:startIconDrawable="@android:drawable/ic_menu_search"
-            app:startIconTint="@color/text_secondary">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/search_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/search_hint"
-                android:inputType="text"
-                android:maxLines="1"
-                android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_secondary"
-                android:textSize="14sp" />
-
-        </com.google.android.material.textfield.TextInputLayout>
+            android:layout_marginTop="@dimen/spacing_lg" />
 
         <!-- paddingHorizontal pairs with the matching margin every item view sets on itself; see
              list_item_gutter. -->

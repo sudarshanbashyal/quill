@@ -2,12 +2,9 @@ package mse.quill.ui.home;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,16 +19,20 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 
 import mse.quill.R;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Collection;
+import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
+import mse.quill.data.model.Tag;
 import mse.quill.ui.collections.CollectionDetailFragment;
 import mse.quill.ui.notes.NoteEditorFragment;
+import mse.quill.ui.search.NoteFilter;
+import mse.quill.ui.search.SearchFilterBar;
+import mse.quill.ui.search.SearchFilterDialog;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.WindowInsetsUtils;
 
@@ -53,7 +54,11 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
     private List<Collection> allCollections = new ArrayList<>();
     private List<Note> allNotes = new ArrayList<>();
-    private String searchQuery = "";
+    private List<Tag> allTags = new ArrayList<>();
+    /** Survives a reload; the list is re-derived from it rather than the other way round. */
+    private final NoteFilter filter = new NoteFilter();
+    private SearchFilterBar searchBar;
+    private TagRepository tagRepository;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -67,6 +72,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
         noteRepository = new NoteRepository(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
+        tagRepository = new TagRepository(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCollectionClicked(String collectionId, String displayName) {
@@ -98,13 +104,19 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         pinnedSection = view.findViewById(R.id.pinned_section);
         pinnedCardsContainer = view.findViewById(R.id.pinned_cards_container);
 
-        EditText searchInput = view.findViewById(R.id.search_input);
-        searchInput.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) {
-                searchQuery = s.toString().trim().toLowerCase(Locale.getDefault());
+        searchBar = view.findViewById(R.id.search_bar);
+        searchBar.setListener(new SearchFilterBar.Listener() {
+            @Override public void onQueryChanged(String query) {
+                filter.setQuery(query);
                 applyFilters();
+            }
+
+            @Override public void onFilterRequested() {
+                SearchFilterDialog.show(requireContext(), filter, allTags, HomeFragment.this::onFilterChanged);
+            }
+
+            @Override public void onFilterCleared() {
+                onFilterChanged();
             }
         });
 
@@ -236,6 +248,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         reloadCollections();
         reloadNotes();
         reloadPinnedNotes();
+        reloadTags();
     }
 
     private void reloadPinnedNotes() {
@@ -281,25 +294,31 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         });
     }
 
+    /** Re-runs the filter and redraws the chip row — everything that changing a filter implies. */
+    private void onFilterChanged() {
+        applyFilters();
+        searchBar.render(filter, allTags);
+    }
+
     private void applyFilters() {
-        if (searchQuery.isEmpty()) {
-            homeAdapter.submitCollections(allCollections);
-            homeAdapter.submitNotes(allNotes);
-            return;
-        }
+        homeAdapter.submitCollections(filter.applyToCollections(allCollections));
+        homeAdapter.submitNotes(filter.apply(allNotes));
+    }
 
-        List<Collection> filteredCollections = new ArrayList<>();
-        for (Collection c : allCollections) {
-            if (c.name.toLowerCase(Locale.getDefault()).contains(searchQuery)) filteredCollections.add(c);
-        }
-        homeAdapter.submitCollections(filteredCollections);
-
-        List<Note> filteredNotes = new ArrayList<>();
-        for (Note n : allNotes) {
-            String title = n.title == null ? "" : n.title.toLowerCase(Locale.getDefault());
-            String preview = n.preview == null ? "" : n.preview.toLowerCase(Locale.getDefault());
-            if (title.contains(searchQuery) || preview.contains(searchQuery)) filteredNotes.add(n);
-        }
-        homeAdapter.submitNotes(filteredNotes);
+    private void reloadTags() {
+        tagRepository.loadAllTags(tags -> {
+            if (!isAdded()) return;
+            allTags = tags;
+            // A tag deleted elsewhere would otherwise stay in the filter as a chip that can't be
+            // resolved to a name, silently hiding every note.
+            for (String selected : new ArrayList<>(filter.tagIds())) {
+                boolean stillExists = false;
+                for (Tag tag : allTags) {
+                    if (tag.id.equals(selected)) { stillExists = true; break; }
+                }
+                if (!stillExists) filter.removeTag(selected);
+            }
+            onFilterChanged();
+        });
     }
 }

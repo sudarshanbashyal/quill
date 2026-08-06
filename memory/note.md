@@ -611,6 +611,74 @@ a block insert leaves behind mid-note are structural gaps, not invitations; repe
 prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points it from
 `insertSegment`/`removeSegment`, the two places the list can change shape.
 
+## Timestamps
+
+**`util/RelativeTime` is the only way the app phrases a time** (2026-08-06). It replaced scattered
+`DateUtils.getRelativeTimeSpanString` calls across the note rows, pinned cards, collection cards and
+subtitle, deck rows and quiz rows — which were inconsistent exactly where they are read most: a note
+saved seconds ago rendered as **"Updated 0 minutes ago"**, because that method's minute resolution
+floors to zero instead of saying so in words.
+
+The ladder: `now` · `5 min ago` · `3 hours ago` · `yesterday` · `12 Jun` (`12 Jun 2025` once the
+year differs). `future()` mirrors it (`in 5 min`, `tomorrow`) for a deck's next review. The short
+date's pattern comes from `getBestDateTimePattern`, so field order follows the locale.
+
+Three things worth not re-deriving:
+- **Under a day is elapsed time; "yesterday" is a calendar question.** Mixing them is what stops 30
+  hours ago reading as yesterday when two midnights have passed, and stops 2am reporting
+  "yesterday" for something three hours old.
+- **The day difference is rounded, not truncated** — midnight to midnight is 23 or 25 hours across
+  a daylight-saving change, a bug that would surface twice a year and nowhere else.
+- **A negative distance reads as `now`**, so a record stamped a moment ahead of the clock doesn't
+  render as a date.
+
+Choosing the rung is split from wording it (`Bucket`, package-private) so the boundaries are unit
+tested on the JVM — `RelativeTimeTest`, 8 cases. Wording is a resource lookup and needs a Context.
+
+## Search, filtering and sorting
+
+**Status: built 2026-08-06.** One control, `ui/search/SearchFilterBar`, used by Home and a
+collection's detail screen — they had drifted into two copies of the search field alone. It is a
+compound view holding the box, the filter button and the active-filter chip row.
+
+**The box follows the Figma's HomePage 2 frame** (node `32:600`): white, 1px hairline outline, no
+start icon, with the filter button *outside* it to the right. The magnifying glass was the one
+thing making the screen look like a stock Android search widget, and it was
+`@android:drawable/ic_menu_search` — a framework drawable, against the M3 rule below. The button
+sits outside because the box is for typing and the button opens a different surface; inside, it
+read as part of the field.
+
+**The bar holds no state.** The screen owns a `NoteFilter` and passes it to `render()`; the bar
+reports typing and taps. Filtering runs in memory because both screens already hold every note they
+show — pushing it into SQL would be a round trip per keystroke.
+
+**What it filters and sorts:** query (title + preview), any-of tag selection, pinned-only, and four
+orderings (most recent, oldest, title A–Z, Z–A). Two decisions worth keeping:
+- **Tags are any-of, not all-of.** Picking a second tag should widen, not empty, the list.
+- **Collections ignore tag and pinned filters**, since both are properties of a note — a collection
+  vanishing because none of its notes carried a tag looks like it was deleted. Sorting still
+  applies, so the two lists agree on what "oldest" means. Collections sort on `lastActivityAt`,
+  the value their card already shows.
+
+**Selected tags in the filter sheet are shown by border colour alone, and the border is always
+there.** Two things had to be got right, in order:
+- The chips are tinted with the tag's own colour at rest, so Material's default checked treatment —
+  a background change — lands on a colour already doing something else and reads as no change.
+- The obvious fixes then cause a *layout* problem. A checked icon adds a glyph plus its padding, and
+  a stroke that only appears when selected re-measures the chip; either way the row visibly reflows
+  on every tap. So every chip carries the stroke at all times, painted the same colour as its fill
+  when unselected — present but invisible. Selection changes exactly one colour and nothing
+  re-measures.
+
+Driven by a `ColorStateList` rather than set on toggle, so the chip restyles itself without a
+listener.
+
+**A dialog's list should size to its content, up to a ceiling** (`util/MaxHeightScrollView`). The
+add-existing-notes picker set a *fixed* `note_picker_max_height`, so three candidate notes opened a
+dialog sized for fifty. `WRAP_CONTENT` alone breaks the opposite case — a long list grows past the
+screen and pushes the dialog's buttons off it. Measuring `AT_MOST` against the ceiling gives both.
+Reuse this rather than a fixed height for any dialog list.
+
 ## Export — PDF and Markdown
 
 **Status: built 2026-08-06.** Options menu → **Export** (`ic_share`) opens a second `PopupMenu`

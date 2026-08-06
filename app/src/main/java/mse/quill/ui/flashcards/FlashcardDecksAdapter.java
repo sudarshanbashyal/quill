@@ -2,7 +2,6 @@ package mse.quill.ui.flashcards;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.text.format.DateUtils;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
@@ -13,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.RelativeTime;
 import mse.quill.data.model.FlashcardDeck;
 
 /** The decks list: one row per note that has cards. */
@@ -92,15 +92,12 @@ public class FlashcardDecksAdapter extends RecyclerView.Adapter<FlashcardDecksAd
             if (deck.lastReviewedAt == null) {
                 return context.getString(R.string.flashcards_deck_never_reviewed);
             }
-            long now = System.currentTimeMillis();
             if (hasDue) {
                 return context.getString(R.string.flashcards_deck_last_reviewed_format,
-                        DateUtils.getRelativeTimeSpanString(
-                                deck.lastReviewedAt, now, DateUtils.MINUTE_IN_MILLIS));
+                        RelativeTime.past(context, deck.lastReviewedAt));
             }
             return context.getString(R.string.flashcards_deck_next_format,
-                    DateUtils.getRelativeTimeSpanString(
-                            deck.nextReview, now, DateUtils.MINUTE_IN_MILLIS));
+                    RelativeTime.future(context, deck.nextReview));
         }
     }
 }
