@@ -1,6 +1,9 @@
 <resources>
     <string name="app_name">Quill</string>
 
+    <!-- Spoken by TalkBack for every header's back arrow (see Widget.Quill.Button.Back). -->
+    <string name="action_back">Back</string>
+
     <string name="home_greeting">Welcome back</string>
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
     <string name="search_hint">Search notes or collections…</string>
@@ -64,6 +67,9 @@
     <string name="dialog_add_existing_notes_title">Add existing notes</string>
 
     <string name="untitled_note_with_date">Untitled Note - %s</string>
+    <!-- Only ever seen in the layout preview and for the instant before a note loads: the editor
+         replaces this with the note's own "Untitled Note - <date>" name. -->
+    <string name="note_title_hint">Title</string>
 
     <string name="recording_in_progress_title">Recording audio…</string>
     <string name="recording_timer_placeholder">0:00</string>
@@ -91,6 +97,22 @@
     <string name="action_turn_into_flashcards">Turn into flashcards</string>
     <string name="action_review_flashcards">Review flashcards</string>
     <string name="action_make_quiz">Make quiz</string>
+
+    <!-- Export -->
+    <string name="action_export">Export</string>
+    <string name="action_export_pdf">Export as PDF</string>
+    <string name="action_export_markdown">Export as Markdown</string>
+    <!-- Stands in for a recording in an exported file, which can hold neither the audio nor a
+         control for it. %1$s is the clip's length, m:ss. -->
+    <string name="export_audio_placeholder">Embedded Audio Recording - %1$s</string>
+    <string name="export_image_placeholder">[Embedded image]</string>
+    <string name="export_complete_title">Note exported</string>
+    <string name="export_complete_location">Saved to Downloads/Quill\n%1$s</string>
+    <string name="action_open_export">Open</string>
+    <!-- action_done is shared with the whiteboard's toolbar; the dialog's dismiss button reuses it. -->
+    <string name="export_no_viewer">No app on this device can open that file</string>
+    <string name="export_failed">Could not export this note</string>
+    <string name="export_empty">There is nothing in this note to export yet</string>
     <string name="action_open_quiz">Open quiz</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>
 
@@ -212,6 +234,18 @@
     <string name="delete_image_message">This image will be removed from the note.</string>
     <string name="delete_qa_title">Delete question?</string>
     <string name="delete_qa_message">This question and its answer will be removed from the note.</string>
+    <!-- Audio playback: the note's own card, the floating pill, and the notification the two share
+         with the lock screen. -->
+    <string name="action_play_audio">Play recording</string>
+    <string name="action_pause_audio">Pause recording</string>
+    <string name="action_close_audio">Stop recording playback</string>
+    <string name="audio_notification_text">Recording from your note</string>
+    <string name="audio_notification_fallback_title">Quill recording</string>
+    <!-- %1$s is the note's title, shown in the now-playing bar while it is being read aloud. -->
+    <string name="reading_aloud_label">Reading: %1$s</string>
+    <string name="audio_channel_name">Audio playback</string>
+    <string name="audio_channel_description">Controls for a recording playing from one of your notes.</string>
+
     <string name="delete_audio_title">Delete audio?</string>
     <string name="delete_audio_message">This audio clip will be removed from the note.</string>
     <string name="action_create_whiteboard">New Whiteboard</string>

@@ -6,4 +6,10 @@
     <files-path
         name="images"
         path="images/" />
+    <!-- Exported notes, so the "Open" button on the export dialog has a shareable uri to hand to
+         a viewer. Only reachable below API 29 — from there up the export is a MediaStore entry and
+         its own uri is already shareable. -->
+    <external-path
+        name="exports"
+        path="Download/Quill/" />
 </paths>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Body of the export-complete dialog. The badge and the two lines are animated in by
+     NoteEditorFragment.showExportComplete() once the dialog is on screen — the layout only
+     positions them, and starts them invisible so the first frame isn't the finished state. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:paddingStart="@dimen/export_dialog_padding"
+    android:paddingEnd="@dimen/export_dialog_padding"
+    android:paddingTop="@dimen/export_dialog_padding"
+    android:paddingBottom="@dimen/export_dialog_padding_bottom">
+
+    <FrameLayout
+        android:id="@+id/export_badge"
+        android:layout_width="@dimen/export_badge_size"
+        android:layout_height="@dimen/export_badge_size"
+        android:background="@drawable/bg_export_badge"
+        android:alpha="0">
+
+        <ImageView
+            android:id="@+id/export_badge_icon"
+            android:layout_width="@dimen/export_badge_icon_size"
+            android:layout_height="@dimen/export_badge_icon_size"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/export_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/export_dialog_gap"
+        android:alpha="0"
+        android:text="@string/export_complete_title"
+        android:textColor="@color/text_primary"
+        android:textSize="@dimen/export_title_text_size"
+        android:textStyle="bold" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/export_filename"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/export_dialog_gap_small"
+        android:alpha="0"
+        android:gravity="center_horizontal"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/export_filename_text_size" />
+
+</LinearLayout>

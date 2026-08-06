@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Formats a note can leave Quill as, shown from the options menu's Export item. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/action_export_pdf"
+        android:icon="@drawable/ic_menu_pdf"
+        android:title="@string/action_export_pdf" />
+
+    <item
+        android:id="@+id/action_export_markdown"
+        android:icon="@drawable/ic_menu_markdown"
+        android:title="@string/action_export_markdown" />
+
+</menu>

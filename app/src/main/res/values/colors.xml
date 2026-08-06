@@ -39,6 +39,10 @@
     <!-- Q&A blocks. The rule beside an answer is sampled from the MSE Figma's QA frame; the
          question colour is that frame's 59%-black, deliberately not text_secondary (which is a
          purple-grey tuned for note metadata, and reads as a different kind of text here). -->
+    <!-- The not-yet-played part of a waveform. Light enough to read as the track behind the
+         playhead rather than as a second colour competing with the brand purple. -->
+    <color name="waveform_unplayed">#D5D2E4</color>
+
     <color name="qa_answer_rule">#30B488</color>
     <color name="qa_question_text">#96000000</color>
 

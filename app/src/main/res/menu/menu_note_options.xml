@@ -18,4 +18,12 @@
         android:icon="@drawable/ic_menu_quiz"
         android:title="@string/action_make_quiz" />
 
+    <!-- Opens a second menu (menu_note_export) rather than listing PDF and Markdown here: the
+         choice of format is a detail of exporting, and two more rows would make the note's
+         actions harder to scan for the sake of it. -->
+    <item
+        android:id="@+id/action_export"
+        android:icon="@drawable/ic_menu_share"
+        android:title="@string/action_export" />
+
 </menu>

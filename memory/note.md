@@ -611,6 +611,153 @@ a block insert leaves behind mid-note are structural gaps, not invitations; repe
 prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points it from
 `insertSegment`/`removeSegment`, the two places the list can change shape.
 
+## Export — PDF and Markdown
+
+**Status: built 2026-08-06.** Options menu → **Export** (`ic_share`) opens a second `PopupMenu`
+offering **PDF** (`ic_pdf`) and **Markdown** (`ic_markdown`). Both write into
+`Downloads/Quill/<title>_<timestamp>.<ext>` via `util/NoteExportStore`, which is `ImageExporter`'s
+sibling — MediaStore with `IS_PENDING` on API 29+, a plain file plus `WRITE_EXTERNAL_STORAGE` below
+it. Segments are read on the main thread and the file written on the disk thread, so an export is
+of what's on screen, not of the last autosave. Nothing is saved first: unlike flashcards or a quiz,
+exporting shouldn't be what creates a note's row.
+
+**Markdown (`MarkdownExporter`) is deliberately thin** — the note already *is* Markdown, so text
+passes straight through `MarkdownSerializer`. The work is only the parts that are Quill's rather
+than Markdown's, and each is resolved toward "readable elsewhere" rather than "reloadable here"
+(the database is the copy that round-trips): `quill://` embeds become italic placeholder lines,
+```` ```quill-qa ```` fences become bold **Q:**/**A:** paragraphs, and the title — which lives on the
+note's row, not in the document — is prepended as an H1.
+
+**PDF (`PdfExporter`) preserves styling almost for free**, because the note's text is already a
+`Spanned` and `StaticLayout` draws bold, italic, underline and bullets natively. Only headings need
+translating: the editor stores them as invisible line markers and derives size/weight at display
+time, so the exporter re-derives the same spans at `RichTextField`'s scales (1.6 / 1.3). Copying
+into a `SpannableStringBuilder` first is what makes deleting the markers safe — it moves the
+existing spans as characters are removed.
+
+Two things worth knowing about the layout code:
+- **Coordinates are PostScript points at 72dpi** (A4 = 595×842), never dp. A PDF has no screen
+  density, and using dp would make the output depend on the device that produced it.
+- **Pagination draws the whole layout clipped**, translated so the first wanted line lands at the
+  cursor, rather than re-laying out a slice — re-measuring a subrange would re-wrap it and lose the
+  bullet gutter. `drawLines` returns the first line it didn't draw.
+
+**Audio becomes "Embedded Audio Recording - m:ss"** in both formats — in the PDF as a filled block,
+so a reader skimming sees the same shape of document the note has. It is the one part of a recording
+a reader can still act on.
+
+**Fixed on the way**: `MarkdownSerializer` was encoding a heading's *derived* bold span, because its
+skip-guard only recognised a span starting at `lineContentStart` while `RichTextField` applies it
+from `lineStart` — the invisible marker included. Invisible in the app (a heading is re-bolded from
+its marker on load) but it surfaced in an export as `# **Heading**`. The guard now accepts either
+bound.
+
+**The confirmation is a dialog, not a Snackbar** (`dialog_export_complete`): format badge, filename,
+and **Open** / Done. A Snackbar took the useful action away again after a few seconds — long enough
+to miss, and unrecoverable, since nothing in the app lists past exports. The badge springs in
+(`OvershootInterpolator`, 320ms) and the two lines rise behind it; the buttons are usable
+throughout.
+
+**Opening needs a uri, so `NoteExportStore.save` returns `Saved(displayName, uri)`.** On API 29+
+that's the MediaStore row's own uri; below it, a `FileProvider` uri — hence the `external-path`
+entry for `Download/Quill/` added to `file_paths.xml`, since a `file://` uri can't be handed to
+another app.
+
+**Markdown is opened with two attempts.** Almost nothing registers for `text/markdown` — a stock
+emulator image has *no* handler at all, while everything handles `text/plain` — so the accurate
+type is tried first and the readable one is the fallback. Without it, Open on a Markdown export was
+a button that could only ever fail. PDF needs no fallback (Google's viewer handles it).
+
+**Performance is a non-issue for text**, measured on the emulator: 4.9K chars → 35ms; 38K → 43ms;
+**304K chars (a 75-page PDF) → 150ms**, Markdown 49ms. It runs on the disk thread regardless.
+Images are the cost that would matter — each is decoded to ≤1600px and drawn — and that has not
+been measured.
+
+**Not done: sharing.** Export writes a file and offers to open it; it does not offer a share sheet,
+despite the share icon. Images in a Markdown export are a placeholder, not a file — a single `.md`
+can't carry them, and a folder-based export was out of scope.
+
+## Who owns a press on a waveform
+
+**A waveform is only a scrubber while its clip is loaded** (`WaveformBarsView.setScrubbable`, driven
+from `AudioSegmentView.render()` with `AudioPlayback.isCurrent`). The two modes exist because the
+same pixels mean different things:
+
+- **Live clip** — seek on `ACTION_DOWN` and follow the finger. Immediacy is the whole point, and the
+  view claims the gesture from the scrolling note up front.
+- **Dormant clip** — the card's long press (**delete the recording**) has to be reachable, so
+  nothing happens on the way down. A hold past `ViewConfiguration.getLongPressTimeout()` delegates
+  to the parent's `performLongClick()`; a lift before that seeks (which starts the clip); a
+  horizontal drag past the slop becomes a scrub and claims the gesture *then*, not before; a
+  **vertical** drag past the slop returns `false` and lets the scrolling note intercept.
+
+The bug this fixes: `onTouchEvent` consumed `ACTION_DOWN` unconditionally, so a long press anywhere
+over the waveform never reached the segment's long-click listener — and because seeking a dormant
+clip *starts* it, holding to delete instead began playing the recording at whatever point the finger
+landed. The delete gesture was only reachable on the card's padding, the play button and the time
+label.
+
+Worth remembering generally: **a child that consumes `ACTION_DOWN` silently removes its parent's
+long press.** Any time a custom view sits inside a card with a long-press action, it owns that
+decision whether or not it means to.
+
+## Audio that finishes closes itself
+
+**Both players tear down at the end of their audio** (2026-08-06), so the now-playing bar is never
+a control for nothing. Read-aloud already did — `NoteReader` fires `onReadingFinished` on the last
+chunk and `ReadAloud` clears. `AudioPlayback` deliberately did the opposite, staying loaded so the
+bar could offer to replay a finished clip; it now reaches the same end state as ✕, notification and
+foreground service included. The replay affordance lives on the note's own card, which resets to a
+play button and the clip's full length as soon as it stops being the current clip.
+
+The close is **posted, not run inline** — the callback comes from the `MediaPlayer` that `close()`
+is about to release — and **keyed to the path that finished**, because a tap queued ahead of that
+post can have started a different clip by the time it runs.
+
+**A test-data trap that cost real time here.** The seeded clip in the emulator's
+`files/audio/*.m4a` was an **Ogg Vorbis file with an `.m4a` extension** (`afinfo` says
+`File type ID: Oggf`). Android plays it, reports a 30s duration, then pins `getCurrentPosition()`
+near 29s and **never fires `onCompletion`** — which reads exactly like "the audio keeps replaying
+and the bar never closes", i.e. like a bug in this code. If a clip won't end, check the container
+before the logic: `run-as mse.quill cat files/audio/<f>` out and run `afinfo` on it. A clip made
+with `say -o clip.m4a --data-format=aac …` completes properly.
+
+## Read-aloud
+
+**Status: made screen-independent 2026-08-06.**
+
+**Who owns the voice.** `audio/ReadAloud` is a process-wide singleton holding one
+`audio/NoteReader` (the `TextToSpeech` wrapper) for the life of the app. It is the TTS counterpart
+of `AudioPlayback`, and it exists for the same reason: the engine used to be a **field on
+`NoteEditorFragment`**, stopped in `onPause` and shut down in `onDestroyView`, so a reading died the
+instant you navigated anywhere. Now the editor only *asks* for a reading and the now-playing bar
+controls it from every screen. `NoteReader` moved out of `ui.notes.editor` into `audio` to match —
+it is an engine, not a part of a screen.
+
+**Nothing is cached that the reader already knows.** `isActive()`, `isPlaying()` and `progress()`
+read straight through to the reader, so `MiniPlayerView` and the note's own menu cannot disagree
+about whether a voice is speaking. The earlier design pushed state *into* `ReadAloud` via
+`started`/`update`/`ended` and had to be re-pushed after every control; those are gone.
+
+**A reading is identified by note id**, which is what lets the editor's menu offer "Stop reading"
+for *its* note and "Play aloud" while a different note reads on in the background. Two seams keep
+that id honest: a note read before it was ever saved starts with a null id and picks one up from
+`ReadAloud.noteIdMinted` at the moment `autoSave` mints it, and renaming a note that is being read
+calls `retitle` so the bar doesn't keep the old name.
+
+**One voice at a time**, enforced at both ends: starting a reading closes `AudioPlayback` first, and
+`AudioSegmentView` calls `ReadAloud.stopOther()` before playing a clip. The bar's clip-wins
+tie-break is therefore a belt-and-braces branch, not a case that should occur.
+
+**Opening flashcards or a quiz no longer stops the reading.** It used to, on the reasoning that
+those screens are "a different mode" — but that reasoning came from the era when a reading belonged
+to the open note, and the bar is present on those screens like everywhere else.
+
+**Not done: the lock screen.** `AudioPlaybackService` (foreground service + `MediaSession`) is still
+written entirely against `AudioPlayback`, so a reading has no notification and no lock-screen
+controls; it survives in-app navigation, not the app going away. Giving read-aloud the same
+treatment means generalising that service over both sources.
+
 ## Flashcards
 
 **Status: built 2026-07-30** (Epic D's generation/sync and the per-note review screen; the
@@ -618,7 +765,8 @@ global cross-note session and reminders are still outstanding).
 
 **Entry point.** The note editor's toolbar carries an options button (`ic_option`, ⋮) where
 the read-aloud button used to sit. Its menu is "Play aloud" (title/icon toggle to "Stop
-reading" while speaking, hidden when there is nothing to read) and "Turn into flashcards" —
+reading" while *this note* is being read — see "Read-aloud" — hidden when there is nothing to
+read) and "Turn into flashcards" —
 which becomes **"Review flashcards"** once the note has cards. That flag is re-asked on every
 `onResume` rather than cached at load, so deleting a deck puts the label back.
 The voice picker is still a **long-press** on that button, exactly as it was on the button it
@@ -775,7 +923,9 @@ invocations are 200-400ms apart, slower than a person).
 - **`NoteReader` / TTS.** `TextToSpeech` binds asynchronously and `onDestroyView` → `shutdown()`
   nulled the field; leaving a note before the bind completed crashed the app in the init callback.
   The callback now takes a local reference and bails on a `shutDown` flag. Any per-screen async
-  engine handle needs the same shape.
+  engine handle needs the same shape. *(The reader is no longer per-screen — see "Read-aloud" — so
+  nothing calls `shutdown()` in normal operation and this race can't fire today. The guards stay:
+  they are what makes the class safe to release at all.)*
 - **`NoteEditorFragment.autoSave` deleting the note you just opened.** `loadNote` is async, so a
   note opened and left before the read returns has an empty title and no segments — `hasContent`
   was false and it took the "user emptied this" branch. Guarded by `contentLoaded`. Empty fields

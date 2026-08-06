@@ -5,33 +5,61 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Top toolbar — no title text (the note's own title field below serves that purpose), so
-         kept compact rather than a full-height empty app bar. -->
-    <androidx.appcompat.widget.Toolbar
-        android:id="@+id/toolbar"
+    <!-- Header: back, title, options — one row, the way every other screen's header reads. The
+         title used to be the first thing inside the ScrollView, which left the bar above it
+         holding nothing but two buttons and put the note's name on a line of its own. It's the
+         subject of this screen, so it belongs beside the controls that act on it; keeping it out
+         of the scrolling content also means it stays legible while you write further down. -->
+    <LinearLayout
+        android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="48dp"
-        app:navigationIcon="?attr/homeAsUpIndicator"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="@dimen/spacing_sm"
+        android:paddingVertical="@dimen/spacing_sm"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/back_button"
+            style="@style/Widget.Quill.Button.Back"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+        <!-- Single line, unlike the two it used to get: a title that grows to a second line while
+             being typed would shove the whole note down a row mid-keystroke. Long titles scroll
+             within the field instead. -->
+        <EditText
+            android:id="@+id/note_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@null"
+            android:hint="@string/note_title_hint"
+            android:imeOptions="actionNext"
+            android:inputType="textNoSuggestions"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
         <!-- Everything the whole note can have done to it — read aloud, turned into flashcards —
-             lives behind this one control, in the toolbar rather than beside the title so it stays
-             put as the note scrolls. -->
+             lives behind this one control. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/note_options_button"
             style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="end|center_vertical"
             android:contentDescription="@string/action_note_options"
             app:icon="@drawable/ic_option"
             app:iconSize="@dimen/note_options_icon_size"
             app:iconTint="@color/text_primary" />
 
-    </androidx.appcompat.widget.Toolbar>
+    </LinearLayout>
 
     <!-- Scrollable note content -->
     <ScrollView
@@ -39,7 +67,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:fillViewport="true"
-        app:layout_constraintTop_toBottomOf="@id/toolbar"
+        app:layout_constraintTop_toBottomOf="@id/header"
         app:layout_constraintBottom_toTopOf="@id/formatting_toolbar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
@@ -51,23 +79,10 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <EditText
-                android:id="@+id/note_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Title"
-                android:textSize="24sp"
-                android:textStyle="bold"
-                android:background="@null"
-                android:inputType="textNoSuggestions"
-                android:imeOptions="actionNext"
-                android:maxLines="2" />
-
             <HorizontalScrollView
                 android:id="@+id/tag_row_scroll"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
                 android:scrollbars="none"
                 android:visibility="gone">
 

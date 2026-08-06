@@ -6,6 +6,10 @@
     <dimen name="spacing_md">16dp</dimen>
     <dimen name="spacing_lg">24dp</dimen>
 
+    <!-- Back arrow. One size for every screen's header (see Widget.Quill.Button.Back): the chevron
+         is the same gesture wherever it appears, so it should be the same object. -->
+    <dimen name="back_icon_size">20dp</dimen>
+
     <!-- Cards -->
     <dimen name="card_corner_radius">18dp</dimen>
     <dimen name="card_elevation">0dp</dimen>
@@ -85,6 +89,27 @@
     <!-- Q&A segment (QASegmentView). Proportions follow the MSE Figma's QA frame, scaled to the
          app's 16sp body type: a tonal rounded block, the question above, the answer indented
          behind a vertical rule. -->
+    <!-- Recording blocks in a note. Sized to match a Q&A block's card so the two read as siblings;
+         the waveform is given real height because it's the part carrying the information. -->
+    <dimen name="audio_block_padding">12dp</dimen>
+    <dimen name="audio_block_spacing">8dp</dimen>
+    <dimen name="audio_block_gap">12dp</dimen>
+    <dimen name="audio_waveform_height">36dp</dimen>
+    <dimen name="audio_play_button_size">40dp</dimen>
+    <dimen name="audio_time_text_size">12sp</dimen>
+
+    <!-- Play/pause glyph (Widget.Quill.Button.Play). Bigger than a bordered icon would be: with no
+         disc behind it, the glyph is the whole control. -->
+    <dimen name="play_icon_size">26dp</dimen>
+
+    <!-- The now-playing bar (MiniPlayerView), across the top of every screen. -->
+    <dimen name="mini_player_padding_horizontal">8dp</dimen>
+    <dimen name="mini_player_padding_vertical">6dp</dimen>
+    <dimen name="mini_player_button_size">44dp</dimen>
+    <dimen name="mini_player_icon_size">16dp</dimen>
+    <dimen name="mini_player_waveform_height">20dp</dimen>
+    <dimen name="mini_player_title_text_size">13sp</dimen>
+
     <dimen name="qa_block_padding">12dp</dimen>
     <dimen name="qa_block_spacing">8dp</dimen>
     <dimen name="qa_corner_radius">12dp</dimen>
@@ -94,6 +119,16 @@
 
     <!-- Popup menu items (see ic_menu_flashcard.xml). -->
     <dimen name="menu_icon_size">22dp</dimen>
+
+    <!-- Export-complete dialog. -->
+    <dimen name="export_dialog_padding">24dp</dimen>
+    <dimen name="export_dialog_padding_bottom">8dp</dimen>
+    <dimen name="export_dialog_gap">16dp</dimen>
+    <dimen name="export_dialog_gap_small">6dp</dimen>
+    <dimen name="export_badge_size">72dp</dimen>
+    <dimen name="export_badge_icon_size">36dp</dimen>
+    <dimen name="export_title_text_size">20sp</dimen>
+    <dimen name="export_filename_text_size">13sp</dimen>
 
     <!-- Note editor toolbar. The options button's icon is three dots, so it wants to be smaller
          than a normal 24dp glyph or it reads as a heavy blob. -->

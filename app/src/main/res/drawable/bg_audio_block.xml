@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Recording block surface. Same tonal fill and radius as a Q&A block: both are things the note
+     contains rather than chrome around it, so they should read as the same kind of object. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface_container" />
+    <corners android:radius="@dimen/qa_corner_radius" />
+</shape>

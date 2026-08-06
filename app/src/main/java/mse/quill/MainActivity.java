@@ -1,10 +1,18 @@
 package mse.quill;
 
+import android.Manifest;
+import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.ContextCompat;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -19,6 +27,7 @@ import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 
+import mse.quill.ui.audio.MiniPlayerView;
 import mse.quill.util.WindowInsetsUtils;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
@@ -27,6 +36,15 @@ public class MainActivity extends AppCompatActivity {
 
     /** Latest bottom system-bar inset, re-applied whenever the bottom bar is shown or hidden. */
     private int bottomSystemInset;
+
+    /** Whether this session has already put the notification request in front of the user. */
+    private boolean notificationPermissionAsked;
+
+    private final ActivityResultLauncher<String> notificationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                // Nothing to do either way: playback already started, and the service copes with
+                // having no visible notification.
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,7 +67,55 @@ public class MainActivity extends AppCompatActivity {
         });
 
         applyTopInsetToEveryScreen();
+        setupNowPlayingBar();
         setupBottomNavigation();
+    }
+
+    /**
+     * Puts the now-playing bar above the screens and settles who runs up behind the status bar.
+     *
+     * <p>While the bar is showing it is the topmost thing in the window, so it takes the status-bar
+     * inset and the screen below it takes none; when it goes away the screens take it back. Without
+     * the handover, one of the two ends up with a status bar's worth of empty space it didn't earn.
+     */
+    private void setupNowPlayingBar() {
+        View root = findViewById(R.id.main);
+        MiniPlayerView miniPlayer = findViewById(R.id.mini_player);
+        WindowInsetsUtils.applyChromeTopInset(miniPlayer);
+        miniPlayer.setVisibilityListener(visible ->
+                WindowInsetsUtils.setChromeOwnsTopInset(root, visible));
+    }
+
+    /**
+     * Asks for notification permission the first time a recording is played, and never otherwise.
+     *
+     * <p>The audio doesn't need it — the foreground service runs either way, so a locked phone
+     * keeps playing. What is lost by refusing is the notification, which is also the lock-screen
+     * and shade control. That makes "play" the only moment where the request means anything, so
+     * it's the only moment it's made; asking at launch would be a prompt about a feature the user
+     * hasn't touched yet.
+     */
+    /** Same request, for a view that only has a context — a segment deep inside a note is where
+     *  the first play actually happens, and it has no handle on the activity. */
+    public static void requestPlaybackNotificationPermission(Context context) {
+        while (context instanceof ContextWrapper) {
+            if (context instanceof MainActivity) {
+                ((MainActivity) context).ensurePlaybackNotificationPermission();
+                return;
+            }
+            context = ((ContextWrapper) context).getBaseContext();
+        }
+    }
+
+    public void ensurePlaybackNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        if (notificationPermissionAsked) return; // One refusal is an answer.
+        notificationPermissionAsked = true;
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
     }
 
     /**

@@ -9,6 +9,19 @@
     tools:context=".MainActivity"
     >
 
+    <!-- Whatever Quill is playing — a recording from a note, or a note being read aloud — above
+         every screen and gone when there is nothing. A row of its own rather than something
+         floating over the content: hovering covered the controls of whatever was underneath.
+         Collapsed to nothing when hidden, so the nav host starts at the top as it always did. -->
+    <mse.quill.ui.audio.MiniPlayerView
+        android:id="@+id/mini_player"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/nav_host_fragment"
         android:name="androidx.navigation.fragment.NavHostFragment"
@@ -16,7 +29,7 @@
         android:layout_height="0dp"
         app:navGraph="@navigation/nav_graph"
         app:defaultNavHost="true"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/mini_player"
         app:layout_constraintBottom_toTopOf="@id/bottom_nav"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

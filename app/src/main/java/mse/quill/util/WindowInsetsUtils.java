@@ -41,10 +41,39 @@ public final class WindowInsetsUtils {
      * content sheet that overlaps the header's bottom edge.
      */
     public static void applyTopInset(View view) {
+        apply(view, true);
+    }
+
+    /**
+     * The same, for chrome that sits <em>above</em> the screens — the now-playing bar. It always
+     * takes the inset, and while it is on screen the screens below it take none: see
+     * {@link #setChromeOwnsTopInset}.
+     */
+    public static void applyChromeTopInset(View view) {
+        apply(view, false);
+    }
+
+    /**
+     * Moves the status-bar inset between the chrome bar and the screens as the bar comes and goes.
+     *
+     * <p>Only one of them can pay for it. Whichever is topmost has to run up behind the status bar;
+     * the other must not add a second gap of the same height. Changing this re-dispatches insets
+     * from the activity's root, which is what re-runs every listener registered above.
+     */
+    public static void setChromeOwnsTopInset(View activityRoot, boolean owns) {
+        if (chromeOwnsTopInset == owns) return;
+        chromeOwnsTopInset = owns;
+        ViewCompat.requestApplyInsets(activityRoot);
+    }
+
+    private static boolean chromeOwnsTopInset = false;
+
+    private static void apply(View view, boolean yieldsToChrome) {
         int layoutPaddingTop = view.getPaddingTop();
         int layoutMinHeight = view.getMinimumHeight();
         ViewCompat.setOnApplyWindowInsetsListener(view, (v, insets) -> {
-            int statusBar = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
+            int statusBar = yieldsToChrome && chromeOwnsTopInset
+                    ? 0 : insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
             v.setPadding(v.getPaddingLeft(), layoutPaddingTop + statusBar,
                     v.getPaddingRight(), v.getPaddingBottom());
             v.setMinimumHeight(layoutMinHeight + statusBar);

@@ -935,3 +935,307 @@ since the editor's target is the toolbar, neither clobbers the other. `NavHostFr
 
 **Verified**: Home purple with the subtitle clear of the sheet; editor, flashcards and quizzes
 white with their headers clear of the clock.
+
+## 2026-08-05 — Inserting a Q&A block jumped to the top of the note
+
+**Bug**: adding a Q&A block from the toolbar while writing at the bottom of a long note threw the
+editor back to the top of the note, and the new block ended up behind the keyboard.
+
+Two separate scroll bugs stacked, both in `NoteEditorView`:
+
+1. **Focusing a block that has no bounds yet.** `insertQaBlockAfterFocused` called
+   `focusQuestion()` in the same breath as `addView`. The ScrollView is asked to reveal a child
+   that hasn't been measured, so it reveals where a zero-sized child nominally sits — the top.
+   Nothing corrected it afterwards, because the keyboard is *already up* when a block is inserted:
+   `reserveKeyboardSpace` sees the padding unchanged, returns early, and never fires
+   `revealFocusedInput`. Fix: focus and reveal from a `OneShotPreDrawListener`, when the block has
+   real bounds.
+
+2. **The reveal was losing a race it looked like it had won.** Splitting the segment above calls
+   `setText`, which drops that field's caret to 0; a TextView brings its own caret into view from
+   *its* pre-draw pass, and — registered first — that was already running as a `smoothScrollBy` by
+   the time the reveal went. An immediate `scrollBy` lands on the block and is then simply animated
+   away by the in-flight scroller on the next draw. Logging `ScrollView`'s scroll changes with a
+   stack trace showed it exactly: 715 → 1225 → 1369 (the reveal), then `computeScroll` dragging it
+   back to 715 and animating to 1068. Fix: ask for a *non-immediate* reveal — `smoothScrollBy`
+   restarts the scroller rather than racing it — and put the split field's caret at the split point
+   instead of leaving it at 0.
+
+Lesson for this editor: **a scroll you perform synchronously is not final if a TextView in the same
+tree has a pending caret-reveal.** Match its mechanism (smooth, so the scrollers merge) rather than
+trying to out-order it.
+
+Image and audio inserts had byte-identical split code with the same latent bug, so they now share
+`splitFocusedTextForBlockInsert` and `focusOnceVisible`.
+
+**Verified on the emulator** (emulator-5554): Q&A inserted mid-paragraph, at the end of a long
+note, and after existing blocks — each time the block lands fully visible above the keyboard with
+the caret in Question. Image insert re-checked through the photo picker. Unit tests pass;
+`connectedDebugAndroidTest` can't compile on this branch for a pre-existing reason —
+`NoteRepositoryMarkdownTest` still calls the 3-arg `NoteRepository.createNote`, which now takes 4.
+
+## 2026-08-05 (same session) — One header line, one back arrow, and a title you can just type
+
+**The editor's header.** Back and options sat in a `Toolbar` with nothing between them while the
+note's title was the first row *inside* the ScrollView — two lines doing the job of one. The title
+moved up between the two buttons and the `Toolbar` became a plain `LinearLayout` header (id
+`toolbar` → `header`, which `topInsetTarget` follows). Consequences worth knowing:
+
+- The title no longer scrolls away, which is the point — but it also can't wrap any more. Two lines
+  growing under the caret would shove the whole note down a row mid-keystroke, so it's `maxLines=1`
+  at 20sp and long titles scroll inside the field.
+- Its `imeOptions="actionNext"` broke: the next focusable after the header is the formatting
+  toolbar, so "next" focused the *italic button*. `NoteEditorView.focusBodyStart()` plus an
+  `OnEditorActionListener` sends the caret to the top of the body instead. Worth remembering that
+  moving an EditText across the layout silently re-points its next-focus.
+
+**One back arrow.** Four screens each drew a TextView holding a literal "←" and the editor showed
+the platform's default — five arrows for one gesture. All five are now
+`@style/Widget.Quill.Button.Back` (new `values/styles.xml`): `ic_back` in a
+`Widget.Material3.Button.IconButton`, sized by `back_icon_size`. A new screen gets the arrow by
+naming the style. The quiz's "← Previous" button is deliberately untouched — that arrow means the
+previous *question*, not leaving the screen.
+
+**The untitled title is a hint now.** A new note used to have "Untitled Note - <date>" typed into
+the field for real, so naming it began with selecting a sentence and deleting it. It's the field's
+hint instead, and an existing note whose title is empty gets the same hint from its `createdAt`, so
+the editor reads the same as every list. One knock-on: the pre-filled title was also what made a
+brand-new note save (and its "+ Add tag" chip appear) the moment the editor opened. An untitled,
+empty note now isn't written at all until there's real content — which is what `autoSave` already
+says it wants ("blank note — don't create a row for it"), so the chip appears on the first
+keystroke rather than on open.
+
+**Verified on the emulator**: header aligned on one row with the hint in grey; typing a title
+straight over the hint; "next" landing in the body; the chevron on note editor, collection detail,
+flashcard review, quiz detail and quiz session (the last needed a note with five complete Q&A
+blocks built by hand to reach); a body-only note reading "Untitled Note - Aug 5, 2026" in both the
+list and the editor.
+
+## 2026-08-05 (same session) — Audio grew up: a real block, and playback that outlives the screen
+
+Recordings were a `▶` button with a duration beside it, wrapped to its contents, and a
+`MediaPlayer` living inside the segment view — so leaving the note killed the sound.
+
+**The block.** `AudioSegmentView` is now a full-width card (same tonal fill and radius as a Q&A
+block, so the two read as siblings): round play/pause button, waveform, elapsed/total time. The
+waveform is scrubbable — dragging seeks, and dragging on a clip that isn't the live one starts it
+first and lands the playhead where the finger went down.
+
+**The waveform is measured, not decorative.** `WaveformCache` decodes the file with
+MediaExtractor + MediaCodec and keeps the RMS of each of 256 buckets, normalised to the clip's own
+peak (a quietly recorded memo would otherwise be a flat line). Views resample those buckets to
+however many bars they can fit, so one decode serves the full-width card and the pill's short
+strip. Notably the live recording waveform **can't** be reused: it's polled
+`MediaRecorder#getMaxAmplitude()`, never stored, and clips recorded before this existed would have
+nothing. Decoding runs on the shared disk thread and is cached for the process's life; failure
+falls back to a flat placeholder rather than breaking the note.
+
+**Playback moved out of the view.** `AudioPlayback` is one process-wide player; segments and the
+pill are just controls that ask it questions. That's what makes a clip survive leaving the note.
+`AudioPlaybackService` is a `mediaPlayback` foreground service holding a `MediaSession` and a
+`MediaStyle` notification — two mechanisms doing two different jobs: **the foreground service is
+what stops the system freezing the process** once Quill isn't visible, and **the media session is
+what puts controls on the lock screen** and makes headset buttons work. The player deliberately
+lives *outside* the service so views can read state synchronously with no binding dance.
+`POST_NOTIFICATIONS` is asked for on the first play, since refusing costs the controls, not the
+audio.
+
+**The pill** (`MiniPlayerView`) floats over the content in `activity_main`, so no screen loses
+height to it. Two things it has to negotiate: it takes the gesture inset only on screens where the
+tab bar is gone, and it hides itself while the IME is up — the keyboard and the editor's
+formatting bar own the bottom of the screen then. That IME check lives in `MainActivity`, not the
+editor, because a view gets exactly one insets listener and `KeyboardInsetsHandler` already claims
+the editor's root.
+
+Cost accepted: the pill covers the last line of a note, and it swallows taps so they can't land on
+the text behind it.
+
+**Verified on the emulator**: recorded a clip, then swapped a real 30s file into the app's private
+dir (the emulator's mic records silence, so the decoded waveform was flat until then) — bars match
+the audio's shape. Playing then locking the phone: `dumpsys power` says `mWakefulness=Asleep`
+while `dumpsys audio` shows Quill's MediaPlayer `state:started`; the system media card shows title,
+pause and a seek bar in the shade. Playback survives navigating to Home; pause and ✕ from the pill
+work (`PlaybackState` PAUSED, then service and session both gone); the pill hides for the keyboard
+while audio keeps playing. Unit tests pass.
+
+## 2026-08-06 — Read-aloud outlives the note too
+
+**Ask:** a recording keeps playing (and keeps its bar) when you leave the note; "Play aloud" should
+behave the same, and it didn't — the bar vanished the moment you navigated.
+
+**Why it didn't.** Nothing was broken; it was built that way on purpose. `NoteEditorFragment.onPause`
+called `stopReading()` and `onDestroyView` called `noteReader.shutdown()`, on the reasoning recorded
+in the code that read-aloud "is an action performed *on* the open note, so it stops with it".
+`ReadAloud` existed only as a passive bridge — it held a `Controller` implemented by the fragment,
+so the thing driving the voice died with the screen. That premise is what the ask overturns.
+
+**The fix is the one `AudioPlayback` already demonstrates:** move the engine out of the view layer.
+`ReadAloud` is now a process-wide singleton owning one `NoteReader` for the life of the app, and
+`NoteReader` moved `ui.notes.editor` → `audio` to match. The `Controller`/`started`/`update`/`ended`
+push-state API is gone; `isActive()`/`isPlaying()`/`progress()` read straight through to the reader,
+so the bar and the note's menu can't disagree. The engine is never shut down now, which as a
+side-effect retires the bind-vs-shutdown crash race — its guards stay, since they're what make the
+class releasable at all.
+
+**Two seams for identity**, so the menu can say "Stop reading" for *this* note while another note
+reads on: `ReadAloud.noteIdMinted` is called where `autoSave` mints an id (a note can be read before
+it has ever been saved), and `retitle` follows a rename.
+
+**Judgement call, worth flagging:** `openFlashcards`/`openQuiz` used to stop the reading as "a
+different mode". Removed — that reasoning belonged to the old note-scoped model, and the bar is on
+those screens like every other. Say so if you want the voice to stop there.
+
+**Verified on emulator-5554.** The trap: the test note is six short sentences, so a hand-paced run
+lets the reading *finish* before you navigate and you misread a correct empty bar as a regression.
+Pause from the bar first — a paused reading can't end on its own — then navigate. Bar `V` on the
+note, after back, and on the Flashcards tab; resume from the bar produced fresh synthesis requests
+in logcat; ✕ took it to `G`. Re-entering the note mid-reading (a fresh fragment) offers "Stop
+reading". Playing an embedded clip while reading swaps the bar to the waveform, i.e. mutual
+exclusion still holds. `dumpsys activity top | grep MiniPlayerView` is the quickest ground truth —
+its `V`/`G` flag beats reading screenshots.
+
+**Not done:** the lock screen. `AudioPlaybackService` is still written entirely against
+`AudioPlayback`, so a reading has no notification or lock-screen controls — it survives in-app
+navigation, not the app going away. That needs the service generalised over both sources.
+
+## 2026-08-06 (same session) — The bar should close when the audio ends
+
+**Ask:** the now-playing bar should go away by itself when the audio finishes, for both an embedded
+clip and read-aloud.
+
+**Read-aloud already did this** — last chunk → `onReadingFinished` → `ReadAloud.clear()`. Only
+`AudioPlayback` needed changing: its completion listener deliberately stayed loaded so the bar could
+offer a replay ("less abrupt than it vanishing"). Now it closes, reaching the same end state as ✕,
+service and notification included. Two details in that one edit: the close is **posted** (the
+callback comes from the `MediaPlayer` that `close()` releases) and **keyed to the finished path**
+(a tap queued ahead of the post can have started a different clip by then).
+
+**The part that ate the time.** Testing said the bar never closed, and the clip appeared to freeze
+at 0:29/0:30 — then "it's not frozen, the audio keeps replaying". Instrumenting `play()`/`close()`/
+`onCompletion` with stack traces settled it in one run: exactly **one** `play()` call, so nothing in
+our code was restarting anything, and **no `onCompletion` ever**. The seeded clip turned out to be
+an **Ogg Vorbis file named `.m4a`** (the "real 30s file" swapped in during the 08-05 session);
+`afinfo` says `File type ID: Oggf`. Android plays it, reports 30s, pins the position near 29s and
+never signals end-of-stream. Replaced it with a real AAC clip (`say -o real.m4a --data-format=aac`)
+and the log read `play()` → `onCompletion pos=7384 dur=7384` → `close()`, bar `G`, foreground
+service gone. Read-aloud's own completion closed the bar too.
+
+**Lesson worth keeping:** when audio won't end, check the container before the logic — a
+mislabelled file mimics a state-machine bug almost perfectly. Don't reason about it from the UI
+clock; `dumpsys activity top | grep MiniPlayerView` plus a stack-trace log on the player's entry
+points is the short path.
+
+**Left on the emulator:** the valid AAC clip is in place at the seeded note's audio path so manual
+testing behaves; the original is beside it as `ORIG_BACKUP_<name>.m4a` under the app's
+`files/audio/`. Restore with `run-as mse.quill cp` if the broken file is wanted back.
+
+## 2026-08-06 (same session) — Long-pressing a recording scrubbed it instead of offering delete
+
+**Symptom:** long-press an audio block to delete it and the playhead jumped to wherever the finger
+was — no confirmation dialog.
+
+**Cause:** `WaveformBarsView.onTouchEvent` consumed `ACTION_DOWN` and seeked immediately, so the
+touch never reached `AudioSegmentView`'s long-click listener. And since seeking a clip that isn't
+loaded *starts* it (`AudioSegmentView`'s seek listener plays first, then seeks), holding to delete
+began playing the recording. Delete was only reachable on the card's padding, play button and time
+label — everything except the part of the card that looks most like "the audio".
+
+**Fix — the waveform is a scrubber only while its clip is loaded.** `setScrubbable(boolean)`, driven
+from `render()` off `AudioPlayback.isCurrent`. Live: unchanged, seek on DOWN. Dormant: nothing on the
+way down, then a hold → parent's `performLongClick()`, a lift → seek (starts the clip), a horizontal
+drag → scrub (claims the gesture at that point, not before), a **vertical** drag → return `false`
+so the scrolling note can intercept. That last branch was a bug I wrote and caught on review: my
+first version treated *any* slop-exceeding drag as a scrub, which would have blocked scrolling the
+note wherever a recording sat under the finger.
+
+**Verified on emulator-5554:** long-press mid-waveform → "Delete audio?" with the playhead untouched
+and nothing playing; tap → starts and seeks; live clip after ~4s → tap near the left edge seeked back
+to 0:01/0:07; vertical drag on a dormant waveform → no seek, no playback. Scroll pass-through itself
+wasn't exercised — the test note fits on one screen, so there was nothing to scroll.
+
+**`adb input tap` coordinate trap:** the now-playing bar takes a 211px row at the top, so every
+card's y shifts by that much depending on whether something is playing. Several test taps landed in
+the body text (opening the keyboard) or dismissed a leftover dialog instead of hitting the target.
+Re-read the bounds from `uiautomator dump` after any state change rather than reusing coordinates,
+and prefer `KEYCODE_BACK` sparingly — it exits the note when no keyboard is up.
+
+## 2026-08-06 (same session) — Export a note as PDF or Markdown
+
+**Ask:** an Export item (`ic_share`) in the note's options menu, offering PDF (`ic_pdf`) and
+Markdown (`ic_markdown`). Markdown simple, since notes are already Markdown; PDF with styles
+preserved; audio replaced by "Embedded Audio Recording - <length>".
+
+**Shape:** `util/NoteExportStore` (Downloads/Quill, MediaStore on 29+, plain file + permission
+below), `util/MarkdownExporter`, `util/PdfExporter`, a second `PopupMenu` from the options menu.
+The storage-permission flow in `NoteEditorFragment` was image-only — it now holds a
+`pendingStorageAction` Runnable, since two different things queue behind that permission.
+
+**Markdown stayed thin on purpose**: text goes straight through `MarkdownSerializer`; only the
+Quill-private constructs are rewritten (`quill://` embeds → italic placeholders, `quill-qa` fences →
+bold Q:/A:, title → H1). Resolved toward "readable elsewhere", not "reloadable here" — the database
+is the copy that round-trips.
+
+**PDF got styling nearly free** — the note is a `Spanned` and `StaticLayout` draws bold/italic/
+underline/bullets natively. Only headings needed work (invisible markers → size+bold at
+`RichTextField`'s 1.6/1.3). Pagination draws the whole layout *clipped and translated* rather than
+re-laying out a slice, which would re-wrap the text.
+
+**Bug found and fixed while reading the output:** the first Markdown export came out as
+`# **Lecture 7 …**`. `MarkdownSerializer` skips a heading's derived bold so it isn't encoded twice,
+but the guard only matched a span starting at `lineContentStart`, while `RichTextField:268` applies
+it from `lineStart` — the invisible marker included. Latent for ages and invisible in the app, since
+a heading is re-bolded from its marker on load; only an export shows it. Guard now accepts either
+bound.
+
+**Verified on emulator-5554** by reading the actual artefacts, not just the UI: exports pulled off
+the device, `.md` read back, `.pdf` rendered to PNG with `sips` and looked at. Seeded notes had no
+Q&A or inline styling, so a note was built in the editor with bold/italic/underline, bullets and a
+Q&A block — the PDF shows all of them plus the accent-ruled Q&A, and the audio block renders as
+"Embedded Audio Recording - 1:38". Snackbar confirms with the filename.
+
+**Two testing notes.** The FAB is a speed dial whose items `uiautomator dump` can't see, and a
+second tap on the FAB *closes* it — several attempts silently did nothing. Chain the taps and track
+whether it was already open. And a `Snackbar` is `LENGTH_LONG` = 3.5s, which is shorter than the
+round trip of `adb exec-out screencap` + `uiautomator dump` between commands; use
+`adb shell "input tap …; sleep 1; screencap -p /sdcard/x.png"` and pull it afterwards.
+
+**Left on the emulator:** a scratch note "Untitled Note - Aug 6, 2026" holding the style test, and
+two sample exports in `Downloads/Quill`.
+
+## 2026-08-06 (same session) — How slow is export, and an export-complete dialog
+
+**Asked how long export takes for a really long note.** Measured rather than guessed: temporary
+timing log around the export, then a note grown by select-all/copy/paste doubling
+(`input keycombination KEYCODE_CTRL_LEFT KEYCODE_A` … `KEYCODE_V`, ~10 doublings from one
+paragraph). Results, disk thread so the UI never blocks either way:
+
+| chars | Markdown | PDF |
+|---|---|---|
+| 4,888 | 34ms | 35ms |
+| 38,152 | 27ms | 43ms |
+| 304,264 (75-page PDF) | 49ms | 150ms |
+
+Text is free. **Images are the cost that would matter** — each decoded to ≤1600px and drawn — and
+that is still unmeasured. The 75-page PDF was also the first real test of pagination: pages 2, 40
+and 75 rendered via a small Swift/CoreGraphics script (no ffmpeg/pdftoppm on the machine; `sips`
+only does page 1) and the flow is continuous with nothing truncated.
+
+**Then: replace the Snackbar with a dialog** — badge, filename, Open / Done, small spring-in
+animation. `NoteExportStore.save` now returns `Saved(displayName, uri)` so Open has something to
+hand a viewer, and `file_paths.xml` gained an `external-path` for `Download/Quill/` (the pre-29 path
+must go through FileProvider — a `file://` uri can't cross to another app).
+
+**Worth knowing:** `text/markdown` has **no handler at all** on a stock emulator image
+(`pm query-activities -a android.intent.action.VIEW -t text/markdown` returns nothing), so Open on a
+Markdown export could only ever fail. It now tries `text/markdown` then falls back to `text/plain`,
+which everything handles. Verified: PDF opens `com.google.android.apps.viewer.PdfViewerActivity` and
+renders correctly; Markdown reaches the chooser.
+
+**Testing note:** `animator_duration_scale 0` (set earlier to steady the taps) makes
+`ViewPropertyAnimator` finish instantly — an animation looks like it isn't running. Raising it to
+10 to inspect one instead slowed the *menus*, so chained taps landed on the wrong items and
+accidentally started read-aloud. Scale affects everything, not just the thing under test; restore
+it to 1 when done. The user took over checking the animation.
+
+**Restored:** the Lecture 7 note's original text (the doubling had left ~300K chars of lorem ipsum
+in it), animation scales, and `Downloads/Quill` emptied of test output.
