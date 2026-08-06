@@ -1338,3 +1338,40 @@ soft-deleted board would just be unreachable rows.
 in note.md) — now that whiteboards are reachable, users will actually hit it.
 
 **Not verified:** the build was not run at the user's request, and nothing has been seen on a device.
+
+## 2026-08-06 (same session) — Re-scoping Epic C: sharing and collaboration
+
+**Discussion, no code.** Question was whether NFC + Wi-Fi Direct is really the right basis for
+offline sharing, or whether Quick Share/something else is nicer. Outcome: Epic C rewritten, and
+`note.md` gained a "Sharing and collaboration" section.
+
+**What the review turned up:**
+- **The NFC step as specified was built on a dead API.** "NFC tap-to-pair handshake" is Android
+  Beam / NDEF push, deprecated in Android 10 and non-functional on modern devices — two phones
+  cannot push to each other. Phone-to-phone means `HostApduService` + reader mode.
+- **Wi-Fi Direct was the wrong layer to hand-roll.** Epic C's own transport bullets (framing,
+  reconnect/backoff) are re-implementing Nearby Connections, which is equally offline and
+  peer-to-peer but supplies discovery, encryption, payloads and reconnect.
+- **Quick Share isn't an API.** It's a share *target* — `ACTION_SEND` + FileProvider and it
+  appears in the sheet for free. So note sharing was already 90% built by the exporter.
+
+**Decisions:** notes are *copied, not co-edited* (import mints a new id, so the conflict domain
+disappears — and with it the reason the Markdown storage decision's coarse merge granularity
+mattered); whiteboards are the only live collaboration, because strokes are already a CRDT;
+transport is Nearby Connections.
+
+**The load-bearing idea worth not losing:** a Nearby `endpointId` is assigned locally by the
+*discovering* device, so it can't be handed over out-of-band. What NFC carries is a **session
+token** the host advertises under — which makes NFC and QR interchangeable carriers of the same
+string. QR first (no NFC APIs, testable on one machine), tap second.
+
+**Two traps recorded for whoever builds it:** receiving a shared file via an intent filter is
+unreliable because Quick Share delivers `content://` typed `application/octet-stream` with no
+usable path, so explicit Import (`ACTION_OPEN_DOCUMENT`) has to come first; and `MainActivity`
+is `exported="false"`, so nothing can be received at all today.
+
+**Planning constraint:** none of the P2P work runs on the emulator — it needs two physical
+devices, which is a change of habit for this project.
+
+**Dropped, deliberately:** per-note vector-clock resolution, the outbox writer/drainer for
+notes, and hand-rolled `WifiP2pManager`. The schema columns stay as inert scaffolding.

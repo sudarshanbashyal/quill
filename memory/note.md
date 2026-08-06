@@ -627,6 +627,64 @@ a block insert leaves behind mid-note are structural gaps, not invitations; repe
 prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points it from
 `insertSegment`/`removeSegment`, the two places the list can change shape.
 
+## Sharing and collaboration
+
+**Status: designed 2026-08-06, not built.** Supersedes the NFC + Wi-Fi Direct plan; the
+checklist lives in [requirements.md](requirements.md) Epic C. Three decisions, each with a
+reason that is easy to lose:
+
+**Notes are copied, not co-edited.** Live note collaboration is dropped. Importing a shared
+note mints a **new id**, so two people editing "the same" note hold two notes and there is no
+conflict domain at all. That is what makes the coarse merge granularity accepted in the
+Markdown storage decision a non-issue rather than a debt — there is nothing to merge.
+
+**Whiteboards are collaborated on, because they are already a CRDT.** Strokes are immutable,
+id'd and carry `author_id`; apply-on-receive dedupes by id, so replays are harmless and no
+vector clocks are needed. The eraser needs no special handling either — it is `tool=1`, a
+stroke, so erasing is append-only too. **Undo and clear are the only operations that aren't**:
+undo must retract the author's own last stroke as a message rather than deleting locally, and
+clear is destructive to everyone, so it should be host-only.
+
+**The transport is Nearby Connections, not hand-rolled Wi-Fi Direct.** Still peer-to-peer,
+still fully offline — it selects BLE/Bluetooth/Wi-Fi Direct/hotspot itself and supplies
+discovery, encryption, framed payloads and reconnect. Those are exactly the two layers the old
+plan intended to write by hand. Cost: a Play Services dependency, and `NEARBY_WIFI_DEVICES` on
+Android 13+.
+
+**The token is the interface; NFC and QR are interchangeable carriers.** This is the load-
+bearing idea. A Nearby `endpointId` is assigned *locally by the discovering device*, so it
+cannot be handed over out-of-band — what travels is a session token the host is advertising
+under, which the joiner matches against discovery. Because the carrier is incidental, a QR code
+does the same job in ~30 lines, works without NFC hardware, and is testable on one machine.
+Build QR first, add the tap second.
+
+**On NFC specifically:** the original plan's "tap-to-pair handshake" was Android Beam, which is
+deprecated and non-functional on modern devices — phones cannot NDEF-push to each other. The
+working shape is `HostApduService` on the host and reader mode on the joiner. Worth the extra
+step: have the host emulate an **NDEF Type 4 tag containing an App Link**, and the joiner's
+stock NFC stack launches Quill, so their app need not already be open.
+
+**Sharing a note is a file, not a session.** Quick Share is a share *target*, not an API: build
+the file, fire `ACTION_SEND` with a FileProvider uri, and the sheet offers Quick Share,
+Bluetooth and mail for free. The container is a `.quill` zip (`note.md` + `media/` + manifest)
+because the Markdown export is deliberately lossy — images and audio become placeholders, which
+is fine for exporting to other tools and feels broken when sharing to another Quill.
+
+**Receiving is where the real trap is.** Three paths, and only one is dependable:
+- *No Quill* → a `.md` opens in any text editor. Free graceful degradation.
+- *Explicit Import* (`ACTION_OPEN_DOCUMENT` → picker) → works over every transport. **Build
+  this first.**
+- *Tap the received file* → wants an intent filter, but files arriving via Quick Share come as
+  `content://` typed `application/octet-stream` with no usable path, so `pathPattern` matching
+  is unreliable. Sniff the content after opening, and treat it as polish.
+
+Also note `MainActivity` is `android:exported="false"` today, so nothing can be received until
+an exported entry point exists.
+
+**None of the P2P work is testable on the emulator** — NFC and Nearby both need two physical
+devices. That is a real planning cost for a project that has otherwise been verified entirely
+on `emulator-5554`, and another reason the QR and Import paths come first.
+
 ## Timestamps
 
 **`util/RelativeTime` is the only way the app phrases a time** (2026-08-06). It replaced scattered

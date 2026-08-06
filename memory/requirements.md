@@ -115,40 +115,79 @@ there's a window where "locked" content leaves the device unencrypted.
 
 ---
 
-## Epic C — Peer-to-Peer Collaboration: NFC + Wi-Fi Direct (P1)
+## Epic C — Offline Sharing & Whiteboard Collaboration (P1)
 
 **Why here**: the one-pager calls this "central" to the app and the biggest reason to
-be offline-first. It's also the largest architectural lift, and the schema already
-anticipates it (`notes.author_device_id`, `notes.vector_clock`, `outbox` table,
-`strokes.author_id`) — `WhiteboardFragment`'s own comments name the intended
-re-entry point (`WiFiDirectManager`, `server.broadcast()` / `client.sendStroke()`).
-Sequence strictly: **discovery → transport → protocol → applications** — each layer
-needs the one below it working first, and skipping straight to "live whiteboard
-collab" without a tested transport/protocol underneath is how this epic turns into an
-unshippable mess.
+be offline-first. Re-scoped on 2026-08-06 after a design review (see
+[note.md](note.md) → "Sharing and collaboration"); the original NFC + Wi-Fi Direct
+plan is superseded. Three decisions drive everything below:
 
-- [ ] **Device discovery & pairing**
-  - [ ] NFC tap-to-pair handshake to exchange device id + connection info
-  - [ ] Wi-Fi Direct peer discovery and group formation (`WifiP2pManager`)
-  - [ ] Paired/trusted-device list UI
-- [ ] **Transport layer**
-  - [ ] Framed socket message channel over the established Wi-Fi Direct group
-  - [ ] Reconnect/backoff handling when a P2P link drops mid-transfer
-- [ ] **Sync protocol** (built on the existing `outbox` / `vector_clock` columns)
-  - [ ] Outbox writer: local note/stroke changes enqueue a row in `outbox`
-  - [ ] Outbox drainer: flush queued messages once a peer connection is live
-  - [ ] Vector-clock conflict resolution for the same note/whiteboard edited on two
-        devices while disconnected
-  - [ ] Idempotent apply-on-receive (dedupe by id; a replayed message must not
-        double-apply)
-- [ ] **Applications built on the protocol**
-  - [ ] One-shot note sharing (full note incl. segments + referenced media files) via
-        NFC/Wi-Fi Direct
-  - [ ] Live collaborative whiteboard — multiple `author_id` values drawing on the same
-        `whiteboard_id` in real time (the `Stroke.authorId` field already models this)
-  - [ ] Enforce Epic B at the boundary: a locked/encrypted collection must not be
-        shareable (or requires unlock-on-both-ends first) — needs an explicit product
-        decision on which
+1. **Notes are shared, not co-edited.** Live note collaboration is dropped. A shared
+   note is a *copy* with a new id, which removes the conflict domain entirely — and
+   with it the vector-clock/outbox machinery for notes. This also retires the cost
+   accepted in the Markdown storage decision, which was a coarser merge domain.
+2. **Whiteboards are collaborated on**, because strokes are append-only, immutable and
+   already carry `author_id`. The merge is "dedupe by id" — no vector clocks.
+3. **The transport is Nearby Connections, not hand-rolled Wi-Fi Direct.** It is still
+   pure peer-to-peer and fully offline; it picks BLE/Bluetooth/Wi-Fi Direct/hotspot
+   itself and supplies discovery, encryption, framed payloads and reconnect — the two
+   layers the old plan was going to write by hand.
+
+Sequence so that each step is testable on its own, and note that **the P2P steps need
+two physical devices** — none of it runs on the emulator.
+
+- [ ] **Note sharing (no session, no transport of our own)**
+  - [ ] `.quill` bundle: a zip of `note.md` + `media/` + manifest. Lossless, unlike the
+        Markdown export, which reduces images/audio to placeholders. A note with no
+        media may ship as a bare `.md` so it still opens in any text editor.
+  - [ ] Share via `ACTION_SEND` + FileProvider → the system sheet (Quick Share,
+        Bluetooth, mail). No integration work: Quick Share is a share *target*, not an API.
+  - [ ] **Import**: `ACTION_OPEN_DOCUMENT` → picker → unpack. Build this first; it is
+        the only receive path that works across every transport.
+  - [ ] Import semantics: mint a new note id, re-id media into private storage and
+        rewrite `quill://` URIs, match tags by name (create if missing).
+  - [ ] *Polish, expect flakiness*: `ACTION_VIEW`/`ACTION_SEND` intent filter so a
+        received file opens straight into Quill. Files arriving over Quick Share are
+        typed `application/octet-stream` with no usable path, so `pathPattern` matching
+        is unreliable — sniff content after opening. **`MainActivity` is currently
+        `exported="false"`; receiving anything requires an exported entry point.**
+
+- [ ] **Session join (the token seam)**
+  - [ ] Host generates a session token; `startAdvertising(endpointName = token,
+        P2P_STAR)`. Joiner discovers, matches the token, `requestConnection`; host
+        accepts only that token. The token both disambiguates a room full of
+        advertisers and authorises, so no accept-dialog is needed.
+  - [ ] **QR carrier first** — the token as a QR code. ~30 lines, no NFC APIs, works on
+        phones without NFC, joinable across a table, and testable without two NFC devices.
+  - [ ] **NFC carrier second** — the tap. Note the original plan's flaw: Android Beam
+        (NDEF push) is dead, so phone-to-phone means the host runs `HostApduService`
+        and the joiner reader mode. Emulating an **NDEF Type 4 tag holding an App Link**
+        is the version worth building: the joiner's stock NFC stack launches Quill, so
+        their app need not already be open.
+  - [ ] Treat NFC and QR as interchangeable carriers of the same token — the join code
+        below them is identical.
+
+- [ ] **Live whiteboard session**
+  - [ ] Three messages only: `snapshot` (current strokes, on join), `stroke` (one
+        completed stroke — the re-entry point `WhiteboardFragment` already names in
+        `onStrokeComplete()`), `retract` (a stroke id).
+  - [ ] Idempotent apply-on-receive: dedupe by stroke id, so a replay is harmless.
+  - [ ] **Undo/clear are the only non-append-only operations.** Undo must retract only
+        the author's own last stroke and travel as `retract`, not a local delete. Clear
+        is destructive to everyone — make it host-only. (Eraser needs nothing: it is
+        `tool=1`, a stroke, so it is already append-only.)
+  - [ ] Payload sizing: Nearby's `BYTES` caps near 32 KB; chunk or use `FILE` for an
+        unusually long stroke.
+  - [ ] Once the transport exists, "tap to send a note" is nearly free — the same
+        `.quill` bundle as a `FILE` payload into the same import code.
+
+- [ ] **Boundary with Epic B**: a locked/encrypted collection must not be shareable, or
+      requires unlock-on-both-ends — still needs an explicit product decision on which.
+
+**Dropped from the original plan** (do not resurrect without re-reading the above):
+per-note vector-clock conflict resolution, the `outbox` writer/drainer for notes, and
+hand-rolled `WifiP2pManager` discovery/group formation. `notes.vector_clock`,
+`notes.author_device_id` and the `outbox` table stay in the schema as inert scaffolding.
 
 ---
 
