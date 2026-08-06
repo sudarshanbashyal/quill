@@ -9,7 +9,7 @@ import android.util.Log;
 public class AppDatabase extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "quill.db";
-    private static final int DATABASE_VERSION = 3;
+    private static final int DATABASE_VERSION = 4;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -57,9 +57,15 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "pinned_at INTEGER, " +
                 "FOREIGN KEY(collection_id) REFERENCES collections(id))");
 
+        // note_id is nullable: a whiteboard can stand on its own (created from Home) as well as
+        // belong to a note. title/updated_at exist so Home can list boards meaningfully — a board
+        // has no body text to derive a preview or a timestamp from the way a note does.
         db.execSQL("CREATE TABLE whiteboards (" +
                 "id TEXT PRIMARY KEY, " +
                 "note_id TEXT, " +
+                "title TEXT, " +
+                "created_at INTEGER, " +
+                "updated_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
         db.execSQL("CREATE TABLE strokes (" +
@@ -157,6 +163,24 @@ public class AppDatabase extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        // v3 → v4 is additive (whiteboards gained title/created_at/updated_at), so it migrates in
+        // place rather than wiping the user's notes. Every other step is still the development-era
+        // destructive rebuild below; see Epic A in memory/requirements.md.
+        if (oldVersion == 3 && newVersion == 4) {
+            db.execSQL("ALTER TABLE whiteboards ADD COLUMN title TEXT");
+            db.execSQL("ALTER TABLE whiteboards ADD COLUMN created_at INTEGER");
+            db.execSQL("ALTER TABLE whiteboards ADD COLUMN updated_at INTEGER");
+            // Pre-existing rows have no timestamps; date them from their newest stroke so they
+            // don't all sort to the top of Home as "just now".
+            db.execSQL("UPDATE whiteboards SET created_at = COALESCE(" +
+                    "(SELECT MIN(s.created_at) FROM strokes s WHERE s.whiteboard_id = whiteboards.id), " +
+                    "CAST(strftime('%s','now') AS INTEGER) * 1000), " +
+                    "updated_at = COALESCE(" +
+                    "(SELECT MAX(s.created_at) FROM strokes s WHERE s.whiteboard_id = whiteboards.id), " +
+                    "CAST(strftime('%s','now') AS INTEGER) * 1000)");
+            return;
+        }
+
         // For development: simple destructive upgrade.
         // For production: write proper ALTER TABLE / migration steps per version.
         db.execSQL("DROP TABLE IF EXISTS notes_fts");

@@ -7,6 +7,7 @@ import java.util.Date;
 
 import mse.quill.R;
 import mse.quill.data.model.Note;
+import mse.quill.model.Whiteboard;
 
 public final class NoteDisplayUtils {
 
@@ -27,5 +28,14 @@ public final class NoteDisplayUtils {
     public static String untitledWithDate(Context context, long timestampMs) {
         String date = DateFormat.getMediumDateFormat(context).format(new Date(timestampMs));
         return context.getString(R.string.untitled_note_with_date, date);
+    }
+
+    /** The same fallback for whiteboards, which are unnamed until the user renames one. */
+    public static String resolveWhiteboardTitle(Context context, Whiteboard whiteboard) {
+        boolean hasTitle = whiteboard.title != null && !whiteboard.title.trim().isEmpty();
+        if (hasTitle) return whiteboard.title.trim();
+
+        String date = DateFormat.getMediumDateFormat(context).format(new Date(whiteboard.createdAt));
+        return context.getString(R.string.untitled_whiteboard_with_date, date);
     }
 }
