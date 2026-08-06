@@ -15,7 +15,6 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.navigation.Navigation;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -28,22 +27,28 @@ import java.util.UUID;
 import mse.quill.R;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
+import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
+import mse.quill.model.Whiteboard;
 import mse.quill.ui.collections.CollectionDetailFragment;
 import mse.quill.ui.notes.NoteEditorFragment;
+import mse.quill.ui.whiteboard.WhiteboardFragment;
 import mse.quill.util.ColorUtils;
+import mse.quill.util.NoteDisplayUtils;
 
 public class HomeFragment extends Fragment {
 
     private NoteRepository noteRepository;
     private CollectionRepository collectionRepository;
+    private WhiteboardRepository whiteboardRepository;
 
     private HomeAdapter homeAdapter;
     private View pinnedSection;
     private LinearLayout pinnedCardsContainer;
 
     private List<Collection> allCollections = new ArrayList<>();
+    private List<Whiteboard> allWhiteboards = new ArrayList<>();
     private List<Note> allNotes = new ArrayList<>();
     private String searchQuery = "";
 
@@ -59,6 +64,7 @@ public class HomeFragment extends Fragment {
 
         noteRepository = new NoteRepository(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
+        whiteboardRepository = new WhiteboardRepository(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCollectionClicked(String collectionId, String displayName) {
@@ -77,6 +83,14 @@ public class HomeFragment extends Fragment {
                         collectionId -> noteRepository.assignCollection(note.id, collectionId, HomeFragment.this::reloadAll),
                         () -> togglePin(note, isPinned),
                         () -> noteRepository.deleteNote(note.id, HomeFragment.this::reloadAll));
+            }
+
+            @Override public void onWhiteboardClicked(Whiteboard whiteboard) {
+                openWhiteboard(whiteboard.id, whiteboard.noteId);
+            }
+
+            @Override public void onWhiteboardLongPressed(Whiteboard whiteboard) {
+                showManageWhiteboardDialog(whiteboard);
             }
         });
 
@@ -133,15 +147,15 @@ public class HomeFragment extends Fragment {
                             name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
         });
 
+        // A board created here is standalone (no parent note) — it's owned by Home's Whiteboards
+        // section. The row is inserted up front so the board exists in that list even if the user
+        // backs out without drawing anything.
         fabOptionWhiteboard.setOnClickListener(v -> {
-            // Collapse the FAB menu first (however your existing code does this)
-            collapseFabOptions(fabOptions, sweepDistance); // reuse whatever method you already call for the other options
-
-            // Create a fresh note_id for a new whiteboard-first note
-            // (or however your app models a "whiteboard-only" note — adjust to your data flow)
-            Bundle args = new Bundle();
-            Navigation.findNavController(requireView())
-                    .navigate(R.id.whiteboardFragment, args);
+            collapseFabOptions(fabOptions, sweepDistance);
+            WhiteboardDialogs.showCreateDialog(requireContext(), title ->
+                    whiteboardRepository.createWhiteboard(
+                            title.isEmpty() ? null : title, null,
+                            whiteboardId -> openWhiteboard(whiteboardId, null)));
         });
     }
 
@@ -189,6 +203,30 @@ public class HomeFragment extends Fragment {
         NavHostFragment.findNavController(this).navigate(R.id.collectionDetailFragment, args);
     }
 
+    private void openWhiteboard(String whiteboardId, String noteId) {
+        if (!isAdded()) return;
+        Bundle args = new Bundle();
+        args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
+        args.putString(WhiteboardFragment.ARG_NOTE_ID, noteId);
+        NavHostFragment.findNavController(this).navigate(R.id.whiteboardFragment, args);
+    }
+
+    private void showManageWhiteboardDialog(Whiteboard whiteboard) {
+        WhiteboardDialogs.showManageDialog(requireContext(), whiteboard, new WhiteboardDialogs.ManageListener() {
+            @Override public void onRename() {
+                WhiteboardDialogs.showRenameDialog(requireContext(), whiteboard.title, newTitle ->
+                        whiteboardRepository.renameWhiteboard(
+                                whiteboard.id, newTitle, HomeFragment.this::reloadWhiteboards));
+            }
+
+            @Override public void onDelete() {
+                WhiteboardDialogs.showDeleteConfirmation(requireContext(), whiteboard, () ->
+                        whiteboardRepository.deleteWhiteboard(
+                                whiteboard.id, HomeFragment.this::reloadWhiteboards));
+            }
+        });
+    }
+
     private void showManageCollectionDialog(Collection collection) {
         CollectionDialogs.showManageDialog(requireContext(), collection, new CollectionDialogs.ManageListener() {
             @Override public void onRename() {
@@ -226,8 +264,17 @@ public class HomeFragment extends Fragment {
 
     private void reloadAll() {
         reloadCollections();
+        reloadWhiteboards();
         reloadNotes();
         reloadPinnedNotes();
+    }
+
+    private void reloadWhiteboards() {
+        whiteboardRepository.loadWhiteboards(whiteboards -> {
+            if (!isAdded()) return;
+            allWhiteboards = whiteboards;
+            applyFilters();
+        });
     }
 
     private void reloadPinnedNotes() {
@@ -276,6 +323,7 @@ public class HomeFragment extends Fragment {
     private void applyFilters() {
         if (searchQuery.isEmpty()) {
             homeAdapter.submitCollections(allCollections);
+            homeAdapter.submitWhiteboards(allWhiteboards);
             homeAdapter.submitNotes(allNotes);
             return;
         }
@@ -285,6 +333,14 @@ public class HomeFragment extends Fragment {
             if (c.name.toLowerCase(Locale.getDefault()).contains(searchQuery)) filteredCollections.add(c);
         }
         homeAdapter.submitCollections(filteredCollections);
+
+        // Matched on the displayed title, so searching "untitled" finds the unnamed boards too.
+        List<Whiteboard> filteredWhiteboards = new ArrayList<>();
+        for (Whiteboard w : allWhiteboards) {
+            String title = NoteDisplayUtils.resolveWhiteboardTitle(requireContext(), w);
+            if (title.toLowerCase(Locale.getDefault()).contains(searchQuery)) filteredWhiteboards.add(w);
+        }
+        homeAdapter.submitWhiteboards(filteredWhiteboards);
 
         List<Note> filteredNotes = new ArrayList<>();
         for (Note n : allNotes) {

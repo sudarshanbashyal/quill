@@ -434,3 +434,36 @@ added with the same confirmation dialog.
 not the text, because long-press inside a field has to stay text selection — that's how part of an
 answer gets bolded. Offered two ways to widen it (more padding, or long-press-deletes on an empty
 field) if it proves fiddly in use.
+
+## 2026-08-03 — Feature implementation: Whiteboards section on Home
+
+**Asked:** Home only lists notes; show a whiteboards section there too.
+
+**Found first:** whiteboards were entirely unreachable. Nothing listed them, no note screen linked
+to one, and Home's existing "New Whiteboard" FAB option navigated with an empty Bundle while
+`nav_graph.xml` declared `note_id` as a *required* argument — so that button could only ever throw.
+
+**Decided: whiteboards become first-class, not note-attached.** `whiteboards.note_id` stays but is
+explicitly nullable — a board created from Home stands alone, one opened from a note still belongs
+to it. The table gained `title`, `created_at`, `updated_at`, because a board has no body text to
+derive a name or a timestamp from the way a note does.
+
+**Schema v3 → v4 migrates in place** rather than taking the documented destructive `onUpgrade`
+path — the change is purely additive, so three `ALTER TABLE`s plus a backfill dating existing rows
+from their strokes. First real migration in the codebase; the drop-everything branch still covers
+every other version step.
+
+**Built:** `WhiteboardRepository` (AppExecutors, callback-based, matching the other repositories
+rather than the fragment's ad hoc threads), a `WhiteboardCardView` grid card, a Whiteboards section
+in `HomeAdapter` between Collections and Notes, `WhiteboardDialogs` for create/rename/delete, and
+`updated_at` bumps on draw/undo/clear so the section sorts by real recency.
+
+**Two judgement calls worth recording:** the card shows a glyph and a stroke count, not a thumbnail
+— a real preview would mean loading every board's strokes just to draw Home. And deletion is a hard
+delete against the app's soft-delete convention, because there is no whiteboard trash surface, so a
+soft-deleted board would just be unreachable rows.
+
+**Also fixed in passing:** `exportWhiteboard()`'s unconditional "Export failed" toast (the known bug
+in note.md) — now that whiteboards are reachable, users will actually hit it.
+
+**Not verified:** the build was not run at the user's request, and nothing has been seen on a device.

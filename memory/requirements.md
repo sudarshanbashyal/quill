@@ -41,7 +41,9 @@ masquerading as migration bugs).
       existing note on next launch. That was accepted as dev-stage policy at the time,
       but it will not be acceptable once anyone else installs this.*
   - [ ] Replace `AppDatabase.onUpgrade`'s drop-and-recreate with real `ALTER TABLE` /
-        versioned migration steps
+        versioned migration steps — **v3 → v4 done 2026-08-03** (whiteboards gained
+        title/created_at/updated_at; additive, so it migrates in place and keeps user data).
+        Every other version step still takes the destructive branch
   - [ ] Add a migration test: seed an older-shaped DB with data, run the upgrade, assert
         rows survive
 - [ ] **Unify background DB access**
@@ -71,8 +73,8 @@ masquerading as migration bugs).
         backspace-merge at segment boundary) — still uncovered
   - [ ] Wire up CI (e.g. GitHub Actions) to run tests + lint on every PR
 - [ ] **Fix bugs found during architecture review**
-  - [ ] `WhiteboardFragment.exportWhiteboard()` shows a "Export failed" toast
-        unconditionally even after a successful export
+  - [x] `WhiteboardFragment.exportWhiteboard()` shows a "Export failed" toast
+        unconditionally even after a successful export *(fixed 2026-08-03)*
 
 ---
 
@@ -269,6 +271,28 @@ or a second-contributor track alongside Epic D.
   - [ ] Capture `location_lat`/`location_lng`/`location_name` on note creation,
         permission-gated
   - [ ] Display/filter notes by location
+
+---
+
+## Epic I — Whiteboards as a First-Class Surface (P2, independent)
+
+**Why here**: whiteboards existed in the schema and had a full drawing screen, but nothing in the
+app could reach one — no list, no link from a note, and Home's "New Whiteboard" FAB navigated with
+a Bundle that violated `nav_graph.xml`'s required `note_id`. The Home section below closed that
+gap; what's left is the link back to notes, which overlaps Epic D's whiteboard embed.
+
+- [x] **Home Whiteboards section** *(2026-08-03)* — own section between Collections and Notes,
+      2-column grid, sorted by `updated_at`, searchable by title, long-press to rename/delete
+- [x] **Whiteboards can stand alone** — `whiteboards.note_id` nullable; schema v4 added
+      `title`/`created_at`/`updated_at` via a real in-place migration
+- [x] **`WhiteboardRepository`** on the shared `AppExecutors` pattern (Home's entry point)
+- [ ] **Visual QA** — nothing here has been seen running; the section, the create/rename dialogs
+      and the FAB path are all build-unverified as of 2026-08-03
+- [ ] **Open a note's whiteboard from the note** — the reverse direction still doesn't exist;
+      design it together with Epic D's `![whiteboard](quill://whiteboard/<id>)` embed, not separately
+- [ ] **Port `WhiteboardFragment`/`StrokeDao` onto `AppExecutors`** (also listed under Epic A).
+      Note the constraint found while doing the section: the `whiteboards` insert must still
+      happen before any stroke write, since `strokes` has a foreign key onto it
 
 ---
 

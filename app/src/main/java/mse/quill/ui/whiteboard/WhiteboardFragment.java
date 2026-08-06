@@ -49,13 +49,17 @@ import java.util.UUID;
  * and call server.broadcast()/client.sendStroke() inside onStrokeComplete().
  *
  * Navigation args expected (set in nav_graph.xml, passed via Bundle):
- *   "note_id"        — String, required. The parent note this whiteboard belongs to.
+ *   "note_id"        — String, optional. The parent note, when the board was opened from one.
+ *                       Null for the standalone boards Home's Whiteboards section lists.
  *   "whiteboard_id"  — String, optional. Pass this to reopen an existing whiteboard;
  *                       omit it to create a new one.
  */
 public class WhiteboardFragment extends Fragment implements WhiteboardView.StrokeListener {
 
     private static final String TAG = "WhiteboardFragment";
+
+    public static final String ARG_NOTE_ID = "note_id";
+    public static final String ARG_WHITEBOARD_ID = "whiteboard_id";
 
     // ── Views ─────────────────────────────────────────────────────────────────
     private WhiteboardView whiteboardView;
@@ -81,8 +85,8 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         // 1. Read navigation arguments passed by whoever opened this screen
         Bundle args  = getArguments();
-        noteId       = args != null ? args.getString("note_id")       : null;
-        whiteboardId = args != null ? args.getString("whiteboard_id") : null;
+        noteId       = args != null ? args.getString(ARG_NOTE_ID)       : null;
+        whiteboardId = args != null ? args.getString(ARG_WHITEBOARD_ID) : null;
 
         // 2. Get access to the database (singleton — safe to call anywhere)
         AppDatabase db = AppDatabase.getInstance(requireContext());
@@ -92,12 +96,28 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         // 3. If no whiteboard_id was passed, this is a brand-new whiteboard —
         //    generate an id and insert a row into the `whiteboards` table.
         if (whiteboardId == null) {
-            whiteboardId  = UUID.randomUUID().toString();
-            Whiteboard wb = new Whiteboard();
-            wb.id         = whiteboardId;
-            wb.noteId     = noteId;
+            whiteboardId    = UUID.randomUUID().toString();
+            Whiteboard wb   = new Whiteboard();
+            wb.id           = whiteboardId;
+            wb.noteId       = noteId;
+            wb.createdAt    = System.currentTimeMillis();
+            wb.updatedAt    = wb.createdAt;
+            // Synchronous on purpose: `strokes` has a foreign key onto this row, and the stroke
+            // inserts below run on their own unordered threads, so the parent row has to exist
+            // before the canvas is even shown.
             whiteboardDao.insert(wb);
         }
+    }
+
+    /**
+     * Bumps the board's updated_at so Home's Whiteboards section sorts by real recency. Called on
+     * every canvas change rather than on exit, since the fragment can go away without onStop work
+     * completing.
+     */
+    private void touchWhiteboard() {
+        final String id = whiteboardId;
+        final long now = System.currentTimeMillis();
+        new Thread(() -> whiteboardDao.touch(id, now)).start();
     }
 
     @Nullable
@@ -232,6 +252,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         // Save to SQLite on a background thread (never touch DB on the UI thread)
         new Thread(() -> strokeDao.insertStroke(stroke)).start();
+        touchWhiteboard();
     }
 
     // ── Undo / Clear ──────────────────────────────────────────────────────────
@@ -246,6 +267,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         whiteboardView.removeStroke(strokeId);
         new Thread(() -> strokeDao.deleteStroke(strokeId)).start();
+        touchWhiteboard();
     }
 
     private void confirmClear() {
@@ -261,6 +283,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         whiteboardView.clearAll();
         undoStack.clear(); // nothing left to undo once everything is wiped
         new Thread(() -> strokeDao.deleteAllForWhiteboard(whiteboardId)).start();
+        touchWhiteboard();
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -299,6 +322,5 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             resolver.delete(itemUri, null, null);
             Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
         }
-        Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
     }
 }

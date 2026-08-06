@@ -12,6 +12,10 @@ import mse.quill.model.Whiteboard;
  * Handles reads/writes for the `whiteboards` table only.
  * One row per whiteboard session; the actual drawing data lives in `strokes`
  * (see StrokeDao), linked via whiteboard_id.
+ *
+ * Callers on a UI thread should go through {@link WhiteboardRepository} instead — it wraps the
+ * same table in the app's shared AppExecutors pattern. This DAO is the synchronous layer both it
+ * and WhiteboardFragment sit on.
  */
 public class WhiteboardDao {
 
@@ -26,8 +30,18 @@ public class WhiteboardDao {
         ContentValues v = new ContentValues();
         v.put("id", wb.id);
         v.put("note_id", wb.noteId);
+        v.put("title", wb.title);
+        v.put("created_at", wb.createdAt);
+        v.put("updated_at", wb.updatedAt);
         db.getWritableDatabase().insertWithOnConflict(
                 "whiteboards", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    /** Records that the canvas changed, so Home's Whiteboards section sorts by real recency. */
+    public void touch(String id, long updatedAt) {
+        ContentValues v = new ContentValues();
+        v.put("updated_at", updatedAt);
+        db.getWritableDatabase().update("whiteboards", v, "id = ?", new String[]{id});
     }
 
     /** Fetch a whiteboard by its id. Returns null if not found. */
@@ -38,9 +52,7 @@ public class WhiteboardDao {
                 null, null, null);
         Whiteboard wb = null;
         if (c.moveToFirst()) {
-            wb = new Whiteboard();
-            wb.id     = c.getString(c.getColumnIndexOrThrow("id"));
-            wb.noteId = c.getString(c.getColumnIndexOrThrow("note_id"));
+            wb = fromCursor(c);
         }
         c.close();
         return wb;
@@ -54,11 +66,19 @@ public class WhiteboardDao {
                 null, null, null);
         Whiteboard wb = null;
         if (c.moveToFirst()) {
-            wb = new Whiteboard();
-            wb.id     = c.getString(c.getColumnIndexOrThrow("id"));
-            wb.noteId = c.getString(c.getColumnIndexOrThrow("note_id"));
+            wb = fromCursor(c);
         }
         c.close();
+        return wb;
+    }
+
+    static Whiteboard fromCursor(Cursor c) {
+        Whiteboard wb = new Whiteboard();
+        wb.id        = c.getString(c.getColumnIndexOrThrow("id"));
+        wb.noteId    = c.getString(c.getColumnIndexOrThrow("note_id"));
+        wb.title     = c.getString(c.getColumnIndexOrThrow("title"));
+        wb.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
+        wb.updatedAt = c.getLong(c.getColumnIndexOrThrow("updated_at"));
         return wb;
     }
 }

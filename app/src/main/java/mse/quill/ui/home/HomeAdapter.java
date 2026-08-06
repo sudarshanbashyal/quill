@@ -19,15 +19,17 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
+import mse.quill.model.Whiteboard;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
 
 /**
- * Single adapter driving the Collections + Notes scroll area below Home's pinned-notes section
- * and search bar: a "Collections" section header, a 2-column grid of collection cards, a "Notes"
- * section header, then a flat list of notes (or an empty-state row). Creating a new collection is
- * triggered from Home's expanding FAB, not from a card in this grid.
+ * Single adapter driving the Collections + Whiteboards + Notes scroll area below Home's
+ * pinned-notes section and search bar: a "Collections" section header, a 2-column grid of
+ * collection cards, a "Whiteboards" header and grid, then a "Notes" header and a flat list of
+ * notes (each grid/list falling back to an empty-state row). Creating a new collection or
+ * whiteboard is triggered from Home's expanding FAB, not from a card in these grids.
  *
  * All item views are built programmatically (see {@link NoteRowView}, {@link CollectionCardView})
  * rather than via XML layout + LayoutInflater: on this SDK, the first XML-attribute-derived
@@ -42,17 +44,21 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private static final int TYPE_SECTION_HEADER = 0;
     private static final int TYPE_COLLECTION_CARD = 1;
     private static final int TYPE_NOTE = 2;
-    private static final int TYPE_EMPTY_NOTES = 3;
+    private static final int TYPE_EMPTY = 3;
+    private static final int TYPE_WHITEBOARD_CARD = 4;
 
     public interface Listener {
         void onCollectionClicked(String collectionId, String displayName);
         void onCollectionLongPressed(Collection collection);
         void onNoteClicked(Note note);
         void onNoteLongPressed(Note note);
+        void onWhiteboardClicked(Whiteboard whiteboard);
+        void onWhiteboardLongPressed(Whiteboard whiteboard);
     }
 
     private final Listener listener;
     private List<Collection> collections = new ArrayList<>();
+    private List<Whiteboard> whiteboards = new ArrayList<>();
     private List<Note> notes = new ArrayList<>();
 
     public HomeAdapter(Listener listener) {
@@ -64,6 +70,11 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         notifyDataSetChanged();
     }
 
+    public void submitWhiteboards(List<Whiteboard> whiteboards) {
+        this.whiteboards = whiteboards;
+        notifyDataSetChanged();
+    }
+
     public void submitNotes(List<Note> notes) {
         this.notes = notes;
         notifyDataSetChanged();
@@ -72,7 +83,8 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public GridLayoutManager.SpanSizeLookup spanSizeLookup() {
         return new GridLayoutManager.SpanSizeLookup() {
             @Override public int getSpanSize(int position) {
-                return getItemViewType(position) == TYPE_COLLECTION_CARD ? 1 : 2;
+                int type = getItemViewType(position);
+                return type == TYPE_COLLECTION_CARD || type == TYPE_WHITEBOARD_CARD ? 1 : 2;
             }
         };
     }
@@ -87,7 +99,14 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private int collectionsStart() { return POS_COLLECTIONS_HEADER + 1; }
 
-    private int notesHeaderPos() { return collectionsStart() + collectionsCount(); }
+    private int whiteboardsHeaderPos() { return collectionsStart() + collectionsCount(); }
+
+    private int whiteboardsStart() { return whiteboardsHeaderPos() + 1; }
+
+    /** An empty section still occupies one row — the empty-state message. */
+    private int whiteboardsSectionCount() { return whiteboards.isEmpty() ? 1 : whiteboards.size(); }
+
+    private int notesHeaderPos() { return whiteboardsStart() + whiteboardsSectionCount(); }
 
     private int notesStart() { return notesHeaderPos() + 1; }
 
@@ -100,9 +119,14 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     @Override
     public int getItemViewType(int position) {
-        if (position == POS_COLLECTIONS_HEADER || position == notesHeaderPos()) return TYPE_SECTION_HEADER;
-        if (position < notesHeaderPos()) return TYPE_COLLECTION_CARD;
-        return notes.isEmpty() ? TYPE_EMPTY_NOTES : TYPE_NOTE;
+        if (position == POS_COLLECTIONS_HEADER
+                || position == whiteboardsHeaderPos()
+                || position == notesHeaderPos()) {
+            return TYPE_SECTION_HEADER;
+        }
+        if (position < whiteboardsHeaderPos()) return TYPE_COLLECTION_CARD;
+        if (position < notesHeaderPos()) return whiteboards.isEmpty() ? TYPE_EMPTY : TYPE_WHITEBOARD_CARD;
+        return notes.isEmpty() ? TYPE_EMPTY : TYPE_NOTE;
     }
 
     // ── ViewHolder creation/binding ──────────────────────────────────────
@@ -116,7 +140,9 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new SectionHeaderViewHolder(buildSectionHeader(context));
             case TYPE_COLLECTION_CARD:
                 return new CollectionCardViewHolder(CollectionCardView.build(context));
-            case TYPE_EMPTY_NOTES:
+            case TYPE_WHITEBOARD_CARD:
+                return new WhiteboardCardViewHolder(WhiteboardCardView.build(context));
+            case TYPE_EMPTY:
                 return new EmptyViewHolder(buildEmptyMessage(context));
             default:
                 return new NoteRowViewHolder(NoteRowView.build(context));
@@ -151,13 +177,16 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
         int type = getItemViewType(position);
         if (type == TYPE_SECTION_HEADER) {
-            int titleRes = position == POS_COLLECTIONS_HEADER ? R.string.section_collections : R.string.section_notes;
-            ((SectionHeaderViewHolder) holder).bind(titleRes);
+            ((SectionHeaderViewHolder) holder).bind(sectionTitleRes(position));
         } else if (type == TYPE_COLLECTION_CARD) {
             int index = position - collectionsStart();
             bindCollectionCard((CollectionCardViewHolder) holder, index);
-        } else if (type == TYPE_EMPTY_NOTES) {
-            ((EmptyViewHolder) holder).bind(R.string.empty_notes);
+        } else if (type == TYPE_WHITEBOARD_CARD) {
+            Whiteboard whiteboard = whiteboards.get(position - whiteboardsStart());
+            ((WhiteboardCardViewHolder) holder).bind(whiteboard, listener);
+        } else if (type == TYPE_EMPTY) {
+            ((EmptyViewHolder) holder).bind(
+                    position < notesHeaderPos() ? R.string.empty_whiteboards : R.string.empty_notes);
         } else {
             Note note = notes.get(position - notesStart());
             ((NoteRowViewHolder) holder).bind(note, listener);
@@ -166,6 +195,12 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private void bindCollectionCard(CollectionCardViewHolder holder, int index) {
         holder.bindCollection(collections.get(index), listener);
+    }
+
+    private int sectionTitleRes(int position) {
+        if (position == POS_COLLECTIONS_HEADER) return R.string.section_collections;
+        if (position == whiteboardsHeaderPos()) return R.string.section_whiteboards;
+        return R.string.section_notes;
     }
 
     // ── ViewHolders ──────────────────────────────────────────────────────
@@ -203,6 +238,41 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 listener.onNoteLongPressed(note);
                 return true;
             });
+        }
+    }
+
+    static class WhiteboardCardViewHolder extends RecyclerView.ViewHolder {
+        private final TextView titleView;
+        private final TextView countView;
+        private final TextView updatedView;
+
+        WhiteboardCardViewHolder(@NonNull WhiteboardCardView.Views views) {
+            super(views.root);
+            titleView = views.titleView;
+            countView = views.countView;
+            updatedView = views.updatedView;
+        }
+
+        void bind(Whiteboard whiteboard, Listener listener) {
+            Context context = itemView.getContext();
+            titleView.setText(NoteDisplayUtils.resolveWhiteboardTitle(context, whiteboard));
+            countView.setText(formatStrokes(context, whiteboard.strokeCount));
+            updatedView.setText(context.getString(
+                    R.string.updated_relative_format,
+                    DateUtils.getRelativeTimeSpanString(
+                            whiteboard.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)));
+
+            itemView.setOnClickListener(v -> listener.onWhiteboardClicked(whiteboard));
+            itemView.setOnLongClickListener(v -> {
+                listener.onWhiteboardLongPressed(whiteboard);
+                return true;
+            });
+        }
+
+        private static String formatStrokes(Context context, int count) {
+            return count == 0
+                    ? context.getString(R.string.strokes_count_zero)
+                    : context.getResources().getQuantityString(R.plurals.strokes_count, count, count);
         }
     }
 

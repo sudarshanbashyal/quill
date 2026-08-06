@@ -3,13 +3,22 @@ package mse.quill.model;
 /**
  * Whiteboard
  *
- * Represents a single whiteboard session tied to a note.
- * Maps directly to the `whiteboards` table.
+ * Represents a single whiteboard session. Maps directly to the `whiteboards` table.
  *
- *   id      TEXT PRIMARY KEY
- *   noteId  TEXT   → whiteboards.note_id (parent note this whiteboard belongs to)
+ *   id         TEXT PRIMARY KEY
+ *   noteId     TEXT     → whiteboards.note_id, nullable: a board created from Home stands on its
+ *                         own, a board opened from a note belongs to it
+ *   title      TEXT     user-given name, nullable (see NoteDisplayUtils.resolveWhiteboardTitle)
+ *   createdAt  INTEGER
+ *   updatedAt  INTEGER  bumped whenever the canvas changes, so Home can sort by recency
  */
 public class Whiteboard {
     public String id;
     public String noteId;
+    public String title;
+    public long createdAt;
+    public long updatedAt;
+
+    /** Not a column — joined in by WhiteboardRepository.loadWhiteboards for the Home card. */
+    public int strokeCount;
 }
