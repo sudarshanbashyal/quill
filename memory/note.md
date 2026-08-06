@@ -43,10 +43,11 @@ own selection and the back stack.
 ## Persistence layer
 
 **No Room.** `AppDatabase extends SQLiteOpenHelper` directly (`data/AppDatabase.java`),
-hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 3`; `onUpgrade` is
-currently **destructive** (drops every table and recreates) — fine for pre-release
-development, but will need real migrations before this ships with user data worth
-keeping.
+hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 4`. `onUpgrade` is still
+**destructive** (drops every table and recreates) for every step *except* v3 → v4, which
+migrates in place with `ALTER TABLE` because that change was purely additive (whiteboards
+gained title/timestamps). The rest still needs real migrations before this ships with user
+data worth keeping.
 
 Access pattern: `XRepository` classes (`NoteRepository`, `CollectionRepository`,
 `TagRepository`) wrap `AppDatabase` + raw `Cursor`/`ContentValues` calls, exposing
@@ -78,8 +79,9 @@ Core, actively used:
 - `note_segments(id, note_id, type, file_path, transcript, duration_ms, width,
   created_at)` — **media asset registry only** since schema v3. No `position` (order
   lives in the Markdown document) and no `text_content` (text *is* the document).
-- `whiteboards(id, note_id)`, `strokes(id, whiteboard_id, author_id, tool, color,
-  width, points_blob, created_at)`.
+- `whiteboards(id, note_id, title, created_at, updated_at)` — `note_id` is **nullable**: a board
+  created from Home stands on its own, one opened from a note belongs to it. `strokes(id,
+  whiteboard_id, author_id, tool, color, width, points_blob, created_at)`.
 - `tags(id, name, color, created_at)`, `note_tags(note_id, tag_id)` join table.
 - `flashcards(id, note_id, source_segment_id, front, back, …)` + SM-2 columns
   (`interval`, `repetitions`, `easiness`, `next_review`, `last_reviewed_at`) — live since
@@ -203,10 +205,24 @@ from `strokes`. "Clear" wipes both the view and all rows for that `whiteboard_id
 Export renders the view into a `Bitmap` and writes it via `MediaStore` into
 `Pictures/Quill/`.
 
-**Known bug**: `WhiteboardFragment.exportWhiteboard()` shows a "Export failed" Toast
-unconditionally after the try/catch block, even on the success path — cosmetic (real
-success also shows its own "Saved to…" toast first) but worth fixing if that code is
-touched again.
+(The old "Export failed" toast that fired unconditionally after the try/catch — success path
+included — was fixed on 2026-08-03.)
+
+**Whiteboards are first-class, not note-attached** (2026-08-03). Home lists them in their own
+section between Collections and Notes, and `whiteboards.note_id` is nullable so a board created
+from the FAB has no parent note. Two decisions behind that section:
+
+- **The card shows a glyph and a stroke count, not a thumbnail.** A real preview would mean
+  loading every board's strokes just to draw Home, and there's no cover image to cache instead.
+- **Deleting a board is a hard delete**, against the app's soft-delete convention, because there
+  is no whiteboard trash surface — a soft-deleted board would just be unreachable rows. Strokes
+  go first in the same transaction; they carry a foreign key onto the board.
+
+`WhiteboardRepository` is the Home-side entry point and follows the normal `AppExecutors` +
+callback pattern. `WhiteboardFragment` still uses `WhiteboardDao`/`StrokeDao` on ad hoc threads
+(Epic A), with one deliberate exception: the initial `whiteboards` insert stays **synchronous**,
+because `strokes` has a foreign key onto that row and the stroke writes run on their own unordered
+threads. `updated_at` is bumped on draw/undo/clear so the Home section sorts by real recency.
 
 ## Markdown note format — implemented, flashcards included
 

@@ -61,7 +61,7 @@ public final class CollectionDialogs {
     }
 
     /** Dialog setView() places content flush against the dialog edges; the field needs breathing room. */
-    private static LinearLayout inset(Context context, TextInputLayout field) {
+    static LinearLayout inset(Context context, TextInputLayout field) {
         LinearLayout container = new LinearLayout(context);
         container.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(context, R.dimen.spacing_lg);

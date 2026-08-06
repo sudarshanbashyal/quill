@@ -6,7 +6,8 @@
 
     <string name="home_greeting">Welcome back</string>
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
-    <string name="search_hint">Search notes or collections…</string>
+    <!-- Whiteboards joined the searchable set on master, so the hint names them too. -->
+    <string name="search_hint">Search notes, whiteboards or collections…</string>
     <string name="search_hint_collection">Search notes in this collection…</string>
 
     <!-- Search filtering and sorting -->
@@ -25,6 +26,7 @@
     <string name="section_pinned_notes">Pinned Notes</string>
     <string name="section_collections">Collections</string>
     <string name="section_notes">Notes</string>
+    <string name="section_whiteboards">Whiteboards</string>
 
     <string name="action_create_note">Create Note</string>
     <string name="action_create_collection">Collection</string>
@@ -270,4 +272,18 @@
     <string name="delete_audio_title">Delete audio?</string>
     <string name="delete_audio_message">This audio clip will be removed from the note.</string>
     <string name="action_create_whiteboard">New Whiteboard</string>
+
+    <string name="whiteboard_icon_glyph">🎨</string>
+    <string name="untitled_whiteboard_with_date">Untitled Whiteboard - %s</string>
+    <string name="empty_whiteboards">No whiteboards yet — tap + to draw one</string>
+    <string name="strokes_count_zero">Empty board</string>
+    <plurals name="strokes_count">
+        <item quantity="one">%d stroke</item>
+        <item quantity="other">%d strokes</item>
+    </plurals>
+    <string name="dialog_new_whiteboard_title">New whiteboard</string>
+    <string name="dialog_rename_whiteboard_title">Rename whiteboard</string>
+    <string name="whiteboard_name_hint">Whiteboard name</string>
+    <string name="delete_whiteboard_title_format">Delete \"%s\"?</string>
+    <string name="delete_whiteboard_message">This whiteboard and everything drawn on it will be deleted.</string>
 </resources>

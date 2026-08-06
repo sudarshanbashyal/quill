@@ -6,11 +6,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Function;
 
 import mse.quill.R;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
+import mse.quill.model.Whiteboard;
 
 /**
  * What the search bar is currently asking for, and the one place that answers it.
@@ -108,6 +110,46 @@ public final class NoteFilter {
         }
         sortCollections(result);
         return result;
+    }
+
+    /**
+     * Whiteboards matching the query, in the chosen order.
+     *
+     * <p>Tags and the pinned switch are ignored for the same reason collections ignore them: a
+     * board can carry neither, so filtering by one would empty the section rather than narrow it.
+     *
+     * @param titleOf resolves a board's displayed name — boards are often untitled, and the
+     *                fallback name is built from a Context this class deliberately doesn't hold.
+     *                Matching the displayed title is what lets "untitled" find the unnamed ones.
+     */
+    public List<Whiteboard> applyToWhiteboards(List<Whiteboard> boards,
+                                               Function<Whiteboard, String> titleOf) {
+        List<Whiteboard> result = new ArrayList<>();
+        for (Whiteboard board : boards) {
+            if (query.isEmpty() || lower(titleOf.apply(board)).contains(query)) result.add(board);
+        }
+        sortWhiteboards(result, titleOf);
+        return result;
+    }
+
+    private void sortWhiteboards(List<Whiteboard> boards, Function<Whiteboard, String> titleOf) {
+        switch (sort) {
+            case OLDEST:
+                Collections.sort(boards, (a, b) -> Long.compare(a.updatedAt, b.updatedAt));
+                break;
+            case TITLE_ASC:
+                Collections.sort(boards, (a, b) ->
+                        lower(titleOf.apply(a)).compareTo(lower(titleOf.apply(b))));
+                break;
+            case TITLE_DESC:
+                Collections.sort(boards, (a, b) ->
+                        lower(titleOf.apply(b)).compareTo(lower(titleOf.apply(a))));
+                break;
+            case RECENT:
+            default:
+                Collections.sort(boards, (a, b) -> Long.compare(b.updatedAt, a.updatedAt));
+                break;
+        }
     }
 
     /** True when a tag filter is on and this note carries none of the selected tags. */
