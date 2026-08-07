@@ -28,7 +28,7 @@ import mse.quill.data.model.Collection;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
-import mse.quill.model.Whiteboard;
+import mse.quill.data.model.Whiteboard;
 import mse.quill.ui.collections.CollectionDetailFragment;
 import mse.quill.ui.notes.NoteEditorFragment;
 import mse.quill.ui.search.NoteFilter;
@@ -41,11 +41,18 @@ import mse.quill.util.WindowInsetsUtils;
 
 public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
 
-    /** The gradient header, not the root: the root is a transparent {@code FrameLayout}, so the
-     *  strip behind the status bar would show the window background rather than the gradient. */
+    /**
+     * Nothing — Home's {@code AppBarLayout} takes the inset itself via {@code fitsSystemWindows}.
+     *
+     * <p>It has to. The greeting scrolls away and the search bar stays, so the inset belongs to the
+     * bar rather than to any one child; and padding the AppBarLayout by hand doesn't work either,
+     * because it offsets its scrolling child <em>within</em> its own bounds and the pinned cards
+     * then draw up through the padding into the status bar. AppBarLayout's own inset handling keeps
+     * children below the strip and still paints its background (the gradient) behind it.
+     */
     @Override
     public View topInsetTarget(View root) {
-        return root.findViewById(R.id.home_header);
+        return null;
     }
 
     private NoteRepository noteRepository;
@@ -115,6 +122,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         recyclerView.setLayoutManager(layoutManager);
         recyclerView.setAdapter(homeAdapter);
 
+        applyStatusBarScrim(view);
+
         pinnedSection = view.findViewById(R.id.pinned_section);
         pinnedCardsContainer = view.findViewById(R.id.pinned_cards_container);
 
@@ -135,6 +144,21 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         });
 
         setupFabMenu(view);
+    }
+
+    /** Sizes the scrim to the status bar — see the note on it in fragment_home.xml. */
+    private void applyStatusBarScrim(View root) {
+        View scrim = root.findViewById(R.id.status_bar_scrim);
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(scrim, (v, insets) -> {
+            int top = insets.getInsets(
+                    androidx.core.view.WindowInsetsCompat.Type.systemBars()).top;
+            if (v.getLayoutParams().height != top) {
+                v.getLayoutParams().height = top;
+                v.requestLayout();
+            }
+            return insets;
+        });
+        androidx.core.view.ViewCompat.requestApplyInsets(scrim);
     }
 
     private static final long FAB_OPTIONS_ANIM_DURATION_MS = 180;
@@ -172,10 +196,12 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         // backs out without drawing anything.
         fabOptionWhiteboard.setOnClickListener(v -> {
             collapseFabOptions(fabOptions, sweepDistance);
-            WhiteboardDialogs.showCreateDialog(requireContext(), title ->
-                    whiteboardRepository.createWhiteboard(
-                            title.isEmpty() ? null : title, null,
-                            whiteboardId -> openWhiteboard(whiteboardId, null)));
+            // Straight to the canvas, untitled — the board is named from its own toolbar the way a
+            // note is named in its editor. Asking for a name before there is anything to name is
+            // the wrong order, and an empty dialog field was the common answer anyway.
+            whiteboardRepository.createWhiteboard(null, null,
+                    mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
+                    whiteboardId -> openWhiteboard(whiteboardId, null));
         });
     }
 

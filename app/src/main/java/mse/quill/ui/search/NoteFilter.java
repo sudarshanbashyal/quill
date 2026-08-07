@@ -12,7 +12,7 @@ import mse.quill.R;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
-import mse.quill.model.Whiteboard;
+import mse.quill.data.model.Whiteboard;
 
 /**
  * What the search bar is currently asking for, and the one place that answers it.

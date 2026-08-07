@@ -47,9 +47,12 @@ masquerading as migration bugs).
   - [ ] Add a migration test: seed an older-shaped DB with data, run the upgrade, assert
         rows survive
 - [ ] **Unify background DB access**
-  - [ ] Port `StrokeDao` / `WhiteboardDao` / `WhiteboardFragment` off ad hoc
-        `new Thread(...)` calls onto the shared `AppExecutors.diskIO()` used by the
-        other repositories
+  - [ ] Port `StrokeRepository` / `WhiteboardRepository`'s Sync methods / `WhiteboardFragment`
+        off ad hoc `new Thread(...)` calls onto the shared `AppExecutors.diskIO()` used by the
+        other repositories. *(2026-08-07: the DAOs were renamed to repositories and
+        `WhiteboardDao` folded into `WhiteboardRepository`, with its synchronous methods carrying a
+        `Sync` suffix so a UI-thread call reads as wrong. The naming is consistent now; the
+        threading is not.)*
   - [ ] Audit all fragments for any accidental main-thread `SQLiteDatabase` access
 - [ ] **Automated test coverage** *(70 instrumented tests under `app/src/androidTest` as of
       2026-07-29, run with `./gradlew :app:connectedDebugAndroidTest`; plus 30 JVM unit
@@ -83,6 +86,8 @@ masquerading as migration bugs).
 - [ ] **Fix bugs found during architecture review**
   - [x] `WhiteboardFragment.exportWhiteboard()` shows a "Export failed" toast
         unconditionally even after a successful export *(fixed 2026-08-03)*
+  - [x] Opening a note or whiteboard and leaving it reported "Updated now" — both save-on-pause
+        paths wrote `updated_at` even when nothing changed *(fixed 2026-08-07)*
 
 ---
 
@@ -220,8 +225,10 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
         media on disk can't invalidate a document; width/duration/transcript live on the
         asset row, which Markdown link syntax has nowhere to put
   - [x] Audio embed: `![audio](quill://audio/<asset-id>)`
-  - [ ] Whiteboard embed (also feeds Epic C's whiteboard-linking goal) — reserved shape
-        `![whiteboard](quill://whiteboard/<id>)`, not yet built
+  - [x] Whiteboard embed *(2026-08-07)* — `![whiteboard](quill://whiteboard/<id>)` as reserved.
+        Attach from the note toolbar (new or imported via a searchable picker), preview in the
+        note, tap through to the board, long-press to detach. Resolves without the media registry,
+        since the id names a whiteboard row rather than an asset
   - [ ] Export to portable `.md`: rewrite `quill://` URIs to relative file paths
 - [x] **Segment identity — prerequisite fix, found during design review**
   - [x] `BaseSegmentView` now owns a stable id, round-tripped through export/import.
@@ -381,10 +388,30 @@ gap; what's left is the link back to notes, which overlaps Epic D's whiteboard e
 - [x] **Whiteboards can stand alone** — `whiteboards.note_id` nullable; schema v4 added
       `title`/`created_at`/`updated_at` via a real in-place migration
 - [x] **`WhiteboardRepository`** on the shared `AppExecutors` pattern (Home's entry point)
+- [x] **A canvas bigger than the screen** *(2026-08-07)* — ten screens each way, opening in the
+      middle, two-finger pan (plus a Move tool for one finger), and a Centre button that brings the
+      window back to the ink. Strokes moved to canvas coordinates; export now covers the whole
+      drawing rather than the window. No zoom, deliberately — see note.md for why that bounds it
+- [x] **Whiteboard screen re-laid out** *(2026-08-07)* — heading alone at the top with back and a
+      show/hide toggle, every tool in one content-sized floating rail down the left, and one
+      selection idiom across tools, colours and widths
+- [x] **Typed text on a board** *(2026-08-07)* — `whiteboard_texts` (schema v7), a text tool that
+      places a label where you tap, immutable like a stroke so undo/clear/export all treat it the
+      same. Editing means undo-and-retype; that is what keeps a board append-only for Epic C
+- [x] **Paper styles** *(2026-08-07)* — plain/warm/dotted per board (`whiteboards.background`,
+      schema v8). Forced the eraser to switch from painting white to real `PorterDuff.CLEAR`
+      erasure, since a white stroke is only invisible on a white board
+- [x] **Paper preference for new boards** *(2026-08-07)* — last choice becomes the default via
+      `WhiteboardPreferences`; existing boards keep theirs
+- [x] **Whiteboard previews on Home** *(2026-08-07)* — cards show the drawing, then name and date,
+      per the Figma `HomePage_whiteboard` frame. Reverses the 08-03 "no thumbnail" decision; see
+      note.md for what made it affordable
+- [ ] **Make board text searchable** — Home matches whiteboards on title only, and text items are
+      now the first real content a board has. Search-side change, not a whiteboard one
 - [ ] **Visual QA** — nothing here has been seen running; the section, the create/rename dialogs
       and the FAB path are all build-unverified as of 2026-08-03
-- [ ] **Open a note's whiteboard from the note** — the reverse direction still doesn't exist;
-      design it together with Epic D's `![whiteboard](quill://whiteboard/<id>)` embed, not separately
+- [x] **Open a note's whiteboard from the note** *(2026-08-07)* — done with the Epic D embed, as
+      intended: the embed's sheet navigates to the board
 - [ ] **Port `WhiteboardFragment`/`StrokeDao` onto `AppExecutors`** (also listed under Epic A).
       Note the constraint found while doing the section: the `whiteboards` insert must still
       happen before any stroke write, since `strokes` has a foreign key onto it

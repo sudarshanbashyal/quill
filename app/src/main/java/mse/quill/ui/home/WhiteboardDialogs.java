@@ -6,7 +6,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputLayout;
 
 import mse.quill.R;
-import mse.quill.model.Whiteboard;
+import mse.quill.data.model.Whiteboard;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.TextFieldUtils;
 
@@ -26,21 +26,6 @@ public final class WhiteboardDialogs {
 
     private WhiteboardDialogs() {}
 
-    /**
-     * Naming a new board is optional: an empty field creates an untitled board rather than
-     * blocking, since the user's next move is to draw, not to fill in a form.
-     */
-    public static void showCreateDialog(Context context, OnTextPicked callback) {
-        TextInputLayout nameField = TextFieldUtils.outlinedField(context, R.string.whiteboard_name_hint);
-
-        new MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.dialog_new_whiteboard_title)
-                .setView(CollectionDialogs.inset(context, nameField))
-                .setPositiveButton(R.string.action_create, (dialog, which) ->
-                        callback.onPicked(nameField.getEditText().getText().toString().trim()))
-                .setNegativeButton(R.string.action_cancel, null)
-                .show();
-    }
 
     public static void showRenameDialog(Context context, String currentTitle, OnTextPicked callback) {
         TextInputLayout nameField = TextFieldUtils.outlinedField(context, R.string.whiteboard_name_hint);

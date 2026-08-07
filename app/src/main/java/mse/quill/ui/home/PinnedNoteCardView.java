@@ -91,7 +91,7 @@ final class PinnedNoteCardView {
         tagsContainer.setOrientation(LinearLayout.HORIZONTAL);
         tagsContainer.setVisibility(View.GONE);
         content.addView(tagsContainer);
-        TagChipView.renderNeutral(context, tagsContainer, note.tags);
+        TagChipView.renderNeutralFitting(context, tagsContainer, note.tags, width - 2 * spacingMd);
 
         card.setOnClickListener(v -> listener.onClicked(note));
         card.setOnLongClickListener(v -> {

@@ -7,7 +7,7 @@ import java.util.Date;
 
 import mse.quill.R;
 import mse.quill.data.model.Note;
-import mse.quill.model.Whiteboard;
+import mse.quill.data.model.Whiteboard;
 
 public final class NoteDisplayUtils {
 

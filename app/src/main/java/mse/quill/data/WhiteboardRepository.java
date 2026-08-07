@@ -9,14 +9,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import mse.quill.model.Whiteboard;
+import mse.quill.data.model.Whiteboard;
 
 /**
  * Async, callback-based access to the `whiteboards` table, following the same shape as
  * NoteRepository / CollectionRepository and routing every query through the shared
  * AppExecutors.diskIO() thread.
  *
- * WhiteboardFragment still talks to {@link WhiteboardDao} / {@link StrokeDao} directly on its own
+ * WhiteboardFragment still talks to the Sync methods below and {@link StrokeRepository} on its own
  * threads (see memory/requirements.md Epic A); this repository is what the Home screen uses.
  */
 public class WhiteboardRepository {
@@ -28,12 +28,23 @@ public class WhiteboardRepository {
     private final AppExecutors executors;
 
     public WhiteboardRepository(Context context) {
-        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
+        this(AppDatabase.getInstance(context.getApplicationContext()));
+    }
+
+    /** For callers already holding the database — the whiteboard screen and the thumbnailer. */
+    public WhiteboardRepository(AppDatabase appDatabase) {
+        this.appDatabase = appDatabase;
         this.executors = AppExecutors.getInstance();
     }
 
     /** Creates an empty standalone board (noteId null) or one attached to a note. */
-    public void createWhiteboard(String title, String noteId, OnWhiteboardCreated cb) {
+    /**
+     * @param background the paper style the new board starts on — see
+     *                   {@code WhiteboardPreferences.defaultBackground}. Passed in rather than read
+     *                   here so the repository stays clear of user preferences.
+     */
+    public void createWhiteboard(String title, String noteId, int background,
+                                 OnWhiteboardCreated cb) {
         executors.diskIO(() -> {
             String id = UUID.randomUUID().toString();
             long now = System.currentTimeMillis();
@@ -44,6 +55,7 @@ public class WhiteboardRepository {
             cv.put("title", title);
             cv.put("created_at", now);
             cv.put("updated_at", now);
+            cv.put("background", background);
             appDatabase.getWritableDatabase().insert("whiteboards", null, cv);
 
             if (cb != null) executors.mainThread(() -> cb.onCreated(id));
@@ -83,7 +95,7 @@ public class WhiteboardRepository {
     public void loadWhiteboards(OnWhiteboardsLoaded cb) {
         executors.diskIO(() -> {
             Cursor c = appDatabase.getWritableDatabase().rawQuery(
-                    "SELECT w.id, w.note_id, w.title, w.created_at, w.updated_at, " +
+                    "SELECT w.id, w.note_id, w.title, w.created_at, w.updated_at, w.background, " +
                             "(SELECT COUNT(*) FROM strokes s WHERE s.whiteboard_id = w.id) AS stroke_count " +
                             "FROM whiteboards w ORDER BY w.updated_at DESC, w.created_at DESC",
                     null);
@@ -96,7 +108,8 @@ public class WhiteboardRepository {
                     wb.title = c.getString(2);
                     wb.createdAt = c.getLong(3);
                     wb.updatedAt = c.isNull(4) ? wb.createdAt : c.getLong(4);
-                    wb.strokeCount = c.getInt(5);
+                    wb.background = c.getInt(5);
+                    wb.strokeCount = c.getInt(6);
                     whiteboards.add(wb);
                 }
             } finally {
@@ -104,5 +117,89 @@ public class WhiteboardRepository {
             }
             if (cb != null) executors.mainThread(() -> cb.onLoaded(whiteboards));
         });
+    }
+
+    // ── Synchronous access ───────────────────────────────────────────────────
+    //
+    // The whiteboard screen runs its own threads rather than AppExecutors (Epic A), and one call
+    // has to be synchronous on purpose: `strokes` carries a foreign key onto the board, so the row
+    // must exist before any stroke is written. These carry the Sync suffix so that calling one
+    // from the UI thread reads as the mistake it would be — the threading unification itself is
+    // still outstanding.
+
+    /** Insert a new whiteboard row. Called once when a whiteboard is first created. */
+    public void insertSync(Whiteboard wb) {
+        ContentValues v = new ContentValues();
+        v.put("id", wb.id);
+        v.put("note_id", wb.noteId);
+        v.put("title", wb.title);
+        v.put("created_at", wb.createdAt);
+        v.put("updated_at", wb.updatedAt);
+        v.put("background", wb.background);
+        appDatabase.getWritableDatabase().insertWithOnConflict(
+                "whiteboards", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    /** Records that the canvas changed, so Home's Whiteboards section sorts by real recency. */
+    public void touchSync(String id, long updatedAt) {
+        ContentValues v = new ContentValues();
+        v.put("updated_at", updatedAt);
+        appDatabase.getWritableDatabase().update("whiteboards", v, "id = ?", new String[]{id});
+    }
+
+    /** Sets the board's paper style (see WhiteboardView.BACKGROUND_*). */
+    public void setBackgroundSync(String id, int background) {
+        ContentValues v = new ContentValues();
+        v.put("background", background);
+        v.put("updated_at", System.currentTimeMillis());
+        appDatabase.getWritableDatabase().update("whiteboards", v, "id = ?", new String[]{id});
+    }
+
+    /** Sets the board's name. A null title leaves it untitled, so it falls back to its dated
+     *  display name rather than showing an empty row. */
+    public void renameSync(String id, String title) {
+        ContentValues v = new ContentValues();
+        v.put("title", title);
+        v.put("updated_at", System.currentTimeMillis());
+        appDatabase.getWritableDatabase().update("whiteboards", v, "id = ?", new String[]{id});
+    }
+
+    /** Fetch a whiteboard by its id. Returns null if not found. */
+    public Whiteboard getByIdSync(String id) {
+        Cursor c = appDatabase.getReadableDatabase().query(
+                "whiteboards", null,
+                "id = ?", new String[]{id},
+                null, null, null);
+        Whiteboard wb = null;
+        if (c.moveToFirst()) {
+            wb = fromCursor(c);
+        }
+        c.close();
+        return wb;
+    }
+
+    /** Fetch the whiteboard belonging to a given note (a note has at most one whiteboard). */
+    public Whiteboard getByNoteIdSync(String noteId) {
+        Cursor c = appDatabase.getReadableDatabase().query(
+                "whiteboards", null,
+                "note_id = ?", new String[]{noteId},
+                null, null, null);
+        Whiteboard wb = null;
+        if (c.moveToFirst()) {
+            wb = fromCursor(c);
+        }
+        c.close();
+        return wb;
+    }
+
+    static Whiteboard fromCursor(Cursor c) {
+        Whiteboard wb = new Whiteboard();
+        wb.id        = c.getString(c.getColumnIndexOrThrow("id"));
+        wb.noteId    = c.getString(c.getColumnIndexOrThrow("note_id"));
+        wb.title     = c.getString(c.getColumnIndexOrThrow("title"));
+        wb.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
+        wb.updatedAt = c.getLong(c.getColumnIndexOrThrow("updated_at"));
+        wb.background = c.getInt(c.getColumnIndexOrThrow("background"));
+        return wb;
     }
 }

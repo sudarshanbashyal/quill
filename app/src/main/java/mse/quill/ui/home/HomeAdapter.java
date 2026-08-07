@@ -21,8 +21,9 @@ import mse.quill.R;
 import mse.quill.util.RelativeTime;
 import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
-import mse.quill.model.Whiteboard;
+import mse.quill.data.model.Whiteboard;
 import mse.quill.ui.tags.TagChipView;
+import mse.quill.ui.whiteboard.WhiteboardThumbnails;
 import mse.quill.util.NoteDisplayUtils;
 
 /**
@@ -100,34 +101,34 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private int collectionsStart() { return POS_COLLECTIONS_HEADER + 1; }
 
-    private int whiteboardsHeaderPos() { return collectionsStart() + collectionsCount(); }
-
-    private int whiteboardsStart() { return whiteboardsHeaderPos() + 1; }
-
-    /** An empty section still occupies one row — the empty-state message. */
-    private int whiteboardsSectionCount() { return whiteboards.isEmpty() ? 1 : whiteboards.size(); }
-
-    private int notesHeaderPos() { return whiteboardsStart() + whiteboardsSectionCount(); }
+    private int notesHeaderPos() { return collectionsStart() + collectionsCount(); }
 
     private int notesStart() { return notesHeaderPos() + 1; }
 
+    /** An empty section still occupies one row — the empty-state message. */
     private int notesSectionCount() { return notes.isEmpty() ? 1 : notes.size(); }
+
+    private int whiteboardsHeaderPos() { return notesStart() + notesSectionCount(); }
+
+    private int whiteboardsStart() { return whiteboardsHeaderPos() + 1; }
+
+    private int whiteboardsSectionCount() { return whiteboards.isEmpty() ? 1 : whiteboards.size(); }
 
     @Override
     public int getItemCount() {
-        return notesStart() + notesSectionCount();
+        return whiteboardsStart() + whiteboardsSectionCount();
     }
 
     @Override
     public int getItemViewType(int position) {
         if (position == POS_COLLECTIONS_HEADER
-                || position == whiteboardsHeaderPos()
-                || position == notesHeaderPos()) {
+                || position == notesHeaderPos()
+                || position == whiteboardsHeaderPos()) {
             return TYPE_SECTION_HEADER;
         }
-        if (position < whiteboardsHeaderPos()) return TYPE_COLLECTION_CARD;
-        if (position < notesHeaderPos()) return whiteboards.isEmpty() ? TYPE_EMPTY : TYPE_WHITEBOARD_CARD;
-        return notes.isEmpty() ? TYPE_EMPTY : TYPE_NOTE;
+        if (position < notesHeaderPos()) return TYPE_COLLECTION_CARD;
+        if (position < whiteboardsHeaderPos()) return notes.isEmpty() ? TYPE_EMPTY : TYPE_NOTE;
+        return whiteboards.isEmpty() ? TYPE_EMPTY : TYPE_WHITEBOARD_CARD;
     }
 
     // ── ViewHolder creation/binding ──────────────────────────────────────
@@ -195,7 +196,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             ((WhiteboardCardViewHolder) holder).bind(whiteboard, listener);
         } else if (type == TYPE_EMPTY) {
             ((EmptyViewHolder) holder).bind(
-                    position < notesHeaderPos() ? R.string.empty_whiteboards : R.string.empty_notes);
+                    position < whiteboardsHeaderPos() ? R.string.empty_notes : R.string.empty_whiteboards);
         } else {
             Note note = notes.get(position - notesStart());
             ((NoteRowViewHolder) holder).bind(note, listener);
@@ -208,15 +209,15 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private int sectionTitleRes(int position) {
         if (position == POS_COLLECTIONS_HEADER) return R.string.section_collections;
-        if (position == whiteboardsHeaderPos()) return R.string.section_whiteboards;
-        return R.string.section_notes;
+        if (position == notesHeaderPos()) return R.string.section_notes;
+        return R.string.section_whiteboards;
     }
 
     /** Paired with {@link #sectionTitleRes}; every section header carries its icon. */
     private int sectionIconRes(int position) {
         if (position == POS_COLLECTIONS_HEADER) return R.drawable.ic_section_collection;
-        if (position == whiteboardsHeaderPos()) return R.drawable.ic_section_whiteboard;
-        return R.drawable.ic_section_note;
+        if (position == notesHeaderPos()) return R.drawable.ic_section_note;
+        return R.drawable.ic_section_whiteboard;
     }
 
     // ── ViewHolders ──────────────────────────────────────────────────────
@@ -264,21 +265,21 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static class WhiteboardCardViewHolder extends RecyclerView.ViewHolder {
+        private final android.widget.ImageView thumbnailView;
         private final TextView titleView;
-        private final TextView countView;
         private final TextView updatedView;
 
         WhiteboardCardViewHolder(@NonNull WhiteboardCardView.Views views) {
             super(views.root);
+            thumbnailView = views.thumbnailView;
             titleView = views.titleView;
-            countView = views.countView;
             updatedView = views.updatedView;
         }
 
         void bind(Whiteboard whiteboard, Listener listener) {
             Context context = itemView.getContext();
+            bindThumbnail(context, whiteboard);
             titleView.setText(NoteDisplayUtils.resolveWhiteboardTitle(context, whiteboard));
-            countView.setText(formatStrokes(context, whiteboard.strokeCount));
             updatedView.setText(context.getString(
                     R.string.updated_relative_format,
                     RelativeTime.past(context, whiteboard.updatedAt)));
@@ -290,10 +291,22 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             });
         }
 
-        private static String formatStrokes(Context context, int count) {
-            return count == 0
-                    ? context.getString(R.string.strokes_count_zero)
-                    : context.getResources().getQuantityString(R.plurals.strokes_count, count, count);
+        /**
+         * A preview arrives asynchronously, and this row may have been recycled onto a different
+         * board by then — the tag says which board the pending render belongs to, so a slow one
+         * can't paint itself onto somebody else's card.
+         */
+        private void bindThumbnail(Context context, Whiteboard whiteboard) {
+            thumbnailView.setTag(whiteboard.id);
+            thumbnailView.setImageDrawable(null);
+            thumbnailView.setImageResource(R.drawable.ic_section_whiteboard);
+            thumbnailView.setScaleType(android.widget.ImageView.ScaleType.CENTER);
+            WhiteboardThumbnails.load(context, whiteboard, thumbnail -> {
+                if (!whiteboard.id.equals(thumbnailView.getTag())) return;
+                if (thumbnail == null) return;   // nothing drawn yet: the placeholder stands
+                thumbnailView.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                thumbnailView.setImageBitmap(thumbnail);
+            });
         }
     }
 

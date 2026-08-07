@@ -14,7 +14,7 @@ public class AppDatabase extends SQLiteOpenHelper {
      * different things, so the next number has to clear the highest either of them used. See
      * {@link #ensureAdditiveSchema} for why the migration doesn't trust this number alone.
      */
-    private static final int DATABASE_VERSION = 6;
+    private static final int DATABASE_VERSION = 8;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -71,6 +71,7 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "title TEXT, " +
                 "created_at INTEGER, " +
                 "updated_at INTEGER, " +
+                "background INTEGER DEFAULT 0, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
         db.execSQL("CREATE TABLE strokes (" +
@@ -84,6 +85,19 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "created_at INTEGER, " +
                 "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
 
+        db.execSQL("CREATE TABLE whiteboard_texts (" +
+                "id TEXT PRIMARY KEY, " +
+                "whiteboard_id TEXT, " +
+                "author_id TEXT, " +
+                "x REAL, " +
+                "y REAL, " +
+                "text TEXT, " +
+                "color INTEGER, " +
+                "size REAL, " +
+                "created_at INTEGER, " +
+                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
+        db.execSQL("CREATE INDEX idx_whiteboard_texts_whiteboard_id " +
+                "ON whiteboard_texts(whiteboard_id)");
         // source_segment_id is the id of the Q&A block the card was generated from, as carried in
         // the note's Markdown (```quill-qa:<id>). It's what makes re-syncing a note an update
         // rather than a duplicate-generator: the card's SM-2 columns survive edits to its text.
@@ -252,11 +266,28 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_id " +
                 "ON quiz_attempts(quiz_id)");
 
+        // Typed text on a board. A new table, so nothing existing is touched.
+        db.execSQL("CREATE TABLE IF NOT EXISTS whiteboard_texts (" +
+                "id TEXT PRIMARY KEY, " +
+                "whiteboard_id TEXT, " +
+                "author_id TEXT, " +
+                "x REAL, " +
+                "y REAL, " +
+                "text TEXT, " +
+                "color INTEGER, " +
+                "size REAL, " +
+                "created_at INTEGER, " +
+                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_whiteboard_texts_whiteboard_id " +
+                "ON whiteboard_texts(whiteboard_id)");
+
         // Whiteboards gained a name and timestamps so Home can list them: a board has no body text
         // to derive a preview or a date from the way a note does.
         boolean whiteboardsDated = !addColumnIfMissing(db, "whiteboards", "title", "TEXT");
         addColumnIfMissing(db, "whiteboards", "created_at", "INTEGER");
         addColumnIfMissing(db, "whiteboards", "updated_at", "INTEGER");
+        // Paper style. Defaults to 0 (plain white), which is what every existing board was.
+        addColumnIfMissing(db, "whiteboards", "background", "INTEGER DEFAULT 0");
         if (!whiteboardsDated) {
             // Rows that predate the columns have no timestamps; date them from their strokes so
             // they don't all sort to the top of Home as "just now". Guarded on NULL so a re-run

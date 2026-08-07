@@ -55,14 +55,12 @@ public class NoteRepositoryMarkdownTest {
     // ── Blocking wrappers around the repository's async API ─────────────────
 
     private String createNote(String title) throws InterruptedException {
-        AtomicReference<String> result = new AtomicReference<>();
+        // The caller mints the id now — createNote takes it rather than handing one back.
+        String noteId = java.util.UUID.randomUUID().toString();
         CountDownLatch latch = new CountDownLatch(1);
-        repository.createNote(title, null, id -> {
-            result.set(id);
-            latch.countDown();
-        });
+        repository.createNote(noteId, title, null, latch::countDown);
         assertTrue("createNote timed out", latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-        return result.get();
+        return noteId;
     }
 
     private void saveNote(String noteId, String title, List<NoteSegment> segments)
@@ -108,7 +106,90 @@ public class NoteRepositoryMarkdownTest {
         return file;
     }
 
+    /** Reads updated_at straight from the table — the value Home sorts and labels rows by. */
+    private long updatedAt(String noteId) {
+        try (android.database.Cursor c = mse.quill.data.AppDatabase.getInstance(context)
+                .getReadableDatabase().query("notes", new String[]{"updated_at"},
+                        "id = ?", new String[]{noteId}, null, null, null)) {
+            assertTrue("note row missing", c.moveToFirst());
+            return c.getLong(0);
+        }
+    }
+
     // ── Tests ──────────────────────────────────────────────────────────────
+
+    @Test
+    public void savingUnchangedContentLeavesUpdatedAtAlone() throws Exception {
+        String noteId = createNote("Lecture 4");
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(text("Kernels are inner products in disguise"));
+        saveNote(noteId, "Lecture 4", segments);
+        long afterFirstSave = updatedAt(noteId);
+
+        Thread.sleep(30);
+        // What the editor does on pause whether or not anything was typed. Opening a note and
+        // backing out of it used to report "Updated now" and jump it to the top of Home.
+        saveNote(noteId, "Lecture 4", segments);
+
+        assertEquals(afterFirstSave, updatedAt(noteId));
+    }
+
+    @Test
+    public void savingChangedContentStillBumpsUpdatedAt() throws Exception {
+        String noteId = createNote("Lecture 4");
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(text("first"));
+        saveNote(noteId, "Lecture 4", segments);
+        long afterFirstSave = updatedAt(noteId);
+
+        Thread.sleep(30);
+        List<NoteSegment> edited = new ArrayList<>();
+        edited.add(text("second"));
+        saveNote(noteId, "Lecture 4", edited);
+
+        assertTrue("a real edit must still count as an update", updatedAt(noteId) > afterFirstSave);
+    }
+
+    @Test
+    public void aRenameCountsAsAChange() throws Exception {
+        String noteId = createNote("Before");
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(text("body"));
+        saveNote(noteId, "Before", segments);
+        long afterFirstSave = updatedAt(noteId);
+
+        Thread.sleep(30);
+        saveNote(noteId, "After", segments);
+
+        assertTrue(updatedAt(noteId) > afterFirstSave);
+    }
+
+    @Test
+    public void anUntouchedNewNoteIsStillIndexedForSearch() throws Exception {
+        // Some emulator images ship without fts5, and AppDatabase skips the table when that
+        // happens — there is then no index to assert about. See the note on notes_fts creation.
+        org.junit.Assume.assumeTrue("no fts5 on this image", hasSearchIndex());
+
+        // createNote writes no FTS row, so the first save has to go through even when it would
+        // write identical values — otherwise the note is unsearchable.
+        String noteId = createNote("Findable");
+        saveNote(noteId, "Findable", new ArrayList<>());
+
+        try (android.database.Cursor c = mse.quill.data.AppDatabase.getInstance(context)
+                .getReadableDatabase().query("notes_fts", new String[]{"note_id"},
+                        "note_id = ?", new String[]{noteId}, null, null, null)) {
+            assertTrue("a saved note must reach notes_fts", c.moveToFirst());
+        }
+    }
+
+    private boolean hasSearchIndex() {
+        try (android.database.Cursor c = mse.quill.data.AppDatabase.getInstance(context)
+                .getReadableDatabase().rawQuery(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='notes_fts'",
+                        null)) {
+            return c.moveToFirst();
+        }
+    }
 
     @Test
     public void formattedTextSurvivesSaveAndReload() throws Exception {
