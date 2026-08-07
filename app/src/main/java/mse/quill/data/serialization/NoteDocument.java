@@ -12,6 +12,7 @@ import mse.quill.ui.notes.editor.model.HeadingMarker;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.ui.notes.editor.model.WhiteboardSegment;
 
 /**
  * Converts a note's whole segment list to and from a single Markdown document — the note's source
@@ -49,6 +50,9 @@ public final class NoteDocument {
 
     private static final String KIND_IMAGE = "image";
     private static final String KIND_AUDIO = "audio";
+    /** The shape reserved for this in Epic D. Unlike the other two, its id names a whiteboard row
+     *  rather than an asset row, so it resolves without the media registry. */
+    private static final String KIND_WHITEBOARD = "whiteboard";
 
     /** A Q&A is a fenced block rather than a {@code quill://} line because, unlike an image, its
      *  content *is* text — formatted, multi-line, and belonging in the document rather than on a
@@ -91,6 +95,9 @@ public final class NoteDocument {
                 out.append("![](quill://").append(KIND_IMAGE).append('/').append(segment.id).append(')');
             } else if (segment.type() == NoteSegment.TYPE_AUDIO) {
                 out.append("![audio](quill://").append(KIND_AUDIO).append('/').append(segment.id).append(')');
+            } else if (segment.type() == NoteSegment.TYPE_WHITEBOARD) {
+                out.append("![whiteboard](quill://").append(KIND_WHITEBOARD).append('/')
+                        .append(segment.id).append(')');
             } else if (segment instanceof QaSegment) {
                 appendQa((QaSegment) segment, out);
             }
@@ -175,15 +182,22 @@ public final class NoteDocument {
                 continue;
             }
 
-            NoteSegment media = mediaById.get(embed.group(2));
-            if (media == null) continue;
+            NoteSegment embedded;
+            if (KIND_WHITEBOARD.equals(embed.group(1))) {
+                // A whiteboard needs no registry row to resolve — the id is the board itself.
+                // Whether that board still exists is the segment view's problem, not the parser's.
+                embedded = new WhiteboardSegment(embed.group(2));
+            } else {
+                embedded = mediaById.get(embed.group(2));
+            }
+            if (embedded == null) continue;
 
             if (hasPendingText) {
                 segments.add(new TextSegment(MarkdownSerializer.fromMarkdown(pendingText.toString())));
                 pendingText.setLength(0);
                 hasPendingText = false;
             }
-            segments.add(media);
+            segments.add(embedded);
         }
 
         if (hasPendingText) {

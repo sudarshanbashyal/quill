@@ -60,6 +60,7 @@ import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
+import mse.quill.ui.notes.editor.model.WhiteboardSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.tags.TagPickerDialog;
@@ -68,6 +69,12 @@ import mse.quill.util.MarkdownExporter;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.NoteExportStore;
 import mse.quill.util.PdfExporter;
+import android.widget.Toast;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import mse.quill.data.WhiteboardRepository;
+import mse.quill.ui.whiteboard.WhiteboardFragment;
+import mse.quill.ui.whiteboard.WhiteboardPickerDialog;
+import mse.quill.ui.whiteboard.WhiteboardPreferences;
 import mse.quill.util.WindowInsetsUtils;
 
 public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
@@ -100,6 +107,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
     private Runnable saveRunnable;
 
     private NoteEditorView noteEditorView;
+    private WhiteboardRepository whiteboardRepository;
 
     private ImageEmbedder imageEmbedder;
     private AudioRecorder audioRecorder;
@@ -215,6 +223,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         // not just edits — otherwise tapping from a heading into body text leaves H1 lit.
         noteEditorView.setSelectionChangeListener(this::updateToolbarState);
         noteEditorView.setMediaExportListener(this::exportMedia);
+        noteEditorView.setWhiteboardOpenListener(this::openWhiteboard);
         view.findViewById(R.id.note_editor_content).setOnClickListener(v -> noteEditorView.focusEnd());
         // The title sits in the header now, so the next focusable after it is the formatting
         // toolbar — pressing "next" landed on the italic button. Send the caret where the key
@@ -335,11 +344,77 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
                         noteEditorView.insertQaBlockAfterFocused();
                         updateToolbarState();
                     }
+
+                    @Override public void onWhiteboardRequested() {
+                        showWhiteboardSourceDialog();
+                    }
                 }
         );
 
         setupHeader(view);
         setupKeyboardBehaviour(view);
+    }
+
+    /**
+     * New board or an existing one — the same two ways you'd attach a photo.
+     *
+     * <p>A new board is created attached to this note and opened straight away: you asked for a
+     * board because you want to draw on it, and the embed is already in the note when you come
+     * back. Importing only points at a board that already exists, so it stays in the note.
+     */
+    private void showWhiteboardSourceDialog() {
+        new MaterialAlertDialogBuilder(requireContext())
+                .setItems(new CharSequence[]{
+                        getString(R.string.whiteboard_new),
+                        getString(R.string.whiteboard_import)
+                }, (dialog, which) -> {
+                    if (which == 0) createAndAttachWhiteboard();
+                    else showWhiteboardPicker();
+                })
+                .show();
+    }
+
+    private void createAndAttachWhiteboard() {
+        // Saved first: navigating away is what would otherwise persist the note, and the embed has
+        // to be in the document by then or coming back would show a note without it.
+        whiteboardRepository().createWhiteboard(null, noteId,
+                WhiteboardPreferences.defaultBackground(requireContext()), whiteboardId -> {
+                    if (!isAdded()) return;
+                    noteEditorView.insertWhiteboardAfterFocused(whiteboardId);
+                    updateToolbarState();
+                    autoSave();
+                    openWhiteboard(whiteboardId);
+                });
+    }
+
+    private void showWhiteboardPicker() {
+        whiteboardRepository().loadWhiteboards(whiteboards -> {
+            if (!isAdded()) return;
+            if (whiteboards.isEmpty()) {
+                Toast.makeText(requireContext(), R.string.whiteboard_import_empty,
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
+            WhiteboardPickerDialog.show(requireContext(), whiteboards, board -> {
+                noteEditorView.insertWhiteboardAfterFocused(board.id);
+                updateToolbarState();
+            });
+        });
+    }
+
+    private void openWhiteboard(String whiteboardId) {
+        if (!isAdded()) return;
+        Bundle args = new Bundle();
+        args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
+        args.putString(WhiteboardFragment.ARG_NOTE_ID, noteId);
+        NavHostFragment.findNavController(this).navigate(R.id.whiteboardFragment, args);
+    }
+
+    private WhiteboardRepository whiteboardRepository() {
+        if (whiteboardRepository == null) {
+            whiteboardRepository = new WhiteboardRepository(requireContext());
+        }
+        return whiteboardRepository;
     }
 
     private void setupHeader(View view) {
@@ -1009,6 +1084,9 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
             // A note whose only content is a Q&A block is a note with content — it used to survive
             // solely because the auto-generated title is never empty.
             if (segment instanceof QaSegment) return true;
+            // And a note holding nothing but an attached board: the attachment is the content.
+            // Without this, attaching a whiteboard to a blank note and leaving deletes the note.
+            if (segment instanceof WhiteboardSegment) return true;
             if (segment instanceof TextSegment
                     && !((TextSegment) segment).content.toString().trim().isEmpty()) {
                 return true;

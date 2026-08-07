@@ -1,4 +1,4 @@
-package mse.quill.model;
+package mse.quill.data.model;
 
 /**
  * Whiteboard
@@ -11,6 +11,7 @@ package mse.quill.model;
  *   title      TEXT     user-given name, nullable (see NoteDisplayUtils.resolveWhiteboardTitle)
  *   createdAt  INTEGER
  *   updatedAt  INTEGER  bumped whenever the canvas changes, so Home can sort by recency
+ *   background INTEGER  paper style: plain, yellowish, or dotted
  */
 public class Whiteboard {
     public String id;
@@ -18,6 +19,8 @@ public class Whiteboard {
     public String title;
     public long createdAt;
     public long updatedAt;
+    /** Paper style — see WhiteboardView.BACKGROUND_*. 0 (plain white) for every older board. */
+    public int background;
 
     /** Not a column — joined in by WhiteboardRepository.loadWhiteboards for the Home card. */
     public int strokeCount;

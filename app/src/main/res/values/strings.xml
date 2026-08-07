@@ -81,6 +81,19 @@
     <string name="action_done">Done</string>
     <string name="action_add">Add</string>
     <string name="action_add_tag">+ Add tag</string>
+    <string name="action_centre_canvas">Centre on drawing</string>
+    <string name="action_hide_tools">Hide tools</string>
+    <string name="action_show_tools">Show tools</string>
+    <string name="action_move_tool">Move the canvas</string>
+    <string name="action_text_tool">Add text</string>
+    <string name="action_background">Paper style</string>
+    <string name="background_white">Plain white</string>
+    <string name="background_paper">Warm paper</string>
+    <string name="background_dots">Dotted</string>
+    <string name="hint_whiteboard_text">Type, then Done</string>
+    <string name="action_width_extra_thick">Extra thick stroke</string>
+    <!-- Stands in for the tags a fixed-width card can't show. -->
+    <string name="tag_overflow_format">+%1$d</string>
 
     <string name="dialog_new_collection_title">New collection</string>
     <string name="dialog_rename_collection_title">Rename collection</string>
@@ -108,6 +121,19 @@
     <string name="action_insert_image">Insert image</string>
     <string name="action_record_audio">Record audio</string>
     <string name="action_qa_block">Question and answer block</string>
+    <string name="action_attach_whiteboard">Attach whiteboard</string>
+    <string name="whiteboard_new">New whiteboard</string>
+    <string name="whiteboard_import">Import whiteboard</string>
+    <string name="whiteboard_import_title">Choose a whiteboard</string>
+    <string name="whiteboard_search_hint">Search whiteboards…</string>
+    <string name="whiteboard_search_no_match">No whiteboards match that</string>
+    <string name="whiteboard_import_empty">No whiteboards yet — draw one first</string>
+    <string name="whiteboard_missing">This whiteboard was deleted</string>
+    <string name="action_open_whiteboard">Open whiteboard</string>
+    <string name="action_remove_whiteboard">Remove</string>
+    <string name="action_remove">Remove</string>
+    <string name="remove_whiteboard_title">Remove from note?</string>
+    <string name="remove_whiteboard_message">The whiteboard itself is kept — you can still find it on Home.</string>
 
     <string name="note_body_hint">Write something…</string>
     <string name="qa_question_hint">Question</string>

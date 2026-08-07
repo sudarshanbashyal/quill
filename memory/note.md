@@ -198,6 +198,135 @@ directly through the `strokes.tool` INTEGER column with no extra mapping layer.
 Points are packed as raw little-endian float pairs into a BLOB (`StrokeDao.
 serializePoints`/`deserializePoints`) — no JSON, minimal per-point overhead.
 
+**The canvas is ten screens each way, and points are canvas coordinates** (2026-08-07). One finger
+draws, two fingers pan; the window is moved with the View's own `scrollTo`, so `onDraw` receives an
+already-offset canvas and strokes are simply drawn where they live. Touch coordinates are converted
+on the way in (`worldX`/`worldY` add the scroll offset) — before this they were stored raw, which
+also meant a board drawn on one screen size opened misaligned on another.
+
+Three consequences worth knowing:
+
+- **The canvas is a fixed square measured from the display's shorter edge**, not from the view.
+  Sizing it from the window (`getWidth() * CANVAS_SCREENS`, the first version) made every bound
+  move on rotation: ink drawn mid-canvas in portrait sat below the bottom edge of the landscape
+  canvas, out of reach of any scroll position, so the drawing vanished when the phone turned. The
+  shorter display edge is the one dimension a rotation doesn't change.
+- **Bounded, not infinite**, because there is no zoom — an endless canvas has nowhere to see the
+  whole drawing from, so ink panned away from would be findable only by luck. `CANVAS_SCREENS = 10`
+  is the one number to change.
+- **A board opens in the middle of the canvas**, not at a corner, so there is room to work in every
+  direction. An empty board and the Centre button with nothing drawn both go there.
+- **Opening a board centres on its ink** (`loadStrokes` → `centreOnContent`, deferred to
+  `onSizeChanged` when it runs before layout). Otherwise a board drawn far from the origin reopens
+  on blank canvas. Boards drawn before this change are unaffected: their ink is a screen wide at
+  the canvas origin, which just clamps the window to that corner.
+- **Export covers the whole drawing, not the window** — the ink's bounding box plus padding, scaled
+  down if its longest side exceeds `MAX_EXPORT_PX`. Exporting the viewport would silently crop.
+  Eraser strokes are excluded from the bounds: white on white can't extend what's visible.
+
+The second finger discards the stroke the first one started, so a two-finger pan leaves no stray
+tick, and panning holds until every finger lifts. Covered by `WhiteboardViewPanTest` — instrumented
+because the behaviour is multi-pointer `MotionEvent` handling and the emulator refuses injected
+multi-touch (SELinux blocks `/dev/input` writes; `adb shell input` is single-pointer).
+
+**Position indicators**: the framework's own scrollbars, down the right edge and along the bottom.
+A custom `View` gets them for free by declaring `android:scrollbars` and reporting three numbers per
+axis (`computeHorizontalScrollRange/Offset/Extent` — range is the canvas, extent the window), so
+there is no hand-drawn indicator to keep in sync. They fade when the canvas stops moving;
+`awakenScrollBars()` in `panBy`/`centreOnContent` is what brings them back, since `scrollTo` alone
+doesn't. The overrides are public rather than protected so tests can read the geometry.
+
+**Stylus** (2026-08-07): drawing with a pen always worked — Android delivers stylus input as
+ordinary touch events — but nothing *distinguished* a pen, which is what was missing:
+
+- **Palm rejection**: while a stylus is drawing, extra pointers are ignored. Before this, the hand
+  resting on the screen read as a second finger, which cancelled the stroke and started a pan.
+- **The eraser end erases**, whatever the rail has selected, via `TOOL_TYPE_ERASER` or a barrel
+  button in `getButtonState()` — pens report it either way.
+- **Pressure scales the stroke width**, clamped to 0.5–1.5× and neutral at the 1.0 a firm touch
+  reports. Applied once at stroke start, not per point: a stroke carries a single width in the
+  database and `points_blob` is x/y pairs only, so per-point pressure means changing the storage
+  format. Finger pressure is deliberately ignored — it means something different.
+
+**The Move tool** (`setPanTool`) hands single-finger drags to the canvas instead of the pen. It is
+deliberately *not* a `TOOL_` constant: that value is written into every stroke row, and moving the
+canvas produces no stroke. Two-finger panning still works whatever tool is selected, so Move is for
+working one-handed rather than the only way around. A pan tracks the midpoint of two pointers but a
+single pointer directly, which is why `oneFingerPan` exists — reading one finger as the midpoint
+mid-gesture would jump the canvas.
+
+**Paper styles** (2026-08-07): plain white, warm off-white, or dotted, stored per board on
+`whiteboards.background` (schema v8, additive), with the last choice remembered as the default for
+*new* boards in `WhiteboardPreferences` — existing boards keep their own, so changing the preference
+never repapers old work. The helper is shared because boards are created from **two** places:
+Home's FAB via `WhiteboardRepository.createWhiteboard` (the path actually used) and
+`WhiteboardFragment` when it opens without an id. Teaching only the fragment about the preference
+left FAB-made boards silently white. The colour is a `drawColor`; the dots are placed on
+a grid in **canvas** coordinates so they stay under the drawing while you pan, and only the ones in
+the visible rectangle are drawn, so the cost is a screenful however big the canvas is. Export
+carries the paper too.
+
+**This forced the eraser to become a real eraser.** It used to paint opaque *white strokes* — which
+is invisible on a white board, and is why it survived this long. On any other paper it would be a
+white smear. Ink is now drawn into its own layer (`canvas.saveLayer` in `drawStrokes`) and the
+eraser uses `PorterDuffXfermode(CLEAR)`, so it clears back to whatever paper is underneath. The
+paper is drawn *before* the layer, or CLEAR would punch through that too. Old eraser strokes, saved
+as white, erase properly under the new rule — nothing needed migrating. Covered by
+`WhiteboardBackgroundTest`, which asserts on exported pixels: no pure white may appear on a warm
+board after erasing.
+
+**`updated_at` is only bumped by real changes** (2026-08-07). Both the note editor and the
+whiteboard save on pause whether or not anything was touched, and both save paths wrote
+`updated_at` unconditionally — so *opening* a note or a board and backing out reported "Updated
+now" and jumped it to the top of Home. `NoteRepository.saveNote` now compares the incoming title
+and markdown against what is stored and returns early when they match (done there, not in the
+editor, because the markdown is already built on that thread and it fixes every caller);
+`WhiteboardFragment.saveTitle` keeps the loaded title and skips the write when it is unchanged.
+The note check also verifies the row is indexed, because `createNote` writes no `notes_fts` row —
+skipping the first save on an untouched new note would otherwise leave it unsearchable.
+
+**Typed text** (2026-08-07) lives in its own table, `whiteboard_texts(id, whiteboard_id, author_id,
+x, y, text, color, size, created_at)` — schema v7, added through `ensureAdditiveSchema`'s
+CREATE-TABLE-IF-NOT-EXISTS path, so no existing board is touched. A text item is shaped like a
+stroke on purpose: **placed, never edited**. To change the words you undo it and type again.
+
+That constraint is the whole design, and it buys three things: the board stays append-only, so
+Epic C's collaboration story (whiteboards are the live-collab surface *because* their contents are
+immutable and id'd) survives intact; undo keeps working as one stack over everything added, sorted
+by `created_at` on load so strokes and text interleave correctly; and there is no selection,
+dragging or hit-testing to build, which is where an editable-object canvas gets expensive.
+
+Mechanics worth knowing:
+
+- `MODE_DRAW`/`MODE_MOVE`/`MODE_TEXT` on the view say what *one finger* does. Separate from the
+  `TOOL_` constants, which are persisted per stroke — moving and typing produce no stroke.
+- Placement is a **tap**, not a drag, and the view only reports the canvas point; the fragment owns
+  the editor. `WhiteboardView` still knows nothing about `View`s on top of it.
+- The editor is a plain `EditText` positioned at `canvas point − scroll`, and **does not follow the
+  canvas**, because panning is suspended while it is open. That is what avoids the floating-editor
+  sync problem that makes this feature expensive elsewhere.
+- It is **single-line**: with `textMultiLine` the IME swaps its Done key for a newline and there is
+  then no gesture that means "finished". Rendering already splits on `\n` if that changes.
+- Text draws *under* the ink, so a highlighter over a label reads as highlighting it.
+- Size follows the stroke-width picker (×4), so the rail keeps one meaning of "how big".
+
+**Not done, deliberately**: board text is not searchable yet. Home still matches whiteboards on
+title only, and text items are now the first real content a board has — that is the obvious next
+win, and it is a search-side change, not a whiteboard one.
+
+**Screen layout** (2026-08-07): the heading is alone in the top bar with back and a show/hide eye;
+every tool, colour, width and action lives in one floating card rail down the left, sized to its
+content and centred (`layout_constrainedHeight` so it shrinks and scrolls rather than being cut off
+on a short screen). The eye can't live inside the rail it hides. The canvas runs the **full width**
+with the rail floating over it — constraining it to the rail's end left a grey gutter where the old
+full-height sidebar used to be, and made hiding the rail resize the canvas and shift the drawing
+under your hand. The card carries a hairline stroke rather than elevation, because Material
+composites an elevation overlay into *any* card background and 2dp was enough to read as grey. Tools, colours *and* widths all
+show selection the same way — `tool_selector_bg` on `setSelected` — which replaced a separate
+"current colour" swatch that read as a sixth colour you could pick. Note that framework
+`Widget.ImageButton` defaults `scaleType` to **center**, so the 512px PNG icons render at full size
+and get cropped unless each button sets `fitCenter` explicitly.
+
 Undo is a `Deque<String>` of stroke IDs in `WhiteboardFragment`, rebuilt from
 `created_at ASC` order on load so reopening a whiteboard preserves undo order across
 sessions; undo pops the most recent stroke ID, removes it from the view and deletes it
@@ -212,8 +341,15 @@ included — was fixed on 2026-08-03.)
 section between Collections and Notes, and `whiteboards.note_id` is nullable so a board created
 from the FAB has no parent note. Two decisions behind that section:
 
-- **The card shows a glyph and a stroke count, not a thumbnail.** A real preview would mean
-  loading every board's strokes just to draw Home, and there's no cover image to cache instead.
+- **The card shows a preview of the drawing** *(2026-08-07, reversing the 08-03 decision below)*.
+  The original objection — a preview means reading every board's strokes just to draw Home — is
+  answered by `WhiteboardThumbnails`: only the cards actually on screen ask for one, and an
+  `LruCache` keyed by `id@updatedAt@background` means each board renders once per change, with no
+  invalidation to remember. The preview goes through `WhiteboardView.renderThumbnail`, which is the
+  export path with a smaller size cap, so a card shows the real board — same paper, same erasures,
+  same text — rather than a second drawing implementation that could drift.
+  *(Superseded: the card used to show a glyph and a stroke count, because a preview would have
+  meant loading every board's strokes and there was no cover image to cache instead.)*
 - **Deleting a board is a hard delete**, against the app's soft-delete convention, because there
   is no whiteboard trash surface — a soft-deleted board would just be unreachable rows. Strokes
   go first in the same transaction; they carry a foreign key onto the board.
@@ -250,8 +386,26 @@ portable Markdown becomes a matter of rewriting `quill://` URIs to relative path
 Markwon was **not** adopted — it renders, but doesn't help with editing, and the
 round-trip is hand-written in `MarkdownSerializer`.
 
-**Still to design/build** (Epic D): the whiteboard embed, reserved as
-`![whiteboard](quill://whiteboard/<id>)`.
+**Whiteboard embeds are built** (2026-08-07), in the shape Epic D reserved:
+`![whiteboard](quill://whiteboard/<id>)`. Unlike image and audio embeds, a whiteboard resolves
+**without the media registry** — the id in the link is the `whiteboards` row itself, so
+`NoteDocument.fromMarkdown` builds a `WhiteboardSegment` straight from it and
+`replaceMediaAssetsSync` never sees it (`isMedia()` is false: there is no file to own).
+
+That is the whole design: the note points at a board, it doesn't contain one. Removing the embed
+detaches, it doesn't delete — the board stays on Home, and it may be attached to more than one
+note. The other side of that bargain is that a board deleted from Home leaves an embed pointing at
+nothing, which `WhiteboardSegmentView` shows as "This whiteboard was deleted" rather than a blank.
+
+Attaching goes through the toolbar's whiteboard button: **New** creates a board already attached to
+the note and opens it (you asked for a board because you want to draw on it), **Import** opens
+`WhiteboardPickerDialog` — a search field over rows carrying each board's preview, because boards
+are often untitled and three "Untitled Whiteboard - Aug 7"s tell you nothing. Tapping an embed
+opens the drawing with a way through to the board; a long press, or that sheet, detaches it.
+
+**One trap worth remembering**: `hasRealContent` decides whether an untouched note is deleted on
+exit, and it enumerates segment types. A note whose only content was an attached board counted as
+empty and was deleted on the way out until `WhiteboardSegment` was added to it.
 
 See "Flashcards" below for how the Q&A fence's info string ended up being used.
 

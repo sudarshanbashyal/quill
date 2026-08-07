@@ -5,7 +5,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.PointF;
 
-import mse.quill.model.Stroke;
+import mse.quill.data.model.Stroke;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * StrokeDao
+ * StrokeRepository
  *
  * Handles reads/writes for the `strokes` table.
  *
@@ -22,11 +22,11 @@ import java.util.UUID;
  * packed sequentially. serializePoints()/deserializePoints() convert between this
  * byte format and List<PointF> used by WhiteboardView.
  */
-public class StrokeDao {
+public class StrokeRepository {
 
     private final AppDatabase db;
 
-    public StrokeDao(AppDatabase db) {
+    public StrokeRepository(AppDatabase db) {
         this.db = db;
     }
 

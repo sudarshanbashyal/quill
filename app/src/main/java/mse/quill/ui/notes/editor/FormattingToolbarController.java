@@ -16,6 +16,7 @@ public class FormattingToolbarController {
         void onImageRequested();
         void onAudioRequested();
         void onQaBlockRequested();
+        void onWhiteboardRequested();
     }
 
     private final FormattingButtonView boldButton;
@@ -27,6 +28,7 @@ public class FormattingToolbarController {
     private final FormattingButtonView imageButton;
     private final FormattingButtonView micButton;
     private final FormattingButtonView qaButton;
+    private final FormattingButtonView whiteboardButton;
 
     public FormattingToolbarController(LinearLayout container, FormatListener listener) {
         boldButton = addButton(container, R.drawable.ic_bold,
@@ -47,6 +49,8 @@ public class FormattingToolbarController {
                 R.string.action_record_audio, listener::onAudioRequested);
         qaButton = addButton(container, R.drawable.ic_question,
                 R.string.action_qa_block, listener::onQaBlockRequested);
+        whiteboardButton = addButton(container, R.drawable.ic_whiteboard,
+                R.string.action_attach_whiteboard, listener::onWhiteboardRequested);
     }
 
     /**
@@ -62,6 +66,7 @@ public class FormattingToolbarController {
         // A Q&A block is itself a block, so it's offered exactly where other blocks are — which
         // also stops one being nested inside another.
         qaButton.setAvailable(state.embedsAllowed);
+        whiteboardButton.setAvailable(state.embedsAllowed);
 
         boldButton.setActive(state.bold);
         italicButton.setActive(state.italic);

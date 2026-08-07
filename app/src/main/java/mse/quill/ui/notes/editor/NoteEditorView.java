@@ -18,11 +18,13 @@ import mse.quill.ui.notes.editor.model.HeadingMarker;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
+import mse.quill.ui.notes.editor.model.WhiteboardSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
 import mse.quill.ui.notes.editor.segment.AudioSegmentView;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.segment.ImageSegmentView;
 import mse.quill.ui.notes.editor.segment.QASegmentView;
+import mse.quill.ui.notes.editor.segment.WhiteboardSegmentView;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
 
 public class NoteEditorView extends LinearLayout implements BaseSegmentView.SegmentCallback {
@@ -47,6 +49,7 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     private ContentChangeListener contentChangeListener;
     private SelectionChangeListener selectionChangeListener;
     private MediaExportListener mediaExportListener;
+    private WhiteboardSegmentView.OpenListener whiteboardOpenListener;
 
     public NoteEditorView(Context context) {
         super(context);
@@ -76,6 +79,11 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         this.mediaExportListener = listener;
     }
 
+    /** Set by the host fragment: only it can navigate to the board an embed points at. */
+    public void setWhiteboardOpenListener(WhiteboardSegmentView.OpenListener listener) {
+        this.whiteboardOpenListener = listener;
+    }
+
     // ── Public API ─────────────────────────────────────────────────────────
 
     public void insertImageAfterFocused(String filePath) {
@@ -83,6 +91,15 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         addImageSegment(null, filePath, 0, insertAt);
 
         // The caret continues in the text segment the split left after the image.
+        TextSegmentView trailing = (TextSegmentView) segments.get(insertAt + 1);
+        focusOnceVisible(trailing, trailing::focusAtStart);
+    }
+
+    /** Attaches a board at the caret. The board itself already exists — this only points at it. */
+    public void insertWhiteboardAfterFocused(String whiteboardId) {
+        int insertAt = splitFocusedTextForBlockInsert();
+        addWhiteboardSegment(whiteboardId, insertAt);
+
         TextSegmentView trailing = (TextSegmentView) segments.get(insertAt + 1);
         focusOnceVisible(trailing, trailing::focusAtStart);
     }
@@ -270,6 +287,8 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
             } else if (segment instanceof AudioSegment) {
                 AudioSegment audio = (AudioSegment) segment;
                 addAudioSegment(audio.id, audio.filePath, audio.durationMs, segments.size());
+            } else if (segment instanceof WhiteboardSegment) {
+                addWhiteboardSegment(segment.id, segments.size());
             } else if (segment instanceof QaSegment) {
                 QaSegment qa = (QaSegment) segment;
                 addQaSegment(qa.id, qa.question, qa.answer, segments.size());
@@ -293,6 +312,8 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
             } else if (view.getSegmentType() == NoteSegment.TYPE_AUDIO) {
                 AudioSegmentView audioView = (AudioSegmentView) view;
                 segment = new AudioSegment(audioView.getFilePath(), audioView.getDurationMs());
+            } else if (view.getSegmentType() == NoteSegment.TYPE_WHITEBOARD) {
+                segment = new WhiteboardSegment(((WhiteboardSegmentView) view).getWhiteboardId());
             } else if (view.getSegmentType() == NoteSegment.TYPE_QA) {
                 QASegmentView qaView = (QASegmentView) view;
                 segment = new QaSegment(
@@ -443,6 +464,15 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
     private void addImageSegment(String segmentId, String filePath, int displayWidth, int index) {
         ImageSegmentView view = new ImageSegmentView(getContext(), segmentId, filePath, displayWidth);
         view.setCallback(this);
+        insertSegment(view, index);
+    }
+
+    private void addWhiteboardSegment(String whiteboardId, int index) {
+        WhiteboardSegmentView view = new WhiteboardSegmentView(getContext(), whiteboardId);
+        view.setCallback(this);
+        view.setOpenListener(id -> {
+            if (whiteboardOpenListener != null) whiteboardOpenListener.onOpenWhiteboard(id);
+        });
         insertSegment(view, index);
     }
 

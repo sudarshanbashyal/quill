@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -87,6 +88,16 @@ public class NoteRepository {
 
             String markdown = NoteDocument.toMarkdown(segments);
 
+            // Nothing to write if nothing changed. The editor auto-saves on pause whether or not
+            // anything was typed, and this used to bump updated_at regardless — so merely opening
+            // a note and backing out of it reported "Updated now" on Home and jumped it to the top
+            // of the list. Checked here rather than in the editor because the markdown is already
+            // built on this thread, and because it fixes every caller at once.
+            if (nothingToWrite(db, noteId, title, markdown)) {
+                if (onSaved != null) executors.mainThread(onSaved);
+                return;
+            }
+
             db.beginTransaction();
             try {
                 ContentValues cv = new ContentValues();
@@ -109,6 +120,41 @@ public class NoteRepository {
 
             if (onSaved != null) executors.mainThread(onSaved);
         });
+    }
+
+    /**
+     * True when the note on disk already says exactly this <em>and</em> is already indexed.
+     *
+     * <p>Media assets aren't compared: they are derived from the same segments the markdown was
+     * built from, so identical markdown means an identical asset list. The index is checked because
+     * {@link #createNote} doesn't write one — a note created and then saved without being typed in
+     * would otherwise be skipped here and never reach {@code notes_fts}, leaving it unsearchable.
+     */
+    private boolean nothingToWrite(SQLiteDatabase db, String noteId, String title, String markdown) {
+        Cursor c = db.query("notes", new String[]{"title", "content_blob"},
+                "id = ?", new String[]{noteId}, null, null, null);
+        try {
+            if (!c.moveToFirst()) return false;   // no row yet: this save is what creates it
+            String storedTitle = c.getString(0);
+            byte[] storedBlob = c.getBlob(1);
+            String storedMarkdown = storedBlob == null
+                    ? "" : new String(storedBlob, StandardCharsets.UTF_8);
+            if (!Objects.equals(storedTitle, title) || !storedMarkdown.equals(markdown)) return false;
+        } finally {
+            c.close();
+        }
+        return isIndexed(db, noteId);
+    }
+
+    private boolean isIndexed(SQLiteDatabase db, String noteId) {
+        try (Cursor c = db.query("notes_fts", new String[]{"note_id"},
+                "note_id = ?", new String[]{noteId}, null, null, null, "1")) {
+            return c.moveToFirst();
+        } catch (SQLiteException e) {
+            // No FTS table on this device — indexing is best-effort anyway (see indexNoteSync),
+            // so don't let its absence force a pointless rewrite on every save.
+            return true;
+        }
     }
 
     public void deleteNote(String noteId, Runnable onDeleted) {

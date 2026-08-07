@@ -1375,3 +1375,351 @@ devices, which is a change of habit for this project.
 
 **Dropped, deliberately:** per-note vector-clock resolution, the outbox writer/drainer for
 notes, and hand-rolled `WifiP2pManager`. The schema columns stay as inert scaffolding.
+
+## 2026-08-07 — Blank tag pills on pinned cards: scroller first, then a measured `+N`
+
+**The report:** on a pinned note with more than two tags, the extra chips rendered as blank
+pills. Cause is structural, not a drawing bug — a horizontal `LinearLayout` on a fixed-width
+card hands out width in order, so chips past the edge are allotted nothing and only their
+background survives.
+
+**First attempt, as asked: make the tag row scroll.** It worked, and the nesting was the whole
+problem — the pinned band is itself a `HorizontalScrollView`, so two scrollers wanted the same
+swipe. Claiming the gesture on ACTION_DOWN and handing it back at the row's end got horizontal
+right, but **a vertical drag starting on a tag then did nothing at all**. Worth keeping: the
+usual `requestDisallowInterceptTouchEvent(true)` travels all the way to the `CoordinatorLayout`,
+which cancels its behaviours on the spot, and `AppBarLayout` can't pick a drag back up
+mid-stroke — so the header refused to collapse for any swipe that began on a tag. The fix was a
+`PinnedBandScrollView` the tag strip could ask *directly*, keeping the claim local so nothing
+above it ever heard about it. Verified on the emulator: tags scrolled, the band took over past
+the last tag, and the header collapsed again.
+
+**Then the user changed their mind mid-turn: "+n is better if it doesn't fit."** All of the
+above was reverted (custom scroller deleted).
+
+**What shipped instead — the cap is measured, not guessed.** The prior code capped at a
+hard-coded 2, with a comment claiming two chips plus a `+N` always fit. They don't: "exam" +
+"important" + "+3" needs ~164dp of a 132dp content box, which is the same blank-pill bug at a
+different tag count. `renderNeutralFitting` measures each chip, walks a prefix-width array to
+find how many fit, then gives chips back until the `+N` fits too. How many fit is a question
+about the *names*, not the count — two long tags overflow where four short ones don't.
+
+**Consequence worth expecting:** the row can look sparse ("exam +4" on a 164dp card) because
+dropping one long chip frees a lot of width. That's honest — the alternative is a chip drawn
+past the card edge.
+
+**Emulator note:** there's no seeding path, so multi-tag cases were tested by pulling
+`databases/quill.db` via `run-as`, editing with local `sqlite3`, and pushing it back — the
+device has no `sqlite3` binary. Seed rows were deleted afterwards and the DB restored.
+
+## 2026-08-07 (same session) — A whiteboard canvas bigger than the screen
+
+**Asked:** the scrollable whiteboard "we talked about yesterday". **Nothing in memory recorded it** —
+the 08-06 entries cover audio, export, search and timestamps, and Epic I didn't list scrolling. The
+whiteboard *title-rename* work from that session is also sitting uncommitted and unlogged, so that
+session appears to have ended without a log. Spec came from the user instead: two-finger pan, ten
+screens of canvas, no zoom, a centre option.
+
+**Built:** strokes moved from raw view coordinates into canvas coordinates, with the window moved by
+the View's own `scrollTo` — so `onDraw` gets an already-offset canvas and strokes draw where they
+live. One finger draws, two pan, `CANVAS_SCREENS = 10` bounds it. A Centre button (`ic_centre`) in
+the top toolbar, `centreOnContent()` behind it.
+
+**Three things that fell out of the change rather than being asked for:**
+- Storing points in *view* coordinates was already a latent bug — a board drawn on one screen size
+  opened misaligned on another. Canvas coordinates fix it, and legacy boards are unaffected because
+  their ink is a screen wide at the origin.
+- **Opening a board now centres on its ink**, or a board drawn far out reopens on blank canvas with
+  nothing on screen to say which way its drawing lies.
+- **Export had to stop capturing the viewport** — it would silently crop anything larger. Now the
+  ink's bounding box, scaled down past `MAX_EXPORT_PX`, with eraser strokes left out of the bounds
+  since white on white can't extend what's visible.
+
+**Testing, and a costly lesson.** The emulator will not accept injected multi-touch: `sendevent` on
+`/dev/input/event*` is refused by SELinux despite the shell user being in the `input` group, and
+`adb shell input` is single-pointer. So the pan behaviour is covered by `WhiteboardViewPanTest`,
+which builds multi-pointer `MotionEvent`s and hands them to the view (10 tests, all passing).
+
+**Running it destroyed the emulator's app data**: `connectedDebugAndroidTest` uninstalls both APKs
+when it finishes, taking `/data/data/mse.quill` with it — the demo notes, collections and the
+"Sprint planning" board. The backup was unrecoverable because the failing `run-as ... cat` in the
+same command truncated it to zero bytes through the `>` redirect. Recorded in global memory; back
+up `quill.db` to a fresh filename before any instrumented run.
+
+**Also fixed to get there:** `NoteRepositoryMarkdownTest` hadn't compiled since `createNote` changed
+to take the id from the caller, which was blocking the whole androidTest source set.
+
+**Verified on device afterwards** with a seeded board whose ink sits ~1.7 screens right and ~1.3
+down: it opens centred on that ink, one-finger drawing lands under the finger in a panned window,
+and Centre re-frames the drawing. The two-finger pan itself is test-covered, not finger-verified.
+
+## 2026-08-07 (same session) — Whiteboard screen: centred canvas, one rail, Move tool
+
+Follow-ups to the pannable canvas, in the order they arrived:
+
+**The board now opens in the middle of the canvas** rather than at the top-left corner, so there is
+room in all four directions. "Home" for an empty board and for Centre-with-nothing-drawn moved with
+it. Legacy boards are still fine — their ink sits at the canvas origin, so centring just clamps the
+window to that corner.
+
+**One rail instead of two bars.** Everything but the editable heading moved into a left-hand card:
+tools, colours, widths, and the board actions. The card is sized to its content and centred, with
+`layout_constrainedHeight` so a short screen shrinks it into a scroll instead of clipping it. The
+show/hide eye stays in the top bar for the obvious reason that a control cannot be the thing it
+hides. A back button matching every other detail screen went in beside the title.
+
+**Three things worth remembering from the visual pass:**
+- Framework `Widget.ImageButton` sets `scaleType` to **center**, not `fitCenter`. That was invisible
+  while every icon was a 24dp vector and obvious the moment 512px PNGs arrived — one icon vanished
+  (its centre is transparent) and another showed a single corner. Every icon button now sets
+  `fitCenter` + padding explicitly.
+- The separate "current colour" indicator, moved down beside the swatches, read as a sixth colour
+  you could pick. Replaced entirely: the selected swatch highlights itself with the same
+  `tool_selector_bg` the tools use, and stroke widths got the same treatment plus a fourth, heavier
+  option.
+- The user dropped new PNG icons into `res/drawable` mid-task, colliding with committed vectors of
+  the same name (`ic_pen`, `ic_highlighter`) and failing the build with "Duplicate resources". The
+  superseded `.xml` versions were deleted. `jc_eraser.png` is still sitting there — a typo for
+  `ic_eraser.png`, unused, and left alone pending a decision on whether the eraser is being swapped
+  too.
+
+**The Move tool** hands single-finger drags to the canvas. Kept off `currentTool` on purpose: that
+value goes into every stroke row and a pan is not a stroke. It needed a `oneFingerPan` flag because
+a two-finger pan follows the midpoint while a one-finger pan follows the finger — using the midpoint
+rule for one pointer jumps the canvas the moment a second finger lifts.
+
+**Two fixes after looking at it on device:** the canvas was constrained to the rail's end, which
+left a grey column where the old full-height sidebar had been — it now runs the full width with the
+rail floating over it, which also means hiding the rail no longer resizes the canvas. And the card
+looked grey because Material composites an elevation overlay into any card background: swapped 2dp
+of elevation for a 1dp stroke. The eraser also had to be pointed at the new artwork —
+`jc_eraser.png` was a typo, so `@drawable/ic_eraser` kept resolving to the old vector.
+
+**Verified:** 13 instrumented tests pass, and on device the move tool pans without drawing, the eye
+hides the rail, and drawing still lands under the finger. This time the database was backed up
+before `connectedAndroidTest` and restored afterwards.
+
+## 2026-08-07 (same session) — The drawing vanished on rotation
+
+**Reported:** open a board in portrait, turn the phone, and the drawing is gone; draw in landscape,
+turn back, same thing.
+
+**Cause:** the canvas extent was defined as `getWidth() * CANVAS_SCREENS` — *relative to the window*.
+Rotation redefines the entire coordinate space with it. On a 1080x2400 device a fresh board opens
+centred at roughly (4860, 9810) and ink drawn there lands near y≈9800; rotated, the canvas is only
+~8600 tall, so the ink sits outside it and clamping can never bring the window back to it. The
+strokes were never lost — they were reloaded from the database every time and drawn somewhere
+unreachable.
+
+**Fix:** the canvas is now a fixed square, `CANVAS_SCREENS × the display's shorter edge`. That is
+the one screen dimension rotation doesn't change, so ink stays in bounds whichever way up the
+device is, and `centreOnContent` finds it after the fragment is recreated.
+
+**Covered by two tests:** the canvas size is identical after a landscape re-layout, and ink drawn in
+portrait is still inside both the canvas and the window once rotated.
+
+**Checked on device** by locking the emulator to landscape (`settings put system
+accelerometer_rotation 0` then `user_rotation 1` — the `wm`/`cmd window` rotation commands don't
+exist on this image, and `user_rotation` is ignored while auto-rotate is on). All three strokes
+survived the turn. The tool rail is taller than a landscape screen, and scrolls inside its card as
+intended, so nothing becomes unreachable — but it is worth a proper landscape treatment eventually.
+
+## 2026-08-07 (same session) — Scroll position indicators, and real stylus support
+
+**Scrollbars** down the right edge and along the bottom, showing where the window sits on a canvas
+ten screens across. No custom drawing needed: a `View` that declares `android:scrollbars` and
+implements `compute{Horizontal,Vertical}Scroll{Range,Offset,Extent}` gets the framework's own, with
+correct thumb size for free. The one non-obvious part is that `scrollTo` doesn't reveal them —
+`awakenScrollBars()` has to be called from the pan path, which also means they fade out while you
+draw instead of sitting on top of the drawing.
+
+**Stylus: the honest answer was "partly".** Drawing with a pen already worked, because Android
+delivers stylus input as ordinary touch events. What didn't exist was any *distinction* between a
+pen and a finger, so three things were added:
+
+- **Palm rejection.** Previously the hand resting on the screen mid-stroke arrived as a second
+  pointer, which discarded the stroke and started a two-finger pan — the pen would stop drawing the
+  moment the hand touched down. Extra pointers are now ignored while a stylus is drawing.
+- **The eraser end erases**, whatever the rail has selected — read from `TOOL_TYPE_ERASER` *or* a
+  barrel button in `getButtonState()`, because pens report it both ways.
+- **Pressure scales stroke width**, clamped 0.5–1.5× and neutral at 1.0. Deliberately applied once
+  at stroke start: a stroke carries one width in the database and `points_blob` is x/y pairs only,
+  so per-point pressure would mean changing the storage format. Worth doing properly if pressure
+  ever matters more than this. Finger pressure is ignored — it isn't the same measurement.
+
+**Verified:** 20 instrumented tests pass, including a palm landing mid-stroke, the eraser end, and
+pressure. The scrollbars were confirmed on device mid-pan. The stylus paths are covered by
+synthetic `MotionEvent`s only — there is no pen on this emulator, so they have not met real
+hardware.
+
+## 2026-08-07 (same session) — Text on whiteboards, treated as a stroke
+
+Asked whether text was worth adding and what it would cost; the answer was yes, but only the cut
+that treats a label as an *item you place*, not an object you edit. That is what was built.
+
+**The design constraint doing the work:** a text item is immutable. Place it, undo it, or clear the
+board — there is no editing, no selection, no dragging. That keeps the board append-only, which is
+exactly why whiteboards are the app's live-collaboration surface (two devices adding items never
+conflict; two devices editing one text box always can). It also means no hit-testing and no
+floating-editor-follows-canvas problem, which is where this feature gets expensive.
+
+**Built:** `whiteboard_texts` table (schema v7, added via `ensureAdditiveSchema`, so existing boards
+are untouched), `WhiteboardText` + `WhiteboardTextDao` shaped like `Stroke`/`StrokeDao`, a text tool
+in the rail, and an `EditText` that appears at the tapped point. `setPanTool(boolean)` became
+`setInputMode(MODE_DRAW|MODE_MOVE|MODE_TEXT)` — there are three things one finger can do now, and a
+boolean was the wrong shape. Undo became a stack of `Undoable(id, isText, createdAt)`, rebuilt on
+load by sorting both kinds together so strokes and labels interleave by when they were added.
+
+**Details that were decisions, not defaults:**
+- The editor **doesn't follow the canvas** — panning is suspended while it is open. One less thing
+  to keep in sync, and it makes placement feel like a single act.
+- **Single-line.** With `textMultiLine` the IME replaces Done with a newline, leaving no gesture
+  that means "this label is finished". Found by trying it on device.
+- Text draws **under** the ink, so a highlighter over a label highlights it rather than being
+  covered by it.
+- Text size follows the stroke-width picker (×4), so the rail keeps one meaning of "how big".
+
+**A false alarm worth recording:** undo appeared to remove a stroke instead of the newer text. The
+cause was the test data, not the code — seeded strokes carry *host* timestamps and the emulator's
+clock is ~10 hours behind the host, so they sort as newer than anything created on device. Verified
+properly with two items both created on device; undo took the newer one.
+
+**Verified:** the whole instrumented suite, 101 tests, passes (8 new ones for text). On device:
+placed a label, committed with Done, reopened the board and it was still there, and undo removed
+the most recent item.
+
+**Left undone on purpose:** board text is not searchable. Home matches whiteboards by title only,
+and these labels are the first real content a board has — the obvious next win, and a search-side
+change rather than a whiteboard one.
+
+## 2026-08-07 (same session) — Paper styles, and the eraser that was never an eraser
+
+**Asked** how hard three backgrounds would be — white, yellowish, dotted. The backgrounds
+themselves are trivial. The answer was that they have one non-obvious dependency, and it is the
+interesting part of this change.
+
+**The eraser was painting opaque white strokes**, not erasing. On a white board that is
+indistinguishable from erasing, which is exactly why it lasted this long — the flaw was recorded
+back when the canvas was first documented and never bit. Put a warm or dotted paper behind it and
+every eraser stroke becomes a white smear. So this had to be fixed before backgrounds were worth
+anything: ink is now drawn into its own layer (`canvas.saveLayer`) and the eraser uses
+`PorterDuffXfermode(CLEAR)`, clearing back to the paper. The paper is drawn *before* the layer or
+CLEAR would punch through it as well. Old eraser strokes stored as white erase correctly under the
+new rule, so nothing needed migrating.
+
+**Built:** `whiteboards.background` (schema v8, additive), three styles on the view, a paper picker
+in the rail (a menu, not a cycling button — three states whose order you can't see are worse to
+cycle than to pick), persistence per board, and export that carries the paper.
+
+**Detail worth keeping:** the dots are on a grid in *canvas* coordinates, not window ones, so they
+stay put under the drawing while you pan rather than sliding across it; only those inside the
+visible rectangle are drawn, so a ten-screen canvas costs a screenful of dots.
+
+**Verified:** `WhiteboardBackgroundTest` asserts on exported pixels — after erasing on warm paper
+there must be no pure white anywhere, and the erased area must be paper. On device: all three
+papers render, an eraser stroke through a thick line on dotted paper leaves the dots showing
+through the gap, and the choice survives closing and reopening the board.
+
+## 2026-08-07 (same session) — Paper as a preference, and "Updated now" on an untouched note
+
+**Two asks: the chosen paper should apply to future boards, and opening something shouldn't mark it
+as edited.**
+
+**"Updated now" was one bug in two places.** Both the note editor and the whiteboard save on pause
+whether or not anything was touched, and both save paths wrote `updated_at` unconditionally — so
+merely opening either and backing out relabelled it and jumped it to the top of Home. Fixed by not
+writing when nothing changed: `NoteRepository.saveNote` compares the incoming title and markdown
+with what is stored (checked there rather than in the editor, because the markdown is already built
+on that thread and it fixes every caller at once), and `WhiteboardFragment.saveTitle` remembers the
+loaded title and skips the write when it matches.
+
+**One trap in that fix:** `createNote` writes no `notes_fts` row, so skipping the first save on an
+untouched new note would have left it permanently unsearchable. The guard therefore also requires
+the note to be indexed already. A test covers it — and had to be made environment-aware, because
+this emulator image ships without fts5 and `AppDatabase` deliberately skips the table when that
+happens.
+
+**The paper preference took two goes, and the reason is worth keeping.** The first version taught
+`WhiteboardFragment` to read a preference when it creates a board — and boards made from Home's FAB
+stayed white, because that is a *different creation path*: `WhiteboardRepository.createWhiteboard`,
+which is the one actually used. Only the DB told the truth (`background=0` on the new row while the
+preference file said `2`), which is why checking storage rather than the screen found it. Now a
+shared `WhiteboardPreferences` holds the default and both paths read it. Existing boards keep their
+own style — a preference must not repaper old work.
+
+**Verified:** full instrumented suite, 110 tests. On device: opening the board and leaving it left
+`updated_at` untouched (checked in the database, not just the label), and a board created from the
+FAB opened on dotted paper after dotted was chosen elsewhere.
+
+## 2026-08-07 (same session) — Whiteboard previews on Home
+
+**Asked** for thumbnails on the Home cards, referred to the Figma `HomePage_whiteboard` frame
+(node 32:600). The frame shows a preview image with the board's name and date beneath it — and no
+glyph or stroke count, which is what the cards carried.
+
+**This reverses a decision recorded on 08-03**: the card deliberately showed a glyph and a count
+because a real preview meant reading every board's strokes just to draw Home, with no cover image
+to cache. `WhiteboardThumbnails` answers that: only the cards on screen ask for a preview, and an
+`LruCache` keyed by `id@updatedAt@background` renders each board once per change — the key carries
+the modification time, so there is no invalidation call to forget.
+
+**The preview goes through the export path** (`WhiteboardView.renderThumbnail`, which is
+`exportToBitmap` with a smaller cap) rather than a second, simpler drawing routine. That matters:
+a card shows the actual board — its paper, its erasures, its text — and there is no second
+implementation to drift. Strokes are read on the disk thread; the render itself is on the main
+thread, because it goes through a View and those are not built to be touched off it.
+
+**Deviation from the frame, deliberate:** the design floats the image with no card behind it. Home's
+collections and notes are all cards, so the card stays and the preview sits inside it — what
+changed is the information: preview, name, date, no stroke count.
+
+**Two things the screenshots taught:**
+- A `MaterialCardView` does not clip its children to its rounded outline, so the preview's square
+  corners sat proud of the card. Fixed with an outline provider on the image whose rounded rect is
+  pushed a radius past the bottom edge, leaving only the top two corners rounded — the join with
+  the title stays square.
+- That rounding was impossible to confirm on a white or dotted board, since card, page and preview
+  are all near-white. Switching a board to warm paper made it visible in one screenshot — and
+  double-checked that a preview really does carry the board's own paper.
+
+**Verified:** full instrumented suite, 111 tests. On device: a drawn board shows its drawing, an
+empty one keeps the glyph placeholder, and the rounded top corners are correct on warm paper.
+
+## 2026-08-07 (same session) — Whiteboards attached to notes
+
+**Asked** for a whiteboard control in the note toolbar offering "new or import", an attached board
+shown as a picture with a way through to it, and removal by long press or from that picture.
+Followed mid-task by three more: search in the picker, move the whiteboard models next to the other
+ones, and rename the DAOs to repositories.
+
+**Built on the shape Epic D reserved**, `![whiteboard](quill://whiteboard/<id>)`. The design
+decision that makes it small: a whiteboard embed **resolves without the media registry**. Image and
+audio embeds are dropped when their asset row is missing, because the row is where the file path
+lives; a whiteboard's id *is* a `whiteboards` row, so `WhiteboardSegment.isMedia()` is false, no
+asset row is written, and `replaceMediaAssetsSync` never touches it. The note points at the board
+rather than owning it — so removing detaches, a board can be attached to several notes, and an
+embed can outlive its board (shown as "This whiteboard was deleted").
+
+**A trap that would have eaten notes:** `hasRealContent` decides whether an untouched note is
+deleted on exit by enumerating segment types. A note whose only content was an attached board
+counted as empty, so attaching a board to a blank note and backing out deleted the note. Caught by
+reading that method rather than by testing — worth remembering that this list needs extending every
+time a segment type is added.
+
+**The picker got search** on request, following `AddExistingNotesDialog`'s idiom, with each row
+carrying the board's preview: boards are usually untitled, and three "Untitled Whiteboard - Aug 7"
+rows are no help when you are looking for the one with the diagram on it.
+
+**Two housekeeping asks, both done:** `mse.quill.model` (Stroke, Whiteboard, WhiteboardText) moved
+to `mse.quill.data.model` beside Note, Tag and the rest — 18 files updated. And the DAOs became
+repositories: `StrokeDao` → `StrokeRepository`, `WhiteboardTextDao` → `WhiteboardTextRepository`,
+and `WhiteboardDao` **folded into the existing `WhiteboardRepository`** rather than renamed, since
+that name was taken. Its synchronous methods now carry a `Sync` suffix — `insertSync`,
+`getByIdSync` — which keeps the honest bit visible: the naming is consistent now, the threading
+still isn't, and that remains Epic A work.
+
+**Verified on device end to end:** toolbar button → New/Import → searchable picker (filter tested)
+→ embed rendered with its drawing and name → survives closing and reopening the note → tap opens a
+sheet with the drawing and Open whiteboard / Remove / Cancel → Open navigates to the board →
+long-press offers "Remove from note?" explaining the board is kept. 113 instrumented tests pass,
+including two new document round-trip tests.

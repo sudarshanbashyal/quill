@@ -26,6 +26,7 @@ import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
 import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.ui.notes.editor.model.WhiteboardSegment;
 
 /** Covers segment list ↔ Markdown document, including embed ordering and asset rejoining. */
 @RunWith(AndroidJUnit4.class)
@@ -84,6 +85,38 @@ public class NoteDocumentTest {
                 assertEquals("file path at " + i, before.filePath(), after.filePath());
             }
         }
+    }
+
+    @Test
+    public void aWhiteboardEmbedRoundTripsWithoutAnAssetRow() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(new TextSegment(new SpannableStringBuilder("before")));
+        segments.add(new WhiteboardSegment("board-1"));
+        segments.add(new TextSegment(new SpannableStringBuilder("after")));
+
+        String markdown = NoteDocument.toMarkdown(segments);
+        assertTrue(markdown.contains("![whiteboard](quill://whiteboard/board-1)"));
+
+        // Deliberately empty: a whiteboard resolves from its id alone, unlike image and audio
+        // embeds, which are dropped when their asset row is missing.
+        List<NoteSegment> parsed = NoteDocument.fromMarkdown(markdown, new HashMap<>());
+
+        assertEquals(3, parsed.size());
+        assertEquals(NoteSegment.TYPE_WHITEBOARD, parsed.get(1).type());
+        assertEquals("board-1", parsed.get(1).id);
+    }
+
+    @Test
+    public void textThatLooksLikeAWhiteboardEmbedStaysText() {
+        List<NoteSegment> segments = new ArrayList<>();
+        segments.add(new TextSegment(
+                new SpannableStringBuilder("![whiteboard](quill://whiteboard/not-really)")));
+
+        List<NoteSegment> parsed =
+                NoteDocument.fromMarkdown(NoteDocument.toMarkdown(segments), new HashMap<>());
+
+        assertEquals(1, parsed.size());
+        assertEquals(NoteSegment.TYPE_TEXT, parsed.get(0).type());
     }
 
     @Test

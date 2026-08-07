@@ -26,7 +26,11 @@ public final class WindowInsetsUtils {
      * root, which is what a screen carrying its own background wants.
      */
     public interface TopInsetHost {
-        /** The view to pad; {@code root} is the fragment's own view. */
+        /**
+         * The view to pad; {@code root} is the fragment's own view. Return null to take nothing —
+         * for a screen that already handles the inset itself, such as one built on an
+         * {@code AppBarLayout}, which offsets its own children and would otherwise be padded twice.
+         */
         View topInsetTarget(View root);
     }
 
@@ -41,6 +45,7 @@ public final class WindowInsetsUtils {
      * content sheet that overlaps the header's bottom edge.
      */
     public static void applyTopInset(View view) {
+        if (view == null) return;
         apply(view, true);
     }
 

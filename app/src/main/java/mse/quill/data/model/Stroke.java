@@ -1,4 +1,4 @@
-package mse.quill.model;
+package mse.quill.data.model;
 
 import android.graphics.PointF;
 

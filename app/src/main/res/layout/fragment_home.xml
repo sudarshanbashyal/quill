@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -6,122 +5,144 @@
     android:layout_height="match_parent"
     tools:context=".ui.home.HomeFragment">
 
-    <LinearLayout
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <!-- The greeting and the pinned band scroll away; the search bar does not. That split is what
+         AppBarLayout is for: a child with app:layout_scrollFlags="scroll" leaves with the content,
+         a child with no flags stays pinned at the top. Doing it with a plain LinearLayout would
+         mean either everything is fixed (the old layout) or everything scrolls. -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/home_app_bar"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
-
-        <!-- The sheet's overlap is a negative *bottom* margin here rather than a negative top
-             margin on the sheet itself. LinearLayout.measureVertical accumulates with
-             totalLength = max(totalLength, totalLength + childHeight + margins), and that max
-             swallows a negative margin on the weighted child: the sheet was pulled up 56dp but
-             measured 56dp short with it, leaving a dead band of exactly that height between the
-             end of the list and the bottom bar. Charged to this view instead, it shortens
-             totalLength for real and the sheet reaches the bottom. -->
-        <LinearLayout
-            android:id="@+id/home_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="@dimen/content_sheet_overlap"
-            android:orientation="vertical"
-            android:background="@drawable/bg_home_header"
-            android:minHeight="@dimen/header_min_height"
-            android:paddingHorizontal="@dimen/spacing_lg"
-            android:paddingTop="@dimen/spacing_lg"
-            android:paddingBottom="@dimen/spacing_lg">
-
-            <!-- Playfair Display, the display serif from the MSE Figma file. Its font-family ships
-                 real italic and bold cuts (see font/playfair_display.xml), so the textStyle below
-                 selects them rather than making Android synthesise a slant. -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/home_greeting"
-                android:fontFamily="@font/playfair_display"
-                android:textSize="24sp"
-                android:textStyle="italic|bold"
-                android:textColor="@color/text_primary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
-                android:text="@string/home_greeting_subtitle"
-                android:textSize="14sp"
-                android:textColor="@color/text_secondary" />
-
-        </LinearLayout>
-
-        <!-- Everything below the greeting rides on a sheet whose rounded top corners overlap
-             the header gradient — see bg_content_sheet. -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_content_sheet"
-            android:orientation="vertical">
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_home_header"
+        android:fitsSystemWindows="true"
+        app:elevation="0dp"
+        app:liftOnScroll="false">
 
         <LinearLayout
-            android:id="@+id/pinned_section"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:visibility="gone">
+            app:layout_scrollFlags="scroll">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/spacing_md"
-                android:layout_marginTop="@dimen/section_header_margin_top"
-                android:layout_marginBottom="@dimen/section_header_margin_bottom"
-                android:drawableStart="@drawable/ic_section_pin"
-                android:drawablePadding="@dimen/spacing_sm"
-                android:drawableTint="@color/text_primary"
-                android:gravity="center_vertical"
-                android:text="@string/section_pinned_notes"
-                android:textColor="@color/text_primary"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <HorizontalScrollView
-                android:id="@+id/pinned_scroll"
+            <!-- The sheet's overlap is a negative *bottom* margin here rather than a negative top
+                 margin on the sheet itself. LinearLayout.measureVertical accumulates with
+                 totalLength = max(totalLength, totalLength + childHeight + margins), and that max
+                 swallows a negative margin on the following child. -->
+            <LinearLayout
+                android:id="@+id/home_header"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:clipToPadding="false"
-                android:paddingHorizontal="@dimen/spacing_md"
-                android:scrollbars="none">
+                android:layout_marginBottom="@dimen/content_sheet_overlap"
+                android:orientation="vertical"
+                android:minHeight="@dimen/header_min_height"
+                android:paddingHorizontal="@dimen/spacing_lg"
+                android:paddingTop="@dimen/spacing_lg"
+                android:paddingBottom="@dimen/spacing_lg">
 
-                <LinearLayout
-                    android:id="@+id/pinned_cards_container"
+                <!-- Playfair Display, the display serif from the MSE Figma file. Its font-family
+                     ships real italic and bold cuts (see font/playfair_display.xml), so the
+                     textStyle below selects them rather than synthesising a slant. -->
+                <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal" />
+                    android:text="@string/home_greeting"
+                    android:fontFamily="@font/playfair_display"
+                    android:textSize="24sp"
+                    android:textStyle="italic|bold"
+                    android:textColor="@color/text_primary" />
 
-            </HorizontalScrollView>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:text="@string/home_greeting_subtitle"
+                    android:textSize="14sp"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
+            <!-- Carries the sheet's rounded top over the header gradient. Always present, with a
+                 minimum height, so the rounding survives a user who has pinned nothing. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_content_sheet"
+                android:minHeight="@dimen/content_sheet_min_height"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/pinned_section"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/spacing_md"
+                        android:layout_marginTop="@dimen/section_header_margin_top"
+                        android:layout_marginBottom="@dimen/section_header_margin_bottom"
+                        android:drawableStart="@drawable/ic_section_pin"
+                        android:drawablePadding="@dimen/spacing_sm"
+                        android:drawableTint="@color/text_primary"
+                        android:gravity="center_vertical"
+                        android:text="@string/section_pinned_notes"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <HorizontalScrollView
+                        android:id="@+id/pinned_scroll"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:clipToPadding="false"
+                        android:paddingHorizontal="@dimen/spacing_md"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:id="@+id/pinned_cards_container"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal" />
+
+                    </HorizontalScrollView>
+
+                </LinearLayout>
+
+            </LinearLayout>
 
         </LinearLayout>
 
+        <!-- No scroll flags: this is the one thing that stays. Opaque, because the list scrolls
+             underneath it rather than stopping at it. -->
         <mse.quill.ui.search.SearchFilterBar
             android:id="@+id/search_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="@dimen/spacing_md"
-            android:layout_marginTop="@dimen/spacing_lg" />
+            android:background="@color/surface"
+            android:paddingHorizontal="@dimen/spacing_md"
+            android:paddingTop="@dimen/spacing_md"
+            android:paddingBottom="@dimen/spacing_sm" />
 
-        <!-- paddingHorizontal pairs with the matching margin every item view sets on itself; see
-             list_item_gutter. -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recycler_home"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:paddingHorizontal="@dimen/list_item_gutter"
-            android:paddingBottom="@dimen/list_fab_clearance" />
+    </com.google.android.material.appbar.AppBarLayout>
 
-        </LinearLayout>
-
-    </LinearLayout>
+    <!-- paddingHorizontal pairs with the matching margin every item view sets on itself; see
+         list_item_gutter. -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler_home"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/surface"
+        android:clipToPadding="false"
+        android:paddingHorizontal="@dimen/list_item_gutter"
+        android:paddingBottom="@dimen/list_fab_clearance"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
     <LinearLayout
         android:id="@+id/fab_options"
@@ -183,5 +204,20 @@
         app:srcCompat="@drawable/ic_add"
         app:backgroundTint="@color/text_primary"
         app:tint="@color/text_on_brand" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
+
+    <!-- Masks the strip behind the status bar, and sits outside the CoordinatorLayout on purpose:
+         inside it, fitsSystemWindows offsets the scrim below the very strip it needs to cover.
+         An AppBarLayout deliberately lets its scrolling child pass *behind* the status bar — the
+         parallax behaviour a CollapsingToolbar relies on — so without this the pinned cards slide
+         up over the clock. Coloured to the gradient's top stop, so it is invisible while the
+         header shows and reads as a tinted status bar once it has gone. -->
+    <View
+        android:id="@+id/status_bar_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="top"
+        android:background="@color/header_gradient_end" />
 
 </FrameLayout>
