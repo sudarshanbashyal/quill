@@ -176,7 +176,7 @@
     <string name="share_no_target">No app on this device can send that file</string>
     <!-- Shown instead of the share options when the note lives in a locked collection. -->
     <string name="share_locked_collection">Notes in a locked collection can\'t be shared</string>
-    <string name="action_import_note">Import Note</string>
+    <string name="action_import_note">Import</string>
     <string name="import_in_progress">Importing note…</string>
     <string name="import_succeeded">Imported \"%1$s\"</string>
     <string name="import_succeeded_untitled">Imported note</string>
