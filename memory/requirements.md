@@ -506,6 +506,83 @@ worth following". The items below are the migration itself; the convention outli
 
 ---
 
+## Epic J — Wear OS Companion (P3, depends on Epic D)
+
+**Why here**: scoped 2026-08-08 from a design discussion (see [conversation.md](conversation.md)).
+A watch is good at *capture* and *micro-review*, and bad at *authoring* — and Quill's phone app is
+mostly authoring. So this epic deliberately ports **two** features rather than shrinking the app,
+and the "Out of scope" list below is as much a part of the design as the checkboxes above it.
+
+What makes it affordable is a side effect of Epic A: the study logic was kept Android-free so it
+could be JVM-tested, and the same property lets a watch module reuse SM-2 verbatim instead of
+reimplementing it. What makes it *sequenced after D* is that a tile showing a stale due count is
+worse than no tile, so D's unbuilt reminders infrastructure is a real prerequisite, not filler.
+
+- [ ] **Extract the study logic into a shared module** — *do this first; everything else depends
+      on it.* `FlashcardScheduler`, `ReviewSession`, `QuizSession`, `QuizGenerator`, `QuizRules`
+      and the `Flashcard` model import nothing but `java.util` today (verified 2026-08-08). Move
+      them to a plain-JVM `:study` module that both `:app` and `:wear` depend on, so SM-2 cannot
+      drift between the two. The existing JVM tests move with it and keep running without a device.
+
+- [ ] **Sync architecture — a projection, not a replica**
+  - [ ] The watch holds today's due cards and nothing else, pushed as a `DataItem` over the Wear
+        Data Layer. **No Room/SQLite copy of Quill on the watch.** `DataItem`s cap near 100 KB,
+        which conveniently forbids the wrong design anyway — no media, no asset registry, no
+        `content_blob`.
+  - [ ] Q&A halves reach the watch as `NoteDocument`'s **plain-text projection**. Rich text,
+        bullets and `RichTextField` do not get ported.
+  - [ ] Reviews travel back as append-only events (`card id, grade, timestamp`) via
+        `MessageClient`, replayed through the *phone's* `FlashcardScheduler`. SM-2 state is never
+        computed on the watch and copied over — same reasoning as Epic C's append-only strokes:
+        it turns the merge into a dedupe.
+  - [ ] `CapabilityClient` for phone discovery; queue events while untethered and drain on
+        reconnect.
+  - [ ] **Tethered, not standalone** — Quill is offline-first with no cloud, so a watch with no
+        phone has no way to obtain content. Declare it as such rather than leaving it ambiguous.
+  - [ ] **Decision needed before building: Compose for Wear OS breaks the house style.** Wear's
+        view-based widgets are legacy and the supported path is Kotlin + Compose, with a Material
+        library that is *not* the MDC one Epic H standardized on. This is a defensible divergence
+        from "Material 3 via MDC widgets" — but record it deliberately, don't discover it
+        mid-module. The `:wear` module also needs its own `minSdk` (30+) against the app's 26.
+
+- [ ] **Flashcard review on the wrist** — the feature that justifies the epic
+  - [ ] Front → tap to flip → right/wrong. That is already `ReviewSession`'s whole API surface;
+        the watch screen is a thin view over it.
+  - [ ] Due-first with the same "all caught up" state as `FlashcardsFragment`, minus
+        "review anyway" (a wrist session is a queue, not a browser).
+
+- [ ] **Tile + complication** — the genuinely watch-native surfaces, and cheap
+  - [ ] Tile (`androidx.wear.tiles` / ProtoLayout): due count + "Review N" straight into a session
+  - [ ] Watch-face complication (`ComplicationDataSourceService`): the due count alone
+  - [ ] Both read the same projected count. **Blocked on Epic D's reminder infrastructure** —
+        without a scheduled refresh the count goes stale and the surface actively misleads
+
+- [ ] **Voice capture → note** — the one authoring act a watch does better than a pocketed phone
+  - [ ] `RecognizerIntent` on-watch → text appended to an "Inbox" note (or a new note)
+  - [ ] Optional: record audio on the watch and ship the file down when tethered — the receiving
+        end already exists (`AudioRecorder`, audio segments, waveform)
+
+- [ ] **Read-aloud media controls** — near-free, take it
+  - [ ] `AudioPlaybackService` already runs a real `MediaSession` with a `PlaybackState` and a
+        `Notification.MediaStyle`, so the watch's media card can drive note playback with no new
+        playback code. The actual work is notification bridging config (don't mark it local-only).
+
+**Out of scope, deliberately** (each of these is a reason, not an omission):
+
+- **Whiteboards.** The canvas is ten screens each way with two-finger pan. There is no version of
+  that on a watch, and "watch as remote for a live session" solves nothing.
+- **Quizzes as they exist.** Four MCQ options, a 15s/question budget and an answer sheet fillable
+  in any order is a phone screen. **But** Epic E's unbuilt **True/False fallback is exactly the
+  watch-shaped quiz** — two buttons, one question, no scrolling. If quizzes go to the watch, build
+  T/F watch-first rather than squeezing the MCQ session down.
+- **Browsing or editing notes.** If the watch app is in range, so is the phone. Read-only pinned
+  notes is the most defensible version and is still marginal.
+- **Sensor gimmicks.** A watch makes Epic G tempting, but heart-rate-during-review is a demo, not
+  a feature. The honest version, if Epic G is to be retired here, is using on-body/idle state to
+  *time* the review nudge.
+
+---
+
 ## Cross-cutting notes
 
 - Epics B and C both touch `notes`/`note_segments` at rest — coordinate schema changes
@@ -525,3 +602,10 @@ worth following". The items below are the migration itself; the convention outli
   note scope by refusing to build a quiz below `QuizRules.MIN_QA_BLOCKS`; the same
   question returns when a collection/tag scope is added, since a mixed collection can
   clear the count while still producing obviously-wrong options.
+- Epic J turns two "nice to have" items into dependencies: Epic D's **reminder
+  infrastructure** (a tile with a stale due count misleads) and Epic E's **True/False
+  fallback** (the only quiz shape that fits a watch). If Epic J is in the plan, promote
+  those two rather than treating them as leftovers.
+- Epic J's `:study` module extraction is also the cheapest way to keep Epic A's promise
+  that the study logic stays Android-free — today that's a convention nothing enforces,
+  and a module boundary makes the compiler enforce it.

@@ -1765,14 +1765,6 @@ location across API levels, `NEARBY_WIFI_DEVICES`, optional camera). No `Connect
 `HostApduService` code exists yet — noted in both note.md and requirements.md so it isn't mistaken
 for the feature having started.
 
-## 2026-08-08 (same session) — Bug fix: multi-catch compile error, continued from a prior session
-
-Picked up mid-task in a fresh session (previous session's context wasn't carried over). Build was
-failing: `NoteImporter.java` caught `IOException | SecurityException | RuntimeException` in one
-multi-catch, which javac rejects since `SecurityException` is already a `RuntimeException`. Dropped
-`SecurityException` from the list. Then updated note.md and requirements.md to reflect the session's
-state (see above) per explicit request to keep memory current.
-
 ## 2026-08-08 (same session) — Feature implementation: sharing extended to whiteboards and collections
 
 **Asked**, after being shown that only notes could be shared: extend the same idea to whiteboards
@@ -1814,3 +1806,46 @@ does.
 **Verified via `assembleDebug`** rather than on-device this pass — a full compile and resource build
 succeeded, but the three new share/import paths haven't been exercised on the emulator or a device
 yet (left for the user, who said they'd debug independently going forward).
+## 2026-08-08 — Research: scoping a Wear OS companion
+
+**Asked** what features and integrations would actually make sense if Quill were extended to
+Wear OS. No code — a scoping discussion, written up as [requirements.md](requirements.md)'s Epic J.
+
+**The framing that decided everything else:** a watch is good at *capture* and *micro-review*, and
+bad at *authoring* — and Quill's phone app is overwhelmingly authoring. So the epic ports two
+features rather than shrinking the app, and its "Out of scope" list carries as much of the design
+as its checklist does.
+
+**What crosses over, and why it's cheap.** Flashcard review is the feature that justifies a watch
+app at all: `ReviewSession`'s entire API is front → flip → right/wrong, which is already the
+interaction a watch supports, and the payload is a few strings and four SM-2 ints. The affordability
+is an accident of Epic A — `FlashcardScheduler`, `ReviewSession`, `QuizSession`, `QuizGenerator`
+and `QuizRules` import nothing but `java.util`, kept that way so they could be JVM-tested without a
+device. That property lets a `:study` module be shared with a `:wear` module so SM-2 cannot drift
+between the two, and it makes the module extraction the first task in the epic rather than a
+cleanup at the end. Voice capture is the second: the one authoring act a watch does better than a
+pocketed phone, and the receiving end (`AudioRecorder`, audio segments, waveform) already exists.
+
+**Nearly free, so taken:** `AudioPlaybackService` already runs a real `MediaSession` with a
+`PlaybackState` and a `Notification.MediaStyle`, so the watch's media card can drive read-aloud
+with no new playback code — the work is bridging configuration, not playback.
+
+**Sync decision: a projection, not a replica.** The watch holds today's due cards and nothing else,
+as a `DataItem`; reviews travel back as append-only `(card id, grade, timestamp)` events replayed
+through the phone's scheduler, never as SM-2 state computed on the watch. That is Epic C's
+append-only-strokes reasoning reused — it makes the merge a dedupe. The 100 KB `DataItem` cap
+happens to forbid the wrong design anyway: no media, no asset registry, no `content_blob`.
+
+**Two things it makes into dependencies.** A tile showing a stale due count is worse than no tile,
+so Epic D's unbuilt reminder infrastructure stops being filler. And Epic E's unbuilt True/False
+fallback turns out to be the only watch-shaped quiz — two buttons, one question — so if quizzes go
+to the watch, T/F gets built watch-first rather than the MCQ session being squeezed down.
+
+**The one open decision, flagged rather than settled:** Wear's view-based widgets are legacy and the
+supported path is Kotlin + Compose, against a Wear Material library that is not the MDC one Epic H
+standardized on. That is a defensible divergence from the project-wide Material 3 convention, but it
+needs deciding deliberately before the module exists, not discovered mid-build.
+
+**Ruled out, with reasons recorded:** whiteboards (a ten-screen pannable canvas has no watch form),
+MCQ quizzes as built, note browsing (if the watch is in range, so is the phone), and sensor
+gimmicks — a watch makes Epic G tempting, but heart-rate-during-review is a demo, not a feature.
