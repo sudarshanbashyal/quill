@@ -9,6 +9,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -21,7 +23,10 @@ import java.util.List;
 import java.util.UUID;
 
 import mse.quill.R;
+import com.google.android.material.snackbar.Snackbar;
+
 import mse.quill.data.CollectionRepository;
+import mse.quill.data.NoteImporter;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Collection;
@@ -72,6 +77,20 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private SearchFilterBar searchBar;
     private TagRepository tagRepository;
 
+    private NoteImporter noteImporter;
+    private ActivityResultLauncher<String[]> importPicker;
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Registered here rather than in onViewCreated: a launcher has to exist before the fragment
+        // reaches STARTED, or the result of a picker that outlived a process death has nowhere to
+        // be delivered.
+        importPicker = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                uri -> { if (uri != null) importBundle(uri); });
+    }
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                               Bundle savedInstanceState) {
@@ -86,6 +105,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         collectionRepository = new CollectionRepository(requireContext());
         tagRepository = new TagRepository(requireContext());
         whiteboardRepository = new WhiteboardRepository(requireContext());
+        noteImporter = new NoteImporter(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCollectionClicked(String collectionId, String displayName) {
@@ -191,6 +211,16 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                             name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
         });
 
+        View fabOptionImport = view.findViewById(R.id.fab_option_import);
+        fabOptionImport.setOnClickListener(v -> {
+            collapseFabOptions(fabOptions, sweepDistance);
+            // Every MIME type, not just application/zip. A .quill that arrived over Quick Share or
+            // Bluetooth is typed application/octet-stream by the transport that carried it, and a
+            // narrower filter would grey out exactly the files this exists to open. The real check
+            // is BundleReader's, after the file is opened — the filter here is only a hint.
+            importPicker.launch(new String[]{"*/*"});
+        });
+
         // A board created here is standalone (no parent note) — it's owned by Home's Whiteboards
         // section. The row is inserted up front so the board exists in that list even if the user
         // backs out without drawing anything.
@@ -202,6 +232,39 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
             whiteboardRepository.createWhiteboard(null, null,
                     mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
                     whiteboardId -> openWhiteboard(whiteboardId, null));
+        });
+    }
+
+    /**
+     * Unpacks a picked {@code .quill} into a new note, then offers to open it.
+     *
+     * <p>The Snackbar's action is the point. An import lands the note among however many others are
+     * on Home and, since it comes in with a fresh {@code updated_at}, at the top of the list — but
+     * "at the top of a list" is still something to go and find. Offering it directly is one tap,
+     * and a Snackbar is right here where a dialog would not be: nothing is lost by missing it,
+     * because the note is already saved.
+     */
+    private void importBundle(android.net.Uri source) {
+        Snackbar.make(requireView(), R.string.import_in_progress, Snackbar.LENGTH_SHORT).show();
+        noteImporter.importFrom(source, new NoteImporter.OnImported() {
+            @Override public void onImported(String noteId, String title) {
+                if (!isAdded()) return;
+                reloadAll();
+                String message = title == null || title.trim().isEmpty()
+                        ? getString(R.string.import_succeeded_untitled)
+                        : getString(R.string.import_succeeded, title);
+                Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_open_import, v -> openNote(noteId))
+                        .show();
+            }
+
+            @Override public void onFailed(NoteImporter.Failure failure) {
+                if (!isAdded()) return;
+                Snackbar.make(requireView(),
+                        failure == NoteImporter.Failure.NOT_A_BUNDLE
+                                ? R.string.import_not_a_bundle : R.string.import_failed,
+                        Snackbar.LENGTH_LONG).show();
+            }
         });
     }
 

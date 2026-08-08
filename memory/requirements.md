@@ -141,23 +141,34 @@ plan is superseded. Three decisions drive everything below:
 Sequence so that each step is testable on its own, and note that **the P2P steps need
 two physical devices** — none of it runs on the emulator.
 
-- [ ] **Note sharing (no session, no transport of our own)**
-  - [ ] `.quill` bundle: a zip of `note.md` + `media/` + manifest. Lossless, unlike the
-        Markdown export, which reduces images/audio to placeholders. A note with no
-        media may ship as a bare `.md` so it still opens in any text editor.
-  - [ ] Share via `ACTION_SEND` + FileProvider → the system sheet (Quick Share,
+- [x] **Note sharing (no session, no transport of our own)** — built 2026-08-08.
+  - [x] `.quill` bundle: a zip of `note.md` + `media/` + manifest. Lossless, unlike the
+        Markdown export, which reduces images/audio to placeholders. `share/QuillBundle`
+        (format), `share/BundleWriter`, `share/BundleReader`.
+        *Deviation*: always a zip, never a bare `.md` for a media-free note. The
+        original was a "may"; one container means one import path, and the graceful
+        degradation it bought is already covered by the Markdown export.
+  - [x] Share via `ACTION_SEND` + FileProvider → the system sheet (Quick Share,
         Bluetooth, mail). No integration work: Quick Share is a share *target*, not an API.
-  - [ ] **Import**: `ACTION_OPEN_DOCUMENT` → picker → unpack. Build this first; it is
-        the only receive path that works across every transport.
-  - [ ] Import semantics: mint a new note id, re-id media into private storage and
-        rewrite `quill://` URIs, match tags by name (create if missing).
+        Options → Export → **Share to another Quill**; the file also lands in
+        `Downloads/Quill` like the other two formats, and the confirmation dialog's
+        positive button becomes **Share** instead of **Open**.
+  - [x] **Import**: `ACTION_OPEN_DOCUMENT` → picker → unpack. Home's FAB → **Import
+        Note**. Filter is `*/*`, not `application/zip` — a bundle that came over Quick
+        Share is typed `application/octet-stream`, so a narrow filter would grey out
+        exactly the files this exists to open.
+  - [x] Import semantics: mint a new note id, re-id media into private storage and
+        rewrite `quill://` URIs (`NoteDocument.rewriteEmbedIds`), match tags by name
+        (create if missing). `data/NoteImporter`.
   - [ ] *Polish, expect flakiness*: `ACTION_VIEW`/`ACTION_SEND` intent filter so a
         received file opens straight into Quill. Files arriving over Quick Share are
         typed `application/octet-stream` with no usable path, so `pathPattern` matching
         is unreliable — sniff content after opening. **`MainActivity` is currently
         `exported="false"`; receiving anything requires an exported entry point.**
 
-- [ ] **Session join (the token seam)**
+- [ ] **Session join (the token seam)** — dependencies and manifest permissions staged
+      2026-08-08 (`play-services-nearby`, `play-services-code-scanner`, `zxing-core`; full
+      Bluetooth/location/Wi-Fi permission ladder + optional camera feature), no code yet.
   - [ ] Host generates a session token; `startAdvertising(endpointName = token,
         P2P_STAR)`. Joiner discovers, matches the token, `requestConnection`; host
         accepts only that token. The token both disambiguates a room full of
@@ -186,8 +197,11 @@ two physical devices** — none of it runs on the emulator.
   - [ ] Once the transport exists, "tap to send a note" is nearly free — the same
         `.quill` bundle as a `FILE` payload into the same import code.
 
-- [ ] **Boundary with Epic B**: a locked/encrypted collection must not be shareable, or
-      requires unlock-on-both-ends — still needs an explicit product decision on which.
+- [x] **Boundary with Epic B**: decided 2026-08-08 — **a locked collection's notes are not
+      shareable**, rather than unlock-on-both-ends. A bundle is plaintext, so sharing one
+      would be the lock's only hole. `CollectionRepository.isLocked` exists and the editor
+      consults it; nothing sets `biometric_locked` yet, so it always answers false today.
+      The guard is in place for when Epic B starts writing the column.
 
 **Dropped from the original plan** (do not resurrect without re-reading the above):
 per-note vector-clock conflict resolution, the `outbox` writer/drainer for notes, and

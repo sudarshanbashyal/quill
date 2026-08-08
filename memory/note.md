@@ -783,9 +783,10 @@ prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points i
 
 ## Sharing and collaboration
 
-**Status: designed 2026-08-06, not built.** Supersedes the NFC + Wi-Fi Direct plan; the
-checklist lives in [requirements.md](requirements.md) Epic C. Three decisions, each with a
-reason that is easy to lose:
+**Status: designed 2026-08-06. Note sharing built 2026-08-08; the P2P half is still design
+only.** Supersedes the NFC + Wi-Fi Direct plan; the checklist lives in
+[requirements.md](requirements.md) Epic C. Three decisions, each with a reason that is easy to
+lose:
 
 **Notes are copied, not co-edited.** Live note collaboration is dropped. Importing a shared
 note mints a **new id**, so two people editing "the same" note hold two notes and there is no
@@ -835,9 +836,75 @@ is fine for exporting to other tools and feels broken when sharing to another Qu
 Also note `MainActivity` is `android:exported="false"` today, so nothing can be received until
 an exported entry point exists.
 
+### The `.quill` bundle, as built (2026-08-08)
+
+`share/QuillBundle` is the format, `share/BundleWriter` packs, `share/BundleReader` unpacks, and
+`data/NoteImporter` inserts. The reader/importer split is deliberate: the format is testable
+without a database, and a malformed file never reaches a transaction.
+
+**`note.md` inside the bundle is the stored document, not the Markdown export.** That is the
+whole difference between the two. `MarkdownExporter` is lossy on purpose — images and audio become
+italic placeholders, Q&A fences become bold paragraphs — because its destination is someone else's
+editor. A bundle's destination is another Quill, where the same flattening reads as a note that
+arrived broken. So the bundle carries `notes.content_blob` verbatim, `quill://` embeds intact, and
+the manifest carries the two things that live *beside* the document: the title (a column on the
+note's row) and per-asset metadata (width, duration).
+
+**Ids in a bundle are the sender's, and nothing reuses them.** The importer mints a new note id,
+new asset ids and new files, then rewrites the document to match via
+`NoteDocument.rewriteEmbedIds` — which lives on `NoteDocument` because the embed regex is that
+class's and a second copy would drift. One rule there covers two cases: **an embed whose id isn't
+in the map is dropped**. That handles an image whose file didn't make it into the archive *and* a
+whiteboard embed, since a bundle carries one note and boards aren't part of it.
+
+**Tags match by name, case-insensitively, and an existing tag keeps its own colour.** A tag id is
+local — "Lecture" on two phones is the same idea with different keys — so importing by id would
+grow a second invisible "Lecture" per arrival. The colour stays because the user chose it.
+
+**`created_at` is inherited, `updated_at` is now.** When the note was written is a fact about it
+and the one thing a copy can honestly keep; arriving is this copy's most recent event, and it is
+what puts the import at the top of Home where the user is looking. Imports land in no collection —
+the sender's folders are theirs.
+
+**Media moves before the transaction opens**, not inside it. Holding SQLite's write transaction
+across file copies would block every other repository on the shared single disk thread for the
+duration. The trade is orphaned files in private storage if the process dies in between — the
+cheaper failure, and the same one an interrupted image embed already produces. The move itself is
+`renameTo` first (cache and files are normally the same filesystem, so no bytes move) with a copy
+behind it for devices that split them.
+
+**The bundle is untrusted input**, because it arrived from another device over a transport with no
+sender identity. Two guards: entry names are whitelisted to a plain file directly inside `media/`
+(a check for `".."` is not enough — `media/../../databases/quill.db` is what a hostile archive
+writes), and the 256 MB cap is counted **as bytes arrive**, never read from the entry's declared
+size, which a zip bomb writes itself.
+
+**The share sheet is the entire transport story for a note.** Quick Share, Bluetooth and mail are
+share *targets*, not APIs — `ACTION_SEND` with a FileProvider uri and
+`FLAG_GRANT_READ_URI_PERMISSION` gets all three for nothing. The import filter is `*/*` rather
+than `application/zip` for the mirror-image reason: a bundle that came over Quick Share is typed
+`application/octet-stream`, so a correct filter would grey out the files this feature exists to
+open. Sniffing after opening is the only reliable check, and `BundleReader` is where it happens.
+
+**Locked collections can't be shared** (the Epic B boundary, decided here). A bundle is plaintext,
+so it would be the lock's only hole. `CollectionRepository.isLocked` answers, the editor reads it
+when the note loads so the menu can decide synchronously, and the menu item stays *tappable* —
+greyed out explains nothing and hidden reads as a feature Quill lacks, so the tap carries the
+reason. Nothing writes `biometric_locked` yet, so it always answers false today.
+
 **None of the P2P work is testable on the emulator** — NFC and Nearby both need two physical
 devices. That is a real planning cost for a project that has otherwise been verified entirely
 on `emulator-5554`, and another reason the QR and Import paths come first.
+
+**Dependencies and manifest permissions for session join were added ahead of the code (2026-08-08),
+while the `.quill` bundle work was in flight.** `play-services-nearby`, `play-services-code-scanner`
+and `zxing-core` are in `libs.versions.toml`/`app/build.gradle.kts`, and `AndroidManifest.xml`
+already carries the full Bluetooth/location/Wi-Fi permission ladder plus an optional camera feature
+— see the comments there for the API-level split (unversioned Bluetooth + location below 31, the
+`BLUETOOTH_SCAN`/`ADVERTISE`/`CONNECT` trio at 31, `NEARBY_WIFI_DEVICES` at 33). None of it is wired
+to any code yet: no `HostApduService`, no QR generation/scanning, no `ConnectionsClient`. Don't
+mistake the presence of these permissions for the session-join feature being started — they're
+staged so the next session can start writing `ConnectionsClient` code directly.
 
 ## Timestamps
 
@@ -969,9 +1036,10 @@ a button that could only ever fail. PDF needs no fallback (Google's viewer handl
 Images are the cost that would matter — each is decoded to ≤1600px and drawn — and that has not
 been measured.
 
-**Not done: sharing.** Export writes a file and offers to open it; it does not offer a share sheet,
-despite the share icon. Images in a Markdown export are a placeholder, not a file — a single `.md`
-can't carry them, and a folder-based export was out of scope.
+**Sharing arrived as a third format, not as a button on these two** (2026-08-08). PDF and Markdown
+still only offer **Open** — they are for reading elsewhere, and a `.md` whose images are
+placeholders is not a thing to send someone. The Export menu's third item writes a `.quill` bundle
+instead and its dialog's positive button is **Share**. See "Sharing and collaboration".
 
 ## Who owns a press on a waveform
 

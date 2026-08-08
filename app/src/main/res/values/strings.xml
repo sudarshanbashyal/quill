@@ -111,6 +111,11 @@
     <string name="recording_timer_placeholder">0:00</string>
     <string name="action_stop_recording">Stop</string>
 
+    <!-- Error messages for media handling in the editor -->
+    <string name="image_load_failed">Could not load image</string>
+    <string name="record_audio_failed">Could not record audio</string>
+    <string name="microphone_permission_required">Microphone permission is required to record audio</string>
+
     <!-- Formatting toolbar. Icon-only buttons, so these are the accessibility labels. -->
     <string name="action_bold">Bold</string>
     <string name="action_italic">Italic</string>
@@ -162,6 +167,23 @@
     <string name="export_no_viewer">No app on this device can open that file</string>
     <string name="export_failed">Could not export this note</string>
     <string name="export_empty">There is nothing in this note to export yet</string>
+
+    <!-- Sharing: the .quill bundle, plus importing one back. -->
+    <string name="action_export_bundle">Share to another Quill</string>
+    <string name="export_bundle_complete_title">Note packaged</string>
+    <string name="action_share_export">Share</string>
+    <string name="share_export_chooser">Share note</string>
+    <string name="share_no_target">No app on this device can send that file</string>
+    <!-- Shown instead of the share options when the note lives in a locked collection. -->
+    <string name="share_locked_collection">Notes in a locked collection can\'t be shared</string>
+    <string name="action_import_note">Import Note</string>
+    <string name="import_in_progress">Importing note…</string>
+    <string name="import_succeeded">Imported \"%1$s\"</string>
+    <string name="import_succeeded_untitled">Imported note</string>
+    <string name="action_open_import">Open</string>
+    <string name="import_not_a_bundle">That file isn\'t a Quill note</string>
+    <string name="import_failed">Could not import that note</string>
+
     <string name="action_open_quiz">Open quiz</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>
 

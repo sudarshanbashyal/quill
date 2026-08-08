@@ -1723,3 +1723,52 @@ still isn't, and that remains Epic A work.
 sheet with the drawing and Open whiteboard / Remove / Cancel → Open navigates to the board →
 long-press offers "Remove from note?" explaining the board is kept. 113 instrumented tests pass,
 including two new document round-trip tests.
+
+## 2026-08-08 — Feature implementation: note sharing via `.quill` bundle
+
+**Built the file-based half of the sharing epic**: `share/QuillBundle` (format), `share/BundleWriter`
+(pack), `share/BundleReader` (unpack), `data/NoteImporter` (insert). Reader/importer are split
+deliberately so the format is testable without a database and a malformed file never reaches a
+transaction.
+
+**Key decisions, recorded in note.md:** the bundle carries `note.md` as the stored document verbatim
+(not the lossy Markdown export — that flattens images/audio to placeholders, fine for another tool,
+broken for another Quill); ids are always re-minted on import via `NoteDocument.rewriteEmbedIds`,
+which drops any embed whose id isn't in the map (covers both a missing asset and a whiteboard embed,
+since a bundle carries one note and boards aren't part of it); tags match by name case-insensitively
+rather than by id; `created_at` is inherited, `updated_at` is now; media is moved before the DB
+transaction opens rather than inside it, to avoid blocking the shared disk thread. Deviated from the
+original plan by always zipping (never a bare `.md` for a media-free note) — one container means one
+import path.
+
+**Security-relevant, since a bundle is untrusted input from an unauthenticated transport:** zip entry
+names are whitelisted to a plain filename directly inside `media/` (`".."` alone isn't a sufficient
+check), and the 256 MB cap is counted as bytes arrive rather than trusted from the entry's declared
+size, which a zip bomb writes itself.
+
+**Boundary decided with Epic B:** a locked collection's notes are not shareable at all (not
+unlock-on-both-ends) — a bundle is plaintext, so sharing one would be the lock's only hole. The
+Export menu item stays tappable rather than greyed out or hidden, so the tap can explain why.
+
+**UI:** Options → Export → third item "Share to another Quill" (`ACTION_SEND` + FileProvider, file
+also lands in `Downloads/Quill`); Home's FAB gains "Import Note" (`ACTION_OPEN_DOCUMENT`, filter
+`*/*` rather than `application/zip` since Quick Share types the file `application/octet-stream`).
+
+**Left as polish, not done:** the `ACTION_VIEW`/`ACTION_SEND` intent filter for tapping a received
+file directly — `MainActivity` is still `exported="false"`, and content sniffing after open would be
+the only reliable check anyway.
+
+**Scaffolding staged for the next feature, not yet wired to code:** while this was in flight, deps
+for the P2P session-join feature were added ahead of time — `play-services-nearby`,
+`play-services-code-scanner`, `zxing-core`, plus the full manifest permission ladder (Bluetooth/
+location across API levels, `NEARBY_WIFI_DEVICES`, optional camera). No `ConnectionsClient`, QR, or
+`HostApduService` code exists yet — noted in both note.md and requirements.md so it isn't mistaken
+for the feature having started.
+
+## 2026-08-08 (same session) — Bug fix: multi-catch compile error, continued from a prior session
+
+Picked up mid-task in a fresh session (previous session's context wasn't carried over). Build was
+failing: `NoteImporter.java` caught `IOException | SecurityException | RuntimeException` in one
+multi-catch, which javac rejects since `SecurityException` is already a `RuntimeException`. Dropped
+`SecurityException` from the list. Then updated note.md and requirements.md to reflect the session's
+state (see above) per explicit request to keep memory current.

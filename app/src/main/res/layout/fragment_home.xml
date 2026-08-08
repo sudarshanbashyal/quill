@@ -192,6 +192,22 @@
             android:textColor="@color/text_on_brand"
             android:textSize="14sp"
             android:textStyle="bold" />
+
+        <!-- Last, and the only option here that doesn't create something from scratch — a note
+             someone else wrote arrives through the same control that makes new ones, because to
+             the user both end in "a note on Home that wasn't there before". -->
+        <TextView
+            android:id="@+id/fab_option_import"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:background="@drawable/bg_fab_option"
+            android:paddingHorizontal="@dimen/spacing_md"
+            android:paddingVertical="@dimen/spacing_sm"
+            android:text="@string/action_import_note"
+            android:textColor="@color/text_on_brand"
+            android:textSize="14sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton

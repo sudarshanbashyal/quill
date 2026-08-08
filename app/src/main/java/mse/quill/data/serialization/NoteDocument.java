@@ -246,6 +246,52 @@ public final class NoteDocument {
         return QA_FENCE_LINE.matcher(line).matches();
     }
 
+    // ── Rewriting ──────────────────────────────────────────────────────────
+
+    /**
+     * Repoints every embed in the document at a new asset id, dropping the ones with nowhere to go.
+     *
+     * <p>This is what makes an imported note a genuine copy rather than a shallow one. A shared
+     * bundle carries the sender's asset ids, and reusing them would have two devices' notes
+     * referencing the same registry keys — so {@link mse.quill.data.NoteImporter} mints its own and
+     * rewrites the document to match. It lives here rather than in the importer because the embed
+     * syntax is this class's, and a second copy of {@link #EMBED_LINE} elsewhere is a rule that
+     * would drift.
+     *
+     * <p><b>An embed whose id isn't in the map is removed</b>, and that single rule covers both
+     * reasons one wouldn't be. An image whose file didn't make it into the archive has no asset to
+     * point at; a whiteboard embed has no board, since a bundle carries one note and boards are not
+     * part of it. Leaving either in place would be harmless to the parser — it drops embeds it
+     * can't resolve — but it would leave dead references in the stored document until the next
+     * save happened to rewrite them.
+     *
+     * <p>Escaped lines are untouched: a user who typed something that looks like an embed has
+     * ordinary text, which is exactly what the backslash means here.
+     */
+    public static String rewriteEmbedIds(String markdown, Map<String, String> newIdByOldId) {
+        if (markdown == null || markdown.isEmpty()) return markdown;
+
+        String[] lines = markdown.split("\n", -1);
+        StringBuilder out = new StringBuilder();
+        boolean first = true;
+
+        for (String line : lines) {
+            Matcher embed = EMBED_LINE.matcher(line);
+            if (embed.matches()) {
+                String newId = newIdByOldId.get(embed.group(2));
+                if (newId == null) continue;   // nothing to point at — drop the line entirely
+                if (!first) out.append('\n');
+                out.append(line, 0, embed.start(2)).append(newId)
+                        .append(line, embed.end(2), line.length());
+            } else {
+                if (!first) out.append('\n');
+                out.append(line);
+            }
+            first = false;
+        }
+        return out.toString();
+    }
+
     // ── Projections ────────────────────────────────────────────────────────
 
     /**
