@@ -23,6 +23,7 @@ import java.util.UUID;
 
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.share.BundleReader;
+import mse.quill.share.QuillBundle;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 
 /**
@@ -90,7 +91,7 @@ public final class NoteImporter {
             }
 
             try {
-                String noteId = insert(contents);
+                String noteId = insertBundle(contents, null);
                 if (noteId == null) {
                     fail(cb, Failure.UNREADABLE);
                     return;
@@ -98,15 +99,26 @@ public final class NoteImporter {
                 String title = contents.title;
                 if (cb != null) executors.mainThread(() -> cb.onImported(noteId, title));
             } finally {
-                // Whatever the outcome: insert() moves the media it keeps out of here first, so
-                // this only ever removes what wasn't wanted or what a failed insert left behind.
+                // Whatever the outcome: insertBundle() moves the media it keeps out of here first,
+                // so this only ever removes what wasn't wanted or what a failed insert left behind.
                 contents.discard();
             }
         });
     }
 
-    /** @return the new note's id, or null if nothing was written. */
-    private String insert(BundleReader.Contents contents) {
+    /**
+     * Inserts an already-parsed bundle. Public (and callable off the {@link AppExecutors} disk
+     * thread it's normally reached through) so {@code data/CollectionImporter} can insert several
+     * notes from one {@code .quillpack} without a round trip through a {@code Uri} for each — the
+     * outer bundle has already unpacked them into memory.
+     *
+     * @param collectionId the collection to file the note into, or null to leave it loose on Home
+     *                     (the single-note import path always passes null: a shared note's sender
+     *                     folders are theirs, see {@link QuillBundle} — a collection import is the
+     *                     one case where the destination is chosen for the note).
+     * @return the new note's id, or null if nothing was written.
+     */
+    public String insertBundle(BundleReader.Contents contents, String collectionId) {
         String noteId = UUID.randomUUID().toString();
 
         // Media moves before the transaction opens, because it is file I/O and holding a SQLite
@@ -154,8 +166,10 @@ public final class NoteImporter {
             // the user is looking for it.
             note.put("created_at", contents.createdAt > 0 ? contents.createdAt : now);
             note.put("updated_at", now);
-            // No collection: the sender's folders are theirs, and dropping an import into one the
-            // user didn't choose hides it. It lands loose on Home and can be filed from there.
+            // No collection unless the caller names one (a collection import): the sender's
+            // folders are theirs otherwise, and dropping a lone import into one the user didn't
+            // choose hides it. It lands loose on Home and can be filed from there.
+            if (collectionId != null) note.put("collection_id", collectionId);
             db.insert("notes", null, note);
 
             for (ContentValues asset : assetRows) {

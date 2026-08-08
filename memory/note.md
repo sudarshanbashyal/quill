@@ -896,6 +896,37 @@ reason. Nothing writes `biometric_locked` yet, so it always answers false today.
 devices. That is a real planning cost for a project that has otherwise been verified entirely
 on `emulator-5554`, and another reason the QR and Import paths come first.
 
+### Whiteboard and collection sharing (built 2026-08-08, same day as the note bundle)
+
+Two more things travel the same share-sheet-and-picker path as a note, each with its own format:
+
+- **`share/WhiteboardBundle`** (`.quillboard`) is plain JSON, not a zip — a board has no files to
+  carry, just point lists and strings, and both are already JSON's native shape. `authorId` on a
+  `Stroke`/`WhiteboardText` is dropped entirely rather than carried and ignored: it's a
+  live-collaboration field the single-device bundle format has no use for.
+  `WhiteboardFragment`'s export button is now a `PopupMenu` — the pre-existing flat-PNG export
+  (lossy, a picture of the board) alongside the new **Share whiteboard** (lossless, another Quill
+  can keep drawing on it). `data/WhiteboardImporter` inserts with fresh ids, same rule as a note.
+- **`share/CollectionBundle`** (`.quillpack`) is a zip of zips: `manifest.json` plus one
+  `notes/<n>.quill` entry per member note, each entry a complete, ordinary `.quill` that
+  `BundleReader`/`NoteImporter` already know how to read. Nothing about a single note's format had
+  to change — `data/CollectionImporter` makes a new collection, then calls
+  `NoteImporter.insertBundle(contents, collectionId)` once per entry. That method (public now,
+  was `private insert`) is what lets a collection import assign notes into the collection it made,
+  while a lone `.quill` import still passes `null` and lands the note loose on Home as before. One
+  corrupt member note is skipped, not fatal to the rest of the pack — reported back as "N of M".
+- **The manifest tells the formats apart.** `CollectionBundle.KEY_NOTE_COUNT` is a key a `.quill`
+  manifest never has, which is what lets an importer try note → whiteboard → collection in
+  sequence against a file of unknown type (Home's picker is still `*/*`) without a false positive:
+  each reader's `InvalidBundleException` on the wrong format is the signal to try the next one.
+  `WhiteboardBundle` carries an explicit `"type":"quillboard"` for the same reason, since its
+  format has no zip structure to fail on first.
+- **Locked collections still can't be shared** — `CollectionDetailFragment`'s share button asks
+  `CollectionRepository.isLocked` before packing, same guard as a single note's Export menu.
+- `NoteRepository.loadForBundleSync` is a new public synchronous read (title, segments, tags,
+  timestamps) added for `CollectionBundleWriter`'s caller, which is already looping over note ids
+  on a disk thread — the existing async `loadNote` is shaped for one screen, not a batch.
+
 **Dependencies and manifest permissions for session join were added ahead of the code (2026-08-08),
 while the `.quill` bundle work was in flight.** `play-services-nearby`, `play-services-code-scanner`
 and `zxing-core` are in `libs.versions.toml`/`app/build.gradle.kts`, and `AndroidManifest.xml`

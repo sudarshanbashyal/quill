@@ -240,6 +240,41 @@ public class NoteRepository {
         });
     }
 
+    /** Everything a {@code .quill}/{@code .quillpack} bundle needs to carry for one note. */
+    public static final class NoteBundleData {
+        public final String title;
+        public final List<NoteSegment> segments;
+        public final List<Tag> tags;
+        public final long createdAt;
+        public final long updatedAt;
+
+        NoteBundleData(String title, List<NoteSegment> segments, List<Tag> tags,
+                       long createdAt, long updatedAt) {
+            this.title = title;
+            this.segments = segments;
+            this.tags = tags;
+            this.createdAt = createdAt;
+            this.updatedAt = updatedAt;
+        }
+    }
+
+    /**
+     * Synchronous full read of one note, for a caller already on the disk thread building a
+     * bundle of several notes at once (see {@code share/CollectionBundleWriter}) — the async
+     * {@link #loadNote} exists for a single screen, not a loop over a collection's worth.
+     *
+     * @return null if the note doesn't exist (or was soft-deleted).
+     */
+    public NoteBundleData loadForBundleSync(String noteId) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        Note note = getNoteSync(db, noteId);
+        if (note == null) return null;
+        List<NoteSegment> segments = getSegmentsSync(db, noteId);
+        List<Tag> tags = loadTagsForNoteIdsSync(db, Collections.singletonList(noteId)).get(noteId);
+        return new NoteBundleData(note.title, segments,
+                tags == null ? new ArrayList<>() : tags, note.createdAt, note.updatedAt);
+    }
+
     // ── Sync helpers (must run on the diskIO executor) ──────────────────────
 
     private Note getNoteSync(SQLiteDatabase db, String noteId) {

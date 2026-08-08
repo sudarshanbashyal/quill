@@ -1,5 +1,7 @@
 package mse.quill.ui.collections;
 
+import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -19,18 +21,22 @@ import java.util.List;
 
 import mse.quill.R;
 import mse.quill.util.RelativeTime;
+import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Collection;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
+import mse.quill.share.CollectionBundle;
+import mse.quill.share.CollectionBundleWriter;
 import mse.quill.ui.home.CollectionDialogs;
 import mse.quill.ui.home.NotesAdapter;
 import mse.quill.ui.notes.NoteEditorFragment;
 import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
+import mse.quill.util.NoteExportStore;
 
 public class CollectionDetailFragment extends Fragment {
 
@@ -123,6 +129,73 @@ public class CollectionDetailFragment extends Fragment {
         });
 
         view.findViewById(R.id.btn_search_notes).setOnClickListener(v -> showAddExistingNotesDialog());
+
+        view.findViewById(R.id.btn_share_collection).setOnClickListener(v -> shareCollection());
+    }
+
+    /**
+     * Packs every note in the collection into a {@code .quillpack} and hands it to the system
+     * share sheet — the collection-level sibling of a note's "Share to another Quill". Blocked the
+     * same way a single locked note is: a bundle is plaintext, so sharing one out of a locked
+     * collection would be the lock's only hole.
+     */
+    private void shareCollection() {
+        collectionRepository.isLocked(collectionId, locked -> {
+            if (!isAdded()) return;
+            if (locked) {
+                Toast.makeText(requireContext(), R.string.share_locked_collection, Toast.LENGTH_LONG).show();
+                return;
+            }
+            int color = 0;
+            for (Collection c : allCollections) {
+                if (c.id.equals(collectionId)) color = c.color;
+            }
+            String name = ((TextView) requireView().findViewById(R.id.toolbar_title)).getText().toString();
+            int finalColor = color;
+            noteRepository.loadNotes(collectionId, notes -> {
+                if (!isAdded()) return;
+                if (notes.isEmpty()) {
+                    Toast.makeText(requireContext(), R.string.export_collection_empty, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                List<String> noteIds = new ArrayList<>();
+                for (Note note : notes) noteIds.add(note.id);
+                packAndShare(name, finalColor, noteIds);
+            });
+        });
+    }
+
+    private void packAndShare(String name, int color, List<String> noteIds) {
+        Context appContext = requireContext().getApplicationContext();
+        AppExecutors.getInstance().diskIO(() -> {
+            List<NoteRepository.NoteBundleData> bundleData = new ArrayList<>();
+            for (String noteId : noteIds) {
+                NoteRepository.NoteBundleData data = noteRepository.loadForBundleSync(noteId);
+                if (data != null) bundleData.add(data);
+            }
+
+            NoteExportStore.Saved saved = NoteExportStore.save(appContext, name,
+                    CollectionBundle.EXTENSION, CollectionBundle.MIME_TYPE,
+                    out -> CollectionBundleWriter.write(name, color, bundleData, out));
+
+            AppExecutors.getInstance().mainThread(() -> {
+                if (!isAdded()) return;
+                if (saved == null) {
+                    Toast.makeText(requireContext(), R.string.share_failed, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                Intent send = new Intent(Intent.ACTION_SEND)
+                        .setType(CollectionBundle.MIME_TYPE)
+                        .putExtra(Intent.EXTRA_STREAM, saved.uri)
+                        .putExtra(Intent.EXTRA_TITLE, saved.displayName)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    startActivity(Intent.createChooser(send, getString(R.string.share_collection_chooser)));
+                } catch (android.content.ActivityNotFoundException e) {
+                    Toast.makeText(requireContext(), R.string.share_no_target, Toast.LENGTH_LONG).show();
+                }
+            });
+        });
     }
 
     @Override

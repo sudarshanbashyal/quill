@@ -183,6 +183,27 @@
     <string name="action_open_import">Open</string>
     <string name="import_not_a_bundle">That file isn\'t a Quill note</string>
     <string name="import_failed">Could not import that note</string>
+    <!-- A generic write/share failure, shared by the whiteboard and collection share paths. -->
+    <string name="share_failed">Could not prepare that for sharing</string>
+
+    <!-- Sharing a whiteboard: a lossless .quillboard bundle, distinct from the existing flat-image
+         export ("Export as image" reuses export_complete_* below it since it produces a picture). -->
+    <string name="whiteboard_export_image">Export as image</string>
+    <string name="whiteboard_share">Share whiteboard</string>
+    <string name="whiteboard_share_chooser">Share whiteboard</string>
+    <string name="import_succeeded_whiteboard">Imported \"%1$s\"</string>
+    <string name="import_succeeded_whiteboard_untitled">Imported whiteboard</string>
+
+    <!-- Sharing a whole collection: a .quillpack, a zip of each member note's own .quill bundle. -->
+    <string name="action_export_collection">Share collection</string>
+    <string name="share_collection_chooser">Share collection</string>
+    <string name="export_collection_empty">This collection has no notes to share yet</string>
+    <string name="imported_collection_untitled">Imported collection</string>
+    <!-- %1$s the collection\'s name, %2$d how many notes landed. -->
+    <string name="import_succeeded_collection">Imported \"%1$s\" (%2$d notes)</string>
+    <!-- %1$s name, %2$d notes that imported cleanly, %3$d the pack\'s total — shown when one or
+         more member notes were corrupt and had to be skipped. -->
+    <string name="import_succeeded_collection_partial">Imported \"%1$s\" (%2$d of %3$d notes)</string>
 
     <string name="action_open_quiz">Open quiz</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>

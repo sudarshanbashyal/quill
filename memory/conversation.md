@@ -1772,3 +1772,45 @@ failing: `NoteImporter.java` caught `IOException | SecurityException | RuntimeEx
 multi-catch, which javac rejects since `SecurityException` is already a `RuntimeException`. Dropped
 `SecurityException` from the list. Then updated note.md and requirements.md to reflect the session's
 state (see above) per explicit request to keep memory current.
+
+## 2026-08-08 (same session) — Feature implementation: sharing extended to whiteboards and collections
+
+**Asked**, after being shown that only notes could be shared: extend the same idea to whiteboards
+and to whole collections. Neither was in the original requirements.md plan, which only ever
+specified a note bundle.
+
+**Whiteboard side.** `share/WhiteboardBundle` (`.quillboard`) is JSON, not a zip — unlike a note, a
+board has no files to carry, only point lists and strings, which JSON already stores natively, so
+wrapping it in a zip would be a container for a container. `authorId` on a `Stroke`/`WhiteboardText`
+is dropped rather than carried and ignored, since it's a live-collaboration field this single-device
+format has no reader for. `WhiteboardFragment`'s single export button became a `PopupMenu`: the
+existing flat-PNG export stayed (lossy, a picture), joined by **Share whiteboard** (lossless, another
+Quill can keep editing it). `data/WhiteboardImporter` mints fresh ids on the way in, the same rule
+`NoteImporter` already follows for a note.
+
+**Collection side.** `share/CollectionBundle` (`.quillpack`) is a zip of zips — `manifest.json` plus
+one `notes/<n>.quill` per member note, each a complete, ordinary `.quill`. The design choice that
+kept this small: nothing about a single note's format changes. `data/CollectionImporter` makes the
+new collection, then runs the *existing* note importer once per entry — which required promoting
+`NoteImporter`'s private `insert` to a public `insertBundle(contents, collectionId)`, the one place
+a collection import differs from a lone note import (which still passes `null` and lands the note
+loose on Home, as before). A corrupt member note is skipped rather than failing the whole pack,
+reported back as "N of M imported". A new `NoteRepository.loadForBundleSync` (title, segments, tags,
+timestamps, synchronous) backs the writer's loop over note ids — the existing `loadNote` is async
+and shaped for one screen, not a batch on an already-disk-thread caller.
+
+**The routing problem this created, solved by the manifest.** Home's import picker is `*/*` with no
+signal upstream about which of three formats a file is. Each reader already threw
+`InvalidBundleException` on a file that isn't its own shape, which is what makes trying them in
+sequence (note → whiteboard → collection) safe: a `.quill` note's `manifest.json` never carries
+`CollectionBundle.KEY_NOTE_COUNT`, so the collection reader rejects it correctly, and vice versa; the
+whiteboard reader rejects both outright since its JSON has an explicit `"type":"quillboard"` and
+neither a note zip nor a collection zip is valid JSON at all.
+
+**Same locked-collection boundary carried over**: `CollectionDetailFragment`'s new share button asks
+`CollectionRepository.isLocked` before packing, exactly like a single note's Export menu already
+does.
+
+**Verified via `assembleDebug`** rather than on-device this pass — a full compile and resource build
+succeeded, but the three new share/import paths haven't been exercised on the emulator or a device
+yet (left for the user, who said they'd debug independently going forward).

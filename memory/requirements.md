@@ -160,6 +160,14 @@ two physical devices** — none of it runs on the emulator.
   - [x] Import semantics: mint a new note id, re-id media into private storage and
         rewrite `quill://` URIs (`NoteDocument.rewriteEmbedIds`), match tags by name
         (create if missing). `data/NoteImporter`.
+  - [x] **Extended to whiteboards and collections** (2026-08-08, not in the original plan):
+        `.quillboard` (JSON, `share/WhiteboardBundle`) shares one board losslessly via a new
+        "Share whiteboard" option beside the existing flat-image export; `.quillpack`
+        (`share/CollectionBundle`) shares a whole collection as a zip of each note's own
+        `.quill`. Both reuse the note bundle's import machinery rather than duplicating it —
+        `NoteImporter.insertBundle` takes an optional collection id for this reason. Home's
+        importer tries note → whiteboard → collection in sequence against the same `*/*` pick,
+        since each format's manifest rejects the other two.
   - [ ] *Polish, expect flakiness*: `ACTION_VIEW`/`ACTION_SEND` intent filter so a
         received file opens straight into Quill. Files arriving over Quick Share are
         typed `application/octet-stream` with no usable path, so `pathPattern` matching

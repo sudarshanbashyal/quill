@@ -78,6 +78,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private TagRepository tagRepository;
 
     private NoteImporter noteImporter;
+    private mse.quill.data.WhiteboardImporter whiteboardImporter;
+    private mse.quill.data.CollectionImporter collectionImporter;
     private ActivityResultLauncher<String[]> importPicker;
 
     @Override
@@ -106,6 +108,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         tagRepository = new TagRepository(requireContext());
         whiteboardRepository = new WhiteboardRepository(requireContext());
         noteImporter = new NoteImporter(requireContext());
+        whiteboardImporter = new mse.quill.data.WhiteboardImporter(requireContext());
+        collectionImporter = new mse.quill.data.CollectionImporter(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCollectionClicked(String collectionId, String displayName) {
@@ -236,13 +240,22 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     /**
-     * Unpacks a picked {@code .quill} into a new note, then offers to open it.
+     * Unpacks a picked file, trying each of the three things Quill can share in turn — a note, a
+     * whiteboard, a whole collection — and offers to open whatever came in.
      *
-     * <p>The Snackbar's action is the point. An import lands the note among however many others are
-     * on Home and, since it comes in with a fresh {@code updated_at}, at the top of the list — but
+     * <p>The picker's filter is {@code *&#47;*} (see the FAB listener above), so there is nothing
+     * upstream telling this which of the three it is. Each reader rejects a file that isn't its
+     * own format ({@link NoteImporter.Failure#NOT_A_BUNDLE}), which is what makes trying them in
+     * sequence safe rather than a guess — a {@code .quill} note is rejected by the whiteboard and
+     * collection readers for lacking their required entries, and vice versa (see the class docs on
+     * {@code WhiteboardBundle} and {@code CollectionBundle} for exactly how each tells the others
+     * apart). Order is note, then whiteboard, then collection — notes are the common case.
+     *
+     * <p>The Snackbar's action is the point. An import lands among however many others are already
+     * on Home and, since it arrives with a fresh {@code updated_at}, at the top of its list — but
      * "at the top of a list" is still something to go and find. Offering it directly is one tap,
      * and a Snackbar is right here where a dialog would not be: nothing is lost by missing it,
-     * because the note is already saved.
+     * because whatever it is has already been saved.
      */
     private void importBundle(android.net.Uri source) {
         Snackbar.make(requireView(), R.string.import_in_progress, Snackbar.LENGTH_SHORT).show();
@@ -260,8 +273,50 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
             @Override public void onFailed(NoteImporter.Failure failure) {
                 if (!isAdded()) return;
+                importWhiteboardBundle(source);
+            }
+        });
+    }
+
+    private void importWhiteboardBundle(android.net.Uri source) {
+        whiteboardImporter.importFrom(source, new mse.quill.data.WhiteboardImporter.OnImported() {
+            @Override public void onImported(String whiteboardId, String title) {
+                if (!isAdded()) return;
+                reloadAll();
+                String message = title == null || title.trim().isEmpty()
+                        ? getString(R.string.import_succeeded_whiteboard_untitled)
+                        : getString(R.string.import_succeeded_whiteboard, title);
+                Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_open_import, v -> openWhiteboard(whiteboardId, null))
+                        .show();
+            }
+
+            @Override public void onFailed(mse.quill.data.WhiteboardImporter.Failure failure) {
+                if (!isAdded()) return;
+                importCollectionBundle(source);
+            }
+        });
+    }
+
+    private void importCollectionBundle(android.net.Uri source) {
+        collectionImporter.importFrom(source, new mse.quill.data.CollectionImporter.OnImported() {
+            @Override public void onImported(String collectionId, String name, int imported, int total) {
+                if (!isAdded()) return;
+                reloadAll();
+                String displayName = name == null || name.trim().isEmpty()
+                        ? getString(R.string.imported_collection_untitled) : name;
+                String message = imported == total
+                        ? getString(R.string.import_succeeded_collection, displayName, imported)
+                        : getString(R.string.import_succeeded_collection_partial, displayName, imported, total);
+                Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_open_import, v -> openCollection(collectionId, displayName))
+                        .show();
+            }
+
+            @Override public void onFailed(mse.quill.data.CollectionImporter.Failure failure) {
+                if (!isAdded()) return;
                 Snackbar.make(requireView(),
-                        failure == NoteImporter.Failure.NOT_A_BUNDLE
+                        failure == mse.quill.data.CollectionImporter.Failure.NOT_A_BUNDLE
                                 ? R.string.import_not_a_bundle : R.string.import_failed,
                         Snackbar.LENGTH_LONG).show();
             }

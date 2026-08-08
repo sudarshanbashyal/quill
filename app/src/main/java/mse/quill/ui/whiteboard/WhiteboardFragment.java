@@ -292,7 +292,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnCentre.setOnClickListener(v -> whiteboardView.centreOnContent());
         btnUndo.setOnClickListener(v   -> undoLastStroke());
         btnClear.setOnClickListener(v  -> confirmClear());
-        btnExport.setOnClickListener(v -> exportWhiteboard());
+        btnExport.setOnClickListener(this::showExportMenu);
 
         // Set sensible defaults on screen open
         selectTool(WhiteboardView.TOOL_PEN, btnPen);
@@ -541,6 +541,70 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
+
+    /** Export as a flat image (lossy — a picture of the board) or share the board itself (lossless
+     *  — the strokes and text another Quill can redraw and keep editing), mirroring the choice a
+     *  note's Export menu already offers between PDF/Markdown and a {@code .quill} bundle. */
+    private void showExportMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(requireContext(), anchor);
+        menu.getMenu().add(0, 1, 0, R.string.whiteboard_export_image);
+        menu.getMenu().add(0, 2, 1, R.string.whiteboard_share);
+        menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 1) {
+                exportWhiteboard();
+            } else {
+                shareWhiteboard();
+            }
+            return true;
+        });
+        menu.show();
+    }
+
+    /**
+     * Packs the board into a {@code .quillboard} bundle and hands it to the system share sheet —
+     * the same {@code ACTION_SEND} + FileProvider path a note's "Share to another Quill" uses, since
+     * Quick Share, Bluetooth and mail are share <em>targets</em> here too, not APIs to integrate
+     * with.
+     */
+    private void shareWhiteboard() {
+        String id = whiteboardId;
+        String name = titleInput != null ? titleInput.getText().toString().trim() : "";
+        new Thread(() -> {
+            Whiteboard board = whiteboardRepo.getByIdSync(id);
+            if (board == null) return;
+            List<Stroke> strokes = strokeDao.getByWhiteboard(id);
+            List<WhiteboardText> texts = textDao.getByWhiteboard(id);
+            String title = name.isEmpty() ? board.title : name;
+
+            mse.quill.util.NoteExportStore.Saved saved = mse.quill.util.NoteExportStore.save(
+                    requireContext().getApplicationContext(),
+                    title == null ? "" : title,
+                    mse.quill.share.WhiteboardBundle.EXTENSION,
+                    mse.quill.share.WhiteboardBundle.MIME_TYPE,
+                    out -> mse.quill.share.WhiteboardBundleWriter.write(
+                            title, board.background, board.createdAt, board.updatedAt,
+                            strokes, texts, out));
+
+            requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
+                if (saved == null) {
+                    Toast.makeText(requireContext(), R.string.share_failed, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND)
+                        .setType(mse.quill.share.WhiteboardBundle.MIME_TYPE)
+                        .putExtra(android.content.Intent.EXTRA_STREAM, saved.uri)
+                        .putExtra(android.content.Intent.EXTRA_TITLE, saved.displayName)
+                        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    startActivity(android.content.Intent.createChooser(
+                            send, getString(R.string.whiteboard_share_chooser)));
+                } catch (android.content.ActivityNotFoundException e) {
+                    Toast.makeText(requireContext(), R.string.share_no_target, Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
+    }
 
     /** Renders the current canvas to a PNG file in the device's Pictures folder. */
     private void exportWhiteboard() {
