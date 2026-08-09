@@ -25,9 +25,11 @@ package mse.quill.share;
 public final class WhiteboardBundle {
 
     public static final String EXTENSION = "quillboard";
-    /** JSON, not zip — see the class doc. Plain text so a mail client or Quick Share carries it
-     *  like any other attachment. */
-    public static final String MIME_TYPE = "application/json";
+    /** A vendor type, not {@code application/json} — see {@link QuillBundle#MIME_TYPE} for why a
+     *  MIME type Android's {@code MimeTypeMap} recognises gets its file's extension silently
+     *  corrected (here, to {@code .json}) the moment {@code NoteExportStore} saves it via
+     *  {@code MediaStore}. Still plain text underneath, so nothing about how it's carried changes. */
+    public static final String MIME_TYPE = "application/x-quillboard";
 
     /** The value {@link #KEY_TYPE} must hold, and what tells an importer trying several formats
      *  in turn that this file is a board rather than a note or a collection. */

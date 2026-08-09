@@ -22,7 +22,10 @@ package mse.quill.share;
 public final class CollectionBundle {
 
     public static final String EXTENSION = "quillpack";
-    public static final String MIME_TYPE = "application/zip";
+    /** A vendor type, not {@code application/zip} — see {@link QuillBundle#MIME_TYPE} for why: a
+     *  MIME type Android's {@code MimeTypeMap} recognises has its file's extension silently
+     *  corrected to match ({@code .zip}) by {@code MediaProvider} on save. */
+    public static final String MIME_TYPE = "application/x-quillpack";
 
     public static final int SCHEMA_VERSION = 1;
 

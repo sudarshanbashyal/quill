@@ -29,10 +29,16 @@ package mse.quill.share;
 public final class QuillBundle {
 
     public static final String EXTENSION = "quill";
-    /** A {@code .quill} is a zip, and saying so is what lets a mail client or Quick Share carry it.
-     *  Claiming a private type would leave transports guessing, and several refuse to send a
-     *  {@code application/octet-stream} attachment at all. */
-    public static final String MIME_TYPE = "application/zip";
+    /** Deliberately a vendor type, not {@code application/zip}. A {@code .quill} *is* a zip, but
+     *  {@code application/zip} is registered in Android's {@code MimeTypeMap} against the
+     *  extension {@code .zip} — and on API 29+, {@code MediaProvider} silently corrects a saved
+     *  file's extension to match a MIME type it recognises, renaming
+     *  {@code note_20260101.quill} to {@code note_20260101.zip} the moment it hits
+     *  {@code NoteExportStore}'s {@code MediaStore} insert. An unregistered type has nothing for
+     *  that correction to key off, so the extension actually requested is the one that survives.
+     *  Still carries enough of a real type for a mail client or Quick Share to accept the
+     *  attachment — the concern a plain {@code application/octet-stream} would raise. */
+    public static final String MIME_TYPE = "application/x-quill";
 
     /** Bumped when a change would stop an older reader from making sense of the file. Readers
      *  reject anything above their own, which is worth doing now while there is exactly one

@@ -97,6 +97,15 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <!-- The vendor types QuillBundle/WhiteboardBundle/CollectionBundle actually declare
+                     (see their MIME_TYPE docs) — kept alongside the generic ones below because a
+                     transport is free to relabel on the way, and often does. -->
+                <data android:scheme="content" android:mimeType="application/x-quill" />
+                <data android:scheme="content" android:mimeType="application/x-quillboard" />
+                <data android:scheme="content" android:mimeType="application/x-quillpack" />
+                <data android:scheme="file" android:mimeType="application/x-quill" />
+                <data android:scheme="file" android:mimeType="application/x-quillboard" />
+                <data android:scheme="file" android:mimeType="application/x-quillpack" />
                 <data android:scheme="content" android:mimeType="application/zip" />
                 <data android:scheme="content" android:mimeType="application/json" />
                 <data android:scheme="content" android:mimeType="application/octet-stream" />

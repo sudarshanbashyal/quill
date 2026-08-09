@@ -1877,3 +1877,28 @@ Snackbar-with-Open-action outcome either way.
 **Deliberately not covered:** `ACTION_SEND` (Quill doesn't need to _receive_ a share targeting
 itself as an attachment recipient today) and `pathPattern` matching (per the reasoning above,
 tried in an earlier draft and abandoned — it degrades a `content://` Uri delivery to guessing).
+
+## 2026-08-09 (same day) — Bug fix: exported `.quill` arrived as `.zip`
+
+**Reported after testing the above:** an exported note is still named `….zip`, not `….quill`, and
+the tap-to-import filter above therefore never had a real `.quill` to catch.
+
+**Root cause, once actually checked rather than assumed:** `QuillBundle.MIME_TYPE` was
+`application/zip` — a real, IANA-registered type. `NoteExportStore.saveViaMediaStore` (API 29+)
+inserts the file through `MediaStore` with that MIME type, and `MediaProvider` corrects a saved
+file's extension to match any MIME type it recognises, the moment the row is written — silently
+renaming `note_20260809_120000.quill` to `.zip` regardless of the `DISPLAY_NAME` requested. Same
+story for `.quillboard` (`application/json` → `.json`) and `.quillpack` (`application/zip` →
+`.zip`). Every save *and* every `ACTION_SEND` share reuses the same one `MIME_TYPE` constant per
+format, so the fix is one line per format rather than a call-site hunt.
+
+**Fixed:** all three now declare vendor types instead — `application/x-quill`,
+`application/x-quillboard`, `application/x-quillpack`. Nothing in `MimeTypeMap` recognises them,
+so `MediaProvider` has nothing to correct the extension against, and the requested extension
+survives. The manifest's `ACTION_VIEW` filter (added earlier the same day) gained these three
+alongside the generic `zip`/`json`/`octet-stream` entries it already had, since a transport is
+still free to relabel a file to something generic on the way and both need to be caught.
+
+**Worth remembering:** check what actually wrote the bytes (here, `NoteExportStore`'s `MediaStore`
+insert) before reasoning about what carried them — the first-pass theory blamed the transport for
+what turned out to be a save-time rename.
