@@ -3,7 +3,9 @@ package mse.quill;
 import android.Manifest;
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -69,6 +71,72 @@ public class MainActivity extends AppCompatActivity {
         applyTopInsetToEveryScreen();
         setupNowPlayingBar();
         setupBottomNavigation();
+        deliverSharedFileWhenHomeIsReady();
+        handleViewIntent(getIntent());
+    }
+
+    /**
+     * A {@code .quill}/{@code .quillboard}/{@code .quillpack} opened from outside the app (a file
+     * manager, mail client, or Quick Share — see the manifest's intent-filter on this activity).
+     *
+     * <p>{@code onNewIntent} covers the case where Quill is already running: the default launch
+     * mode reuses this instance rather than starting a second one, and without this override the
+     * new intent would sit unread in {@link #getIntent()} while the old one keeps being returned.
+     */
+    @Override
+    protected void onNewIntent(@NonNull Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleViewIntent(intent);
+    }
+
+    /** Set once a VIEW intent names a file, and cleared once {@code HomeFragment} has it — Home may
+     *  not be the resumed fragment yet (a cold start still has to inflate the nav host), and this is
+     *  what lets {@link #deliverSharedFileWhenHomeIsReady} deliver it the moment it is. */
+    private Uri pendingImportUri;
+
+    private void handleViewIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return;
+        Uri uri = intent.getData();
+        if (uri == null) return;
+        pendingImportUri = uri;
+
+        // The file's result belongs on Home (that's where a manually-picked import already lands),
+        // so a VIEW intent arriving while the user is elsewhere in the app — mid-note, on a quiz —
+        // has to surface there first. A no-op if Home is already the top of the back stack.
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+        if (host != null) host.getNavController().popBackStack(R.id.homeFragment, false);
+
+        deliverPendingImportIfReady();
+    }
+
+    /** Home is resumed as soon as it exists, cold start or not, so watching for that (rather than
+     *  e.g. a fixed delay) is what makes this reliable regardless of how long the nav host takes to
+     *  inflate it. */
+    private void deliverSharedFileWhenHomeIsReady() {
+        getSupportFragmentManager().registerFragmentLifecycleCallbacks(
+                new FragmentManager.FragmentLifecycleCallbacks() {
+                    @Override
+                    public void onFragmentResumed(@NonNull FragmentManager fm, @NonNull Fragment fragment) {
+                        if (fragment instanceof mse.quill.ui.home.HomeFragment) {
+                            deliverPendingImportIfReady();
+                        }
+                    }
+                }, true);
+    }
+
+    private void deliverPendingImportIfReady() {
+        if (pendingImportUri == null) return;
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+        if (host == null) return;
+        Fragment current = host.getChildFragmentManager().getPrimaryNavigationFragment();
+        if (!(current instanceof mse.quill.ui.home.HomeFragment)) return;
+
+        Uri uri = pendingImportUri;
+        pendingImportUri = null;
+        ((mse.quill.ui.home.HomeFragment) current).handleSharedFile(uri);
     }
 
     /**

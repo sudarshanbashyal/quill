@@ -1,9 +1,12 @@
 package mse.quill.share;
 
+import android.util.Log;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -18,6 +21,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import mse.quill.data.model.Stroke;
+import mse.quill.data.model.WhiteboardText;
 
 /**
  * Unpacks a {@link QuillBundle} into something {@link mse.quill.data.NoteImporter} can insert.
@@ -35,6 +41,7 @@ import java.util.zip.ZipInputStream;
  */
 public final class BundleReader {
 
+    private static final String TAG = "BundleReader";
     private static final int COPY_BUFFER = 16 * 1024;
     /** A note is text and a handful of photos. Well above anything Quill produces, low enough that
      *  a hostile or corrupt archive can't fill the cache partition before anyone notices. */
@@ -49,16 +56,19 @@ public final class BundleReader {
         public final long updatedAt;
         public final List<TagEntry> tags;
         public final List<MediaEntry> media;
+        public final List<WhiteboardEntry> whiteboards;
         private final File workDir;
 
         Contents(String title, String markdown, long createdAt, long updatedAt,
-                 List<TagEntry> tags, List<MediaEntry> media, File workDir) {
+                 List<TagEntry> tags, List<MediaEntry> media, List<WhiteboardEntry> whiteboards,
+                 File workDir) {
             this.title = title;
             this.markdown = markdown;
             this.createdAt = createdAt;
             this.updatedAt = updatedAt;
             this.tags = tags;
             this.media = media;
+            this.whiteboards = whiteboards;
             this.workDir = workDir;
         }
 
@@ -94,6 +104,29 @@ public final class BundleReader {
             this.file = file;
             this.width = width;
             this.durationMs = durationMs;
+        }
+    }
+
+    /** One embedded whiteboard, parsed with the same reader a standalone {@code .quillboard} uses. */
+    public static final class WhiteboardEntry {
+        /** The sender's whiteboard id — what a {@code quill://whiteboard/} embed line in the
+         *  document points at, matched the same way a media asset id is. */
+        public final String sourceId;
+        public final String title;
+        public final int background;
+        public final long createdAt;
+        public final long updatedAt;
+        public final List<Stroke> strokes;
+        public final List<WhiteboardText> texts;
+
+        WhiteboardEntry(String sourceId, WhiteboardBundleReader.Contents board) {
+            this.sourceId = sourceId;
+            this.title = board.title;
+            this.background = board.background;
+            this.createdAt = board.createdAt;
+            this.updatedAt = board.updatedAt;
+            this.strokes = board.strokes;
+            this.texts = board.texts;
         }
     }
 
@@ -153,6 +186,7 @@ public final class BundleReader {
         // missing file can be left out of both), so the files are unpacked first and matched to
         // their metadata afterwards.
         Map<String, File> filesByEntryName = new HashMap<>();
+        List<WhiteboardEntry> whiteboards = new ArrayList<>();
         long totalBytes = 0;
 
         ZipInputStream zip = new ZipInputStream(in);
@@ -168,6 +202,21 @@ public final class BundleReader {
                 totalBytes += bytes.length;
                 markdown = new String(bytes, StandardCharsets.UTF_8);
             } else {
+                String whiteboardId = whiteboardEntryId(name);
+                if (whiteboardId != null) {
+                    byte[] bytes = readAll(zip, MAX_TOTAL_BYTES - totalBytes);
+                    totalBytes += bytes.length;
+                    try {
+                        whiteboards.add(new WhiteboardEntry(whiteboardId,
+                                WhiteboardBundleReader.read(new ByteArrayInputStream(bytes))));
+                    } catch (WhiteboardBundleReader.InvalidBundleException e) {
+                        // A dangling or corrupt embed degrades the same way a missing media file
+                        // does: dropped here, left unresolved in the document.
+                        Log.w(TAG, "embedded whiteboard " + whiteboardId + " did not parse", e);
+                    }
+                    continue;
+                }
+
                 String fileName = mediaFileName(name);
                 if (fileName == null) continue;   // not ours, or not a name we'll make a path from
                 File target = new File(workDir, fileName);
@@ -179,11 +228,25 @@ public final class BundleReader {
         if (manifestBytes == null || markdown == null) {
             throw new InvalidBundleException("missing manifest or document");
         }
-        return fromManifest(manifestBytes, markdown, filesByEntryName, workDir);
+        return fromManifest(manifestBytes, markdown, filesByEntryName, whiteboards, workDir);
+    }
+
+    /** The whiteboard id named by a {@code whiteboards/<id>.json} entry, or null. Whitelisted the
+     *  same way {@link #mediaFileName} is: the entry must sit directly in the directory. */
+    private static String whiteboardEntryId(String entryName) {
+        if (!entryName.startsWith(QuillBundle.WHITEBOARDS_DIR)
+                || !entryName.endsWith(QuillBundle.WHITEBOARD_ENTRY_SUFFIX)) {
+            return null;
+        }
+        String id = entryName.substring(QuillBundle.WHITEBOARDS_DIR.length(),
+                entryName.length() - QuillBundle.WHITEBOARD_ENTRY_SUFFIX.length());
+        if (id.isEmpty() || id.contains("/") || id.contains("\\")) return null;
+        return id;
     }
 
     private static Contents fromManifest(byte[] manifestBytes, String markdown,
-                                         Map<String, File> filesByEntryName, File workDir)
+                                         Map<String, File> filesByEntryName,
+                                         List<WhiteboardEntry> whiteboards, File workDir)
             throws IOException {
         JSONObject manifest;
         try {
@@ -234,7 +297,7 @@ public final class BundleReader {
                 markdown,
                 manifest.optLong(QuillBundle.KEY_CREATED_AT),
                 manifest.optLong(QuillBundle.KEY_UPDATED_AT),
-                tags, media, workDir);
+                tags, media, whiteboards, workDir);
     }
 
     /**

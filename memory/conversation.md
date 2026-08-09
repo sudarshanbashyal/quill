@@ -2,7 +2,7 @@
 
 A running record of the sessions that shaped this project: what was asked, what options were
 weighed, and what got decided. Kept alongside [note.md](note.md) (how the code is built) and
-[requirements.md](requirements.md) (what's still to build) — this file is the *why we got here*
+[requirements.md](requirements.md) (what's still to build) — this file is the _why we got here_
 that neither of those captures, and that git history flattens away.
 
 Oldest first. Entries through 2026-07-28 were reconstructed from the stored session transcripts,
@@ -121,7 +121,7 @@ a timer and a live waveform; then transcripts; then a read-aloud button by the t
   transcript before inserting the segment meant backgrounding the app right after Stop could lose the
   recording entirely. Fixed by inserting immediately and attaching the transcript after.
   **The transcript feature was then undone.**
-- **Read-aloud voice quality** — auto-select the highest-quality *offline* voice on init, plus a
+- **Read-aloud voice quality** — auto-select the highest-quality _offline_ voice on init, plus a
   long-press voice picker (matching the long-press-for-options pattern audio segments already used).
 
 **Also fixed:** read-aloud button showing on empty notes (the prefilled title was counting as content
@@ -133,7 +133,7 @@ long-press to delete images/audio since there's no keyboard gesture for it.
 **Asked:** write a note.md capturing architecture and design decisions for future context; then a
 requirements doc from `one-pager.pdf` with prioritized epics.
 
-**Choices:** [note.md](note.md) explicitly separated what's *actively used* from forward-looking
+**Choices:** [note.md](note.md) explicitly separated what's _actively used_ from forward-looking
 schema scaffolding (`flashcards`, `voice_memos`, `outbox`, `vector_clock`, `notes_fts`) so a future
 cleaner wouldn't read it as dead code, and documented the two `SpanSerializer` workarounds with
 reasoning. [requirements.md](requirements.md) ordered 7 epics by architecture/dependency rather than
@@ -166,7 +166,7 @@ user-triggered generation beats anything automatic firing on save.
 On quizzes, pushed back on the AI idea on two grounds: unpredictable quality, and calling a cloud AI
 per question cuts against the offline-first, privacy-conscious positioning in the one-pager. Reframed
 the problem — free-text matching doesn't need solving at all. Spaced-repetition review is self-rated
-(the human is the judge, no string matching ever); only *quizzes* need real grading, and those can be
+(the human is the judge, no string matching ever); only _quizzes_ need real grading, and those can be
 auto-graded locally via MCQ built from **cross-card distractors** (wrong answers pulled from other
 cards in the same scope), with True/False as fallback for small scopes.
 
@@ -206,16 +206,16 @@ compiler or runtime error.
 **Asked:** migrate the UI to Material 3 following the planned epic, using the Figma for context.
 
 **Done:** `NoteRowView`/`CollectionCardView`/`PinnedNoteCardView` → `MaterialCardView` via a shared
-`applyFlatCardStyle`; cards styled *flat* (elevation 0, stroke 0) because the MSE Figma draws every
+`applyFlatCardStyle`; cards styled _flat_ (elevation 0, stroke 0) because the MSE Figma draws every
 card as a plain fill with no shadow — sampled its grey into a new `surface_container` `#F5F6FA`.
 
-**Biggest win:** all 13 dialog sites → `MaterialAlertDialogBuilder`. Most were on the *framework*
+**Biggest win:** all 13 dialog sites → `MaterialAlertDialogBuilder`. Most were on the _framework_
 `android.app.AlertDialog`, which ignores app theming entirely, so they stayed visibly Material 2
 (square corners, ALL-CAPS buttons) even after the theme switch.
 
 **Then:** search fields → outlined `TextInputLayout`, Playfair Display for "Welcome back" (variable
 font, fine at minSdk 26), and the home header curve corrected — it had been curving the wrong way.
-The Figma layers a full-bleed gradient behind a content sheet that curves *over* it, so the header
+The Figma layers a full-bleed gradient behind a content sheet that curves _over_ it, so the header
 lost its corners and a new `bg_content_sheet` got rounded top corners with a −56dp overlap.
 
 **Decided:** every UI from here on uses Material 3.
@@ -283,7 +283,7 @@ Search UI still filters in memory; only the index is maintained.
 **Asked:** toggling bold, pressing Enter, then typing leaves the first letter unbolded — reported as
 affecting the other styles too.
 
-**Found:** `restyleHeadingLine` identified its own derived heading-bold span by *bounds*
+**Found:** `restyleHeadingLine` identified its own derived heading-bold span by _bounds_
 (`spanStart == lineStart && spanEnd == lineEnd`). The first character typed on a line produces a user
 bold span with exactly those bounds, so the restyle pass deleted it. Bold only — the removal loop
 only ever matched `StyleSpan(BOLD)`, so italic and underline were never affected.
@@ -314,7 +314,7 @@ requirements.md and references.md, which is what "in memory" meant.
 note still leaves it hidden behind the keyboard.
 
 **Root cause (found by reading, not guessing):** `formattingToolbar.setTranslationY(-height)` is a
-*visual* transform. It moves pixels but not layout bounds, so the `ScrollView` — constrained
+_visual_ transform. It moves pixels but not layout bounds, so the `ScrollView` — constrained
 `bottom_toTopOf` the toolbar — kept full-height bounds and a viewport that nominally extended behind
 the keyboard. Android's native reveal pass found the tapped segment already inside those bounds and
 correctly decided no scroll was needed. Every earlier attempt (`fullScroll`, custom cursor maths,
@@ -340,7 +340,7 @@ active state as a small primary-coloured dot under the icon.
 API for its theme, you can't screenshot outside your own window, and with custom keyboard themes it
 isn't a stable target anyway.
 
-**Decided (asked, not assumed):** given most keyboards follow the *system* theme while Quill is
+**Decided (asked, not assumed):** given most keyboards follow the _system_ theme while Quill is
 pinned light, you chose "keep it light, make it flush" over tracking the system theme — preserving
 the always-light decision from 2026-07-12.
 
@@ -350,7 +350,7 @@ the always-light decision from 2026-07-12.
 provides that boundary.
 
 **Two bugs surfaced while wiring the dots:** `updateState()` didn't even take heading/bullet
-parameters, and the H1/H2/bullet handlers never called it — so those three *couldn't* light up.
+parameters, and the H1/H2/bullet handlers never called it — so those three _couldn't_ light up.
 Fixing that alone wasn't enough: bold/italic/underline are a pending typing mode, but heading and
 bullet describe the caret's line and go stale on any caret move. Added a selection-change signal,
 kept deliberately separate from the content-change listener so a caret move doesn't schedule a save.
@@ -374,7 +374,7 @@ an edge-to-edge image. Export goes to `Pictures/Quill` via MediaStore, with the 
 (needed below API 29) routed up to the fragment because a segment view can't request one.
 
 **Iterated after review:** neither action closes the viewer any more — save reports back into the
-dialog, delete closes only once confirmed. Feedback had to move *inside* the dialog's window; a
+dialog, delete closes only once confirmed. Feedback had to move _inside_ the dialog's window; a
 Snackbar on the editor root sits behind it and is never seen. Also: exported files are named
 `Quill_<timestamp>.jpg` rather than the internal `img_<uuid>.jpg`, and inline images are centred
 (needs both `FIT_CENTER` and container gravity, since `adjustViewBounds` shrinks the view to the
@@ -413,11 +413,11 @@ supplied icon set had a Q&A glyph. Replaced with `ic_question.png` in the follow
 
 ## 2026-07-29 — Bug fix: three Q&A follow-ups
 
-**1. Toolbar stayed disabled after leaving a Q&A block.** State refreshed on content *and selection*
+**1. Toolbar stayed disabled after leaving a Q&A block.** State refreshed on content _and selection_
 change — but not **focus**. Moving from a Q&A field to the trailing text segment often lands the
 caret at an offset it already had, and Android fires no selection callback when the value doesn't
 change, so nothing ever re-asked which field was focused. Fixed by reporting focus in its own right,
-since focus is what decides *whose* capabilities are on display. While there: `focusEnd()` only
+since focus is what decides _whose_ capabilities are on display. While there: `focusEnd()` only
 worked when the note's last segment was text, so tapping below a note ending in a block silently did
 nothing — it now appends a text segment first.
 
@@ -438,13 +438,13 @@ field) if it proves fiddly in use.
 ## 2026-07-30 — Feature implementation: flashcards from Q&A blocks
 
 **Asked:** replace the note screen's audio button with an options button (`ic_option`) offering
-"play aloud" and "turn into flashcards"; build cards from Q&A blocks that have *both* halves, show
+"play aloud" and "turn into flashcards"; build cards from Q&A blocks that have _both_ halves, show
 a message when a note has none, and put a typical review algorithm behind a simple right/wrong
 design.
 
 **The prerequisite nobody asked for.** Card→block linking was already designed (Epic D's
 `source_segment_id`) and already assumed to be unblocked, because segment ids became stable back in
-July. They're stable *within a session* — `BaseSegmentView` mints them — but the Q&A fence didn't
+July. They're stable _within a session_ — `BaseSegmentView` mints them — but the Q&A fence didn't
 store one, so every reload minted fresh ids. A card keyed to that would have lost its history on the
 next parse and re-syncing would have duplicated the deck every time. The fix is the extension the
 format had already reserved: ` ```quill-qa:<id> `. It carries the **block's** id rather than a
@@ -485,7 +485,7 @@ and Flashcards; list one entry per note that has cards showing how many reviews 
 useful detail; allow deleting from that list and from the review screen.
 
 **Navigation.** `BottomNavigationView` wired with `NavigationUI`, with the menu's item ids set to the
-*destination* ids — that's what makes tab switching pop back to the start destination instead of
+_destination_ ids — that's what makes tab switching pop back to the start destination instead of
 stacking Home on Flashcards on Home. The bar hides on every non-top-level destination; the editor
 and a review session are places you arrived from a tab, and a bar offering to jump away mid-note is
 noise.
@@ -500,7 +500,7 @@ next sync or block that note from making cards ever again. What's lost is review
 what the shared confirmation says. Both entry points use the same dialog so the warning can't drift.
 
 **A latent bug the feature exposed.** `NoteEditorFragment` read its note id from `getArguments()` on
-every `onViewCreated`. For a note created *during* the session there is no id in the arguments, and
+every `onViewCreated`. For a note created _during_ the session there is no id in the arguments, and
 until this feature there was nowhere to navigate to and come back from, so it never showed. Coming
 back from the review screen does exactly that: the fragment instance survives on the back stack and
 only its view is rebuilt, so the editor forgot which note it was editing, went blank, and autosaved
@@ -546,7 +546,7 @@ a real device to confirm.
 **Reported:** the right/wrong icons aren't centred in their circles.
 
 **Cause:** an icon-only `MaterialButton` doesn't centre its icon. It positions the icon relative to
-the *text* block — of which there is none — and insets its own background (6dp top and bottom, plus
+the _text_ block — of which there is none — and insets its own background (6dp top and bottom, plus
 a horizontal inset in the icon-button styles), so a fixed 64dp square renders as an ellipse with the
 glyph pushed up and toward the start.
 
@@ -577,10 +577,10 @@ of every attempt. That's what makes a quiz incapable of going stale against an e
 whole `source_segment_id` reconciliation problem the flashcard side had to solve simply doesn't
 arise when nothing derived is stored. It also gives fresh distractors and a fresh order each run.
 
-**Departure from the plan in note.md**: quizzes read Q&A blocks *directly* rather than the
+**Departure from the plan in note.md**: quizzes read Q&A blocks _directly_ rather than the
 `flashcards` table. Sharing the rows would have meant "Make quiz" silently generating flashcards as
 a side effect, and a quiz's history depending on whether its deck had since been deleted. What the
-two features share is the *rule* — `FlashcardRepository.reviewableQa` — not the storage.
+two features share is the _rule_ — `FlashcardRepository.reviewableQa` — not the storage.
 
 **Schema v5** (additive from v4): `quizzes` + `quiz_attempts`. Two columns that weren't in the
 sketched shape earned their place: `total` per attempt (a note's block count moves, so "2 / 6" only
@@ -591,7 +591,7 @@ after 4 of 12" and nothing stored the 4.
 
 **The attempt row is written at start**, so leaving is recorded rather than rewarded. Normal exits
 mark it abandoned on the way out; a killed process leaves it in progress, and a sweep on the next
-load retires it — staleness is *computable* here rather than arbitrary, since a quiz can't outlive
+load retires it — staleness is _computable_ here rather than arbitrary, since a quiz can't outlive
 `total × 15s` plus a grace period.
 
 **Marked at the end, never per question**, and the results list restates the correct answer only
@@ -608,7 +608,7 @@ editing it locally and pushing it back (no `sqlite3` on the system image): Make 
 ("6 questions · 15 seconds each") → a full run → the marked paper → history → the leave dialog and
 its abandoned row ("Abandoned after 1 of 6", greyed score) → the Quizzes tab (`33%` badge, "4
 attempts", "Last taken 1 minute ago") → the menu label flipped to "Open quiz" → the Snackbar on a
-note with one Q&A block. Letting all six questions time out was the *fastest* way to reach the
+note with one Q&A block. Letting all six questions time out was the _fastest_ way to reach the
 results screen — `adb shell input tap` pacing kept overshooting into the retake/done buttons.
 
 **Caught by looking at a screenshot rather than the code**: the shortfall Snackbar was 137
@@ -635,6 +635,7 @@ Marking still happens only at the end — which is also what stops revisiting a 
 a free second guess.
 
 **Small decisions worth keeping:**
+
 - Tapping the selected option again **clears** it. On a paper that can be revisited, the only other
   way to undo a mis-tap would be to leave it wrong.
 - Running out of time **completes** the attempt rather than abandoning it. Every question was put;
@@ -647,8 +648,8 @@ a free second guess.
 - Blanks are marked **wrong, not excluded**. A percentage out of "the ones I attempted" would
   flatter exactly the run that ran out of time.
 - The indicator row is built from the question count and scrolls; pips are distinguishable by fill
-  (solid = answered) as well as by the ring on the current one, so the current *blank* question and
-  the current *answered* one don't look the same.
+  (solid = answered) as well as by the ring on the current one, so the current _blank_ question and
+  the current _answered_ one don't look the same.
 
 **Verified on the emulator**: 1:30 on the clock for six questions on both the detail and session
 screens, pips filling as questions are answered, jumping to question 5 by tapping its pip,
@@ -681,7 +682,7 @@ stock `.webp` robot icons and both `ic_launcher_*` vectors are gone; `minSdk` is
 `MainActivity`. It draws `QuillLogoView`, a custom `View` — a recorded exception to the Material 3
 rule, since no MDC component is a brand mark and a `MaterialTextView` plus two circle `View`s can't
 keep the dots locked to the glyph. It renders "Q" in **Caprasimo** (bundled at
-`font/caprasimo_regular.ttf`, OFL in `licenses/`) and derives *everything else* from
+`font/caprasimo_regular.ttf`, OFL in `licenses/`) and derives _everything else_ from
 `getTextBounds("Q")`, so `android:textSize` alone scales the mark. The dot ratios (0.30 of the Q box
 across, 0.70 of the way down it, gaps of 0.036 and 0.071) were measured off `logo.png` and then
 checked against a screenshot of the running app — the first pass was 0.05/0.065 and read very
@@ -699,11 +700,11 @@ background activity starts, so a user who leaves mid-splash would otherwise land
 
 **Non-obvious thing learned**: temporarily setting `splash_logo_size` to 300dp to harvest a
 high-resolution render produced a mark only ~40% of the expected size. The paint was correct
-(logged `textSize=667.5`, `getTextBounds` → 502×563) — the device simply does not *draw* glyphs
+(logged `textSize=667.5`, `getTextBounds` → 502×563) — the device simply does not _draw_ glyphs
 above ~272px at the requested size, even though `getTextBounds` reports them honestly. Harmless at
 the shipped 96dp, but don't trust `QuillLogoView` (or any large `drawText`) past ~250px without
 checking. The 229px-tall render it did produce still beat the 84px glyph in `logo.png`, so the
-launcher icons were regenerated from *that* and are now downscaled rather than upscaled.
+launcher icons were regenerated from _that_ and are now downscaled rather than upscaled.
 
 **Verified on the phone** (`34211FDH2005RG`): launched from the home-screen icon, frame-by-frame
 screencaps show Q alone → one dot → two dots → dots shrinking away, then `topResumedActivity`
@@ -744,12 +745,12 @@ Seven fixes, all on Home (two of them reaching the collection-detail screen, whi
   exactly one call site.
 - **Pinned cards are a fixed `pinned_card_width` × `pinned_card_height`.** Height alone wasn't
   enough: the title also had to become `setLines(2)` rather than `setMaxLines(2)`, or a one-line
-  title pulls the date up and the *contents* sit at a different height inside equal-height cards.
+  title pulls the date up and the _contents_ sit at a different height inside equal-height cards.
   A weighted spacer pins the tag row to the bottom so tagged and untagged cards agree.
 - **Pinned cards get neutral (white/dark) tag chips** via a new `TagChipView.renderNeutral` —
   those cards are a pastel fill, and a tinted chip on a tinted card is colour on colour. Grey note
   rows keep the tag's own colour.
-- **Spacing.** New `list_item_gutter` (8dp) is set as each item view's own margin *and* as the
+- **Spacing.** New `list_item_gutter` (8dp) is set as each item view's own margin _and_ as the
   RecyclerView's horizontal padding, so every item sits 16dp from the edge while two collection
   cards are 16dp apart — one value, no per-column margin maths. Plus taller section headers
   (`section_header_margin_top`/`_bottom`), 12dp between note rows, and 16dp padding inside them.
@@ -778,11 +779,11 @@ UNIQUE — one quiz per note, so a collection's quiz count is really "notes that
 
 **A new note left quickly wasn't saved.** `NoteEditorFragment.autoSave` only learned the note's id
 from `createNote`'s async callback, and guarded creation with an `AtomicBoolean` that made any
-autosave arriving *while* creation was in flight `return` outright — so the save `onPause` fires on
+autosave arriving _while_ creation was in flight `return` outright — so the save `onPause` fires on
 the way out was dropped, and with it everything typed since creation started. There was a second,
 quieter half: even when it did save, `createNote` and the follow-up `saveNote` were two separate
 disk tasks with a main-thread hop between them, so `HomeFragment.onResume`'s `loadNotes` could slot
-into the queue *between* them and render the note without its body.
+into the queue _between_ them and render the note without its body.
 
 Both go away by **minting the id on the main thread**: `NoteRepository.createNote` now takes the id
 (`NoteRepository.newNoteId()`) instead of generating one, `noteId` is valid immediately, and the
@@ -794,7 +795,7 @@ short titles floating above a gap before their date. The fixed card height alrea
 even, so the title doesn't have to hold the shape too.
 
 **The bottom bar was charging twice for the gesture inset.** `BottomNavigationView` pads itself by
-the bottom system-window inset, and `MainActivity` was *also* padding the root by it — so the bar
+the bottom system-window inset, and `MainActivity` was _also_ padding the root by it — so the bar
 drew its own inset-height strip and then sat on a second, empty one. The root now takes
 left/top/right only, and `applyBottomInset()` gives the bottom inset to the nav host instead
 whenever the bar is hidden (the editor, a review session), so those screens still clear the pill.
@@ -848,8 +849,8 @@ The callback now takes a local reference to the engine and returns early on a ne
 `shutdown()` clears `ready`, and every public entry point goes through `isUsable()`.
 `restorePreferredVoice` also tolerates a null `getVoices()`, which some engines return.
 
-**The data loss, found while testing the crash.** Rapid open/back had *soft-deleted three seeded
-notes*. `loadNote` is async, so a note opened and left before the read returns has an empty title
+**The data loss, found while testing the crash.** Rapid open/back had _soft-deleted three seeded
+notes_. `loadNote` is async, so a note opened and left before the read returns has an empty title
 and no segments — `autoSave`'s `hasContent` is false, and it takes the "user emptied this note"
 branch and calls `deleteNote`. A new `contentLoaded` flag (false from when an existing note's id is
 known until its read lands, true for a brand-new note) makes `autoSave` a no-op in that window.
@@ -858,7 +859,7 @@ Empty fields there mean "not read yet", not "emptied".
 **Verified**: 4 runs × 3 rapid open/back cycles → 0 FATALs, 9 alive notes, 0 deleted, 0 emptied.
 The identical hammering before the fix gave 1 FATAL and 3 deleted notes.
 
-**Method worth reusing:** timing bugs need input chained inside a *single* `adb shell` call —
+**Method worth reusing:** timing bugs need input chained inside a _single_ `adb shell` call —
 separate `adb shell` invocations are ~200-400ms apart, which is slower than a person and hides
 exactly this class of bug.
 
@@ -873,7 +874,7 @@ sheet and `recycler_home` stopped at **2043** — a 147px (56dp) dead band, exac
 `totalLength = max(totalLength, totalLength + childHeight + topMargin + bottomMargin + …)`. That
 `max` **swallows a negative margin on the weighted child**: the sheet's `layout_marginTop="-56dp"`
 still shifted it up 56dp, but contributed nothing back to the space handed to `layout_weight="1"`,
-so the sheet measured 56dp short of the bottom. Charging the same offset to the *header's*
+so the sheet measured 56dp short of the bottom. Charging the same offset to the _header's_
 `layout_marginBottom` shortens `totalLength` for real, and the sheet now reaches 2190 exactly.
 
 Worth remembering generally: **a negative margin on a weighted LinearLayout child positions but
@@ -884,14 +885,14 @@ bar) → **400dp** (this fix), +35%. The bar itself was only ever part of it.
 
 ## 2026-08-02 (same session) — Status bar takes the colour of the screen under it
 
-`MainActivity` was padding its root by the *top* inset, which pushed every screen below the status
+`MainActivity` was padding its root by the _top_ inset, which pushed every screen below the status
 bar and left the strip behind the clock showing the window background — white, on Home's purple
 header as much as anywhere. The root now applies only the side insets, and each screen hands the
 top inset to the view whose paint should run up behind the bar, via a new
 `util/WindowInsetsUtils.applyTopInset(View)` (captures the layout's own paddingTop once, so
 re-dispatched insets don't compound).
 
-- **Home** → the gradient header (`@+id/home_header`, new id), *not* the root: the root is a
+- **Home** → the gradient header (`@+id/home_header`, new id), _not_ the root: the root is a
   transparent `FrameLayout`, so padding it would have kept the white strip.
 - **Everywhere else** → the fragment root, which already carries `@color/app_background`. Its
   background paints through its own padding, so the bar reads white, matching the page.
@@ -914,7 +915,7 @@ headers clear of the clock.
 Two follow-ups to the status-bar work.
 
 **The greeting's subtitle disappeared.** The header is `wrap_content` with `minHeight=176dp`, and
-its content sits *under* that minimum — so adding the status-bar inset as padding didn't make the
+its content sits _under_ that minimum — so adding the status-bar inset as padding didn't make the
 header taller, it pushed the contents down inside a fixed-height box, sliding the subtitle under
 the content sheet that overlaps the header's bottom 56dp. `applyTopInset` now grows the view's
 `minimumHeight` by the inset as well as its padding. Rule of thumb: **padding a view for an inset
@@ -922,13 +923,13 @@ only moves its contents unless the view is free to grow** — check `minHeight` 
 
 **One registration instead of nine call sites.** `MainActivity.applyTopInsetToEveryScreen()`
 registers a single `FragmentManager.FragmentLifecycleCallbacks` (with `recursive = true`, because
-the screens live in the nav host's *child* fragment manager) that applies the inset in
+the screens live in the nav host's _child_ fragment manager) that applies the inset in
 `onFragmentViewCreated`. Default target is the fragment's own root; a screen needing somewhere else
 implements `WindowInsetsUtils.TopInsetHost` and returns the view — only Home (gradient header) and
 the note editor (toolbar, since `KeyboardInsetsHandler` owns the root's listener) do. New screens
 now get this for free rather than having to remember a call.
 
-Ordering that makes it work: `onFragmentViewCreated` is dispatched *after* the fragment's own
+Ordering that makes it work: `onFragmentViewCreated` is dispatched _after_ the fragment's own
 `onViewCreated`, so the editor's `KeyboardInsetsHandler.attach(root, …)` has already run — and
 since the editor's target is the toolbar, neither clobbers the other. `NavHostFragment` and
 `DialogFragment` are skipped.
@@ -946,18 +947,18 @@ Two separate scroll bugs stacked, both in `NoteEditorView`:
 1. **Focusing a block that has no bounds yet.** `insertQaBlockAfterFocused` called
    `focusQuestion()` in the same breath as `addView`. The ScrollView is asked to reveal a child
    that hasn't been measured, so it reveals where a zero-sized child nominally sits — the top.
-   Nothing corrected it afterwards, because the keyboard is *already up* when a block is inserted:
+   Nothing corrected it afterwards, because the keyboard is _already up_ when a block is inserted:
    `reserveKeyboardSpace` sees the padding unchanged, returns early, and never fires
    `revealFocusedInput`. Fix: focus and reveal from a `OneShotPreDrawListener`, when the block has
    real bounds.
 
 2. **The reveal was losing a race it looked like it had won.** Splitting the segment above calls
    `setText`, which drops that field's caret to 0; a TextView brings its own caret into view from
-   *its* pre-draw pass, and — registered first — that was already running as a `smoothScrollBy` by
+   _its_ pre-draw pass, and — registered first — that was already running as a `smoothScrollBy` by
    the time the reveal went. An immediate `scrollBy` lands on the block and is then simply animated
    away by the in-flight scroller on the next draw. Logging `ScrollView`'s scroll changes with a
    stack trace showed it exactly: 715 → 1225 → 1369 (the reveal), then `computeScroll` dragging it
-   back to 715 and animating to 1068. Fix: ask for a *non-immediate* reveal — `smoothScrollBy`
+   back to 715 and animating to 1068. Fix: ask for a _non-immediate_ reveal — `smoothScrollBy`
    restarts the scroller rather than racing it — and put the split field's caret at the split point
    instead of leaving it at 0.
 
@@ -977,7 +978,7 @@ the caret in Question. Image insert re-checked through the photo picker. Unit te
 ## 2026-08-05 (same session) — One header line, one back arrow, and a title you can just type
 
 **The editor's header.** Back and options sat in a `Toolbar` with nothing between them while the
-note's title was the first row *inside* the ScrollView — two lines doing the job of one. The title
+note's title was the first row _inside_ the ScrollView — two lines doing the job of one. The title
 moved up between the two buttons and the `Toolbar` became a plain `LinearLayout` header (id
 `toolbar` → `header`, which `topInsetTarget` follows). Consequences worth knowing:
 
@@ -985,7 +986,7 @@ moved up between the two buttons and the `Toolbar` became a plain `LinearLayout`
   growing under the caret would shove the whole note down a row mid-keystroke, so it's `maxLines=1`
   at 20sp and long titles scroll inside the field.
 - Its `imeOptions="actionNext"` broke: the next focusable after the header is the formatting
-  toolbar, so "next" focused the *italic button*. `NoteEditorView.focusBodyStart()` plus an
+  toolbar, so "next" focused the _italic button_. `NoteEditorView.focusBodyStart()` plus an
   `OnEditorActionListener` sends the caret to the top of the body instead. Worth remembering that
   moving an EditText across the layout silently re-points its next-focus.
 
@@ -994,7 +995,7 @@ the platform's default — five arrows for one gesture. All five are now
 `@style/Widget.Quill.Button.Back` (new `values/styles.xml`): `ic_back` in a
 `Widget.Material3.Button.IconButton`, sized by `back_icon_size`. A new screen gets the arrow by
 naming the style. The quiz's "← Previous" button is deliberately untouched — that arrow means the
-previous *question*, not leaving the screen.
+previous _question_, not leaving the screen.
 
 **The untitled title is a hint now.** A new note used to have "Untitled Note - <date>" typed into
 the field for real, so naming it began with selecting a sentence and deleting it. It's the field's
@@ -1036,7 +1037,7 @@ pill are just controls that ask it questions. That's what makes a clip survive l
 `MediaStyle` notification — two mechanisms doing two different jobs: **the foreground service is
 what stops the system freezing the process** once Quill isn't visible, and **the media session is
 what puts controls on the lock screen** and makes headset buttons work. The player deliberately
-lives *outside* the service so views can read state synchronously with no binding dance.
+lives _outside_ the service so views can read state synchronously with no binding dance.
 `POST_NOTIFICATIONS` is asked for on the first play, since refusing costs the controls, not the
 audio.
 
@@ -1065,7 +1066,7 @@ behave the same, and it didn't — the bar vanished the moment you navigated.
 
 **Why it didn't.** Nothing was broken; it was built that way on purpose. `NoteEditorFragment.onPause`
 called `stopReading()` and `onDestroyView` called `noteReader.shutdown()`, on the reasoning recorded
-in the code that read-aloud "is an action performed *on* the open note, so it stops with it".
+in the code that read-aloud "is an action performed _on_ the open note, so it stops with it".
 `ReadAloud` existed only as a passive bridge — it held a `Controller` implemented by the fragment,
 so the thing driving the voice died with the screen. That premise is what the ask overturns.
 
@@ -1077,7 +1078,7 @@ so the bar and the note's menu can't disagree. The engine is never shut down now
 side-effect retires the bind-vs-shutdown crash race — its guards stay, since they're what make the
 class releasable at all.
 
-**Two seams for identity**, so the menu can say "Stop reading" for *this* note while another note
+**Two seams for identity**, so the menu can say "Stop reading" for _this_ note while another note
 reads on: `ReadAloud.noteIdMinted` is called where `autoSave` mints an id (a note can be read before
 it has ever been saved), and `retitle` follows a rename.
 
@@ -1086,7 +1087,7 @@ different mode". Removed — that reasoning belonged to the old note-scoped mode
 those screens like every other. Say so if you want the voice to stop there.
 
 **Verified on emulator-5554.** The trap: the test note is six short sentences, so a hand-paced run
-lets the reading *finish* before you navigate and you misread a correct empty bar as a regression.
+lets the reading _finish_ before you navigate and you misread a correct empty bar as a regression.
 Pause from the bar first — a paused reading can't end on its own — then navigate. Bar `V` on the
 note, after back, and on the Flashcards tab; resume from the bar produced fresh synthesis requests
 in logcat; ✕ took it to `G`. Re-entering the note mid-reading (a fresh fragment) offers "Stop
@@ -1136,7 +1137,7 @@ was — no confirmation dialog.
 
 **Cause:** `WaveformBarsView.onTouchEvent` consumed `ACTION_DOWN` and seeked immediately, so the
 touch never reached `AudioSegmentView`'s long-click listener. And since seeking a clip that isn't
-loaded *starts* it (`AudioSegmentView`'s seek listener plays first, then seeks), holding to delete
+loaded _starts_ it (`AudioSegmentView`'s seek listener plays first, then seeks), holding to delete
 began playing the recording. Delete was only reachable on the card's padding, play button and time
 label — everything except the part of the card that looks most like "the audio".
 
@@ -1145,7 +1146,7 @@ from `render()` off `AudioPlayback.isCurrent`. Live: unchanged, seek on DOWN. Do
 way down, then a hold → parent's `performLongClick()`, a lift → seek (starts the clip), a horizontal
 drag → scrub (claims the gesture at that point, not before), a **vertical** drag → return `false`
 so the scrolling note can intercept. That last branch was a bug I wrote and caught on review: my
-first version treated *any* slop-exceeding drag as a scrub, which would have blocked scrolling the
+first version treated _any_ slop-exceeding drag as a scrub, which would have blocked scrolling the
 note wherever a recording sat under the finger.
 
 **Verified on emulator-5554:** long-press mid-waveform → "Delete audio?" with the playhead untouched
@@ -1177,7 +1178,7 @@ is the copy that round-trips.
 
 **PDF got styling nearly free** — the note is a `Spanned` and `StaticLayout` draws bold/italic/
 underline/bullets natively. Only headings needed work (invisible markers → size+bold at
-`RichTextField`'s 1.6/1.3). Pagination draws the whole layout *clipped and translated* rather than
+`RichTextField`'s 1.6/1.3). Pagination draws the whole layout _clipped and translated_ rather than
 re-laying out a slice, which would re-wrap the text.
 
 **Bug found and fixed while reading the output:** the first Markdown export came out as
@@ -1194,7 +1195,7 @@ Q&A block — the PDF shows all of them plus the accent-ruled Q&A, and the audio
 "Embedded Audio Recording - 1:38". Snackbar confirms with the filename.
 
 **Two testing notes.** The FAB is a speed dial whose items `uiautomator dump` can't see, and a
-second tap on the FAB *closes* it — several attempts silently did nothing. Chain the taps and track
+second tap on the FAB _closes_ it — several attempts silently did nothing. Chain the taps and track
 whether it was already open. And a `Snackbar` is `LENGTH_LONG` = 3.5s, which is shorter than the
 round trip of `adb exec-out screencap` + `uiautomator dump` between commands; use
 `adb shell "input tap …; sleep 1; screencap -p /sdcard/x.png"` and pull it afterwards.
@@ -1209,11 +1210,11 @@ timing log around the export, then a note grown by select-all/copy/paste doublin
 (`input keycombination KEYCODE_CTRL_LEFT KEYCODE_A` … `KEYCODE_V`, ~10 doublings from one
 paragraph). Results, disk thread so the UI never blocks either way:
 
-| chars | Markdown | PDF |
-|---|---|---|
-| 4,888 | 34ms | 35ms |
-| 38,152 | 27ms | 43ms |
-| 304,264 (75-page PDF) | 49ms | 150ms |
+| chars                 | Markdown | PDF   |
+| --------------------- | -------- | ----- |
+| 4,888                 | 34ms     | 35ms  |
+| 38,152                | 27ms     | 43ms  |
+| 304,264 (75-page PDF) | 49ms     | 150ms |
 
 Text is free. **Images are the cost that would matter** — each decoded to ≤1600px and drawn — and
 that is still unmeasured. The 75-page PDF was also the first real test of pagination: pages 2, 40
@@ -1233,7 +1234,7 @@ renders correctly; Markdown reaches the chooser.
 
 **Testing note:** `animator_duration_scale 0` (set earlier to steady the taps) makes
 `ViewPropertyAnimator` finish instantly — an animation looks like it isn't running. Raising it to
-10 to inspect one instead slowed the *menus*, so chained taps landed on the wrong items and
+10 to inspect one instead slowed the _menus_, so chained taps landed on the wrong items and
 accidentally started read-aloud. Scale affects everything, not just the thing under test; restore
 it to 1 when done. The user took over checking the animation.
 
@@ -1247,7 +1248,7 @@ sorting behind `ic_filter`; show the active tag filters under the box; use the s
 collection screen; and make the add-existing-notes dialog size to its content with a ceiling.
 
 **Figma reference:** HomePage 2, node `32:600` in the MSE file. The box is white with a 1px
-hairline, no start icon, and the filter button sits *outside* it to the right; selected tags render
+hairline, no start icon, and the filter button sits _outside_ it to the right; selected tags render
 as pastel chips underneath — which is exactly the "filtered tags at the bottom of the searchbar"
 that was asked for, so the chip row follows the tag's own colour via the existing `TagChipView`.
 
@@ -1256,21 +1257,21 @@ that was asked for, so the chip row follows the tag's own colour via the existin
 `FilterChips`, and `util/MaxHeightScrollView`. The old field was
 `@android:drawable/ic_menu_search` — a framework drawable, which the M3 convention forbids anyway.
 
-**Two judgement calls, both recorded in note.md:** tags filter as *any-of* (a second tag widens
+**Two judgement calls, both recorded in note.md:** tags filter as _any-of_ (a second tag widens
 rather than empties), and collections ignore tag/pinned filters (they're note properties; a
 collection disappearing looks like deletion) while still following the sort.
 
 **Two mid-task corrections from the user, both mine.** First: selected tags in the filter sheet
 weren't distinguishable — the chips carry the tag's colour as their resting background, so
 Material's default checked styling (a background change) landed on a colour already doing something
-else. I added a ring plus the checked icon. Second: that made the chips *grow* on selection and the
+else. I added a ring plus the checked icon. Second: that made the chips _grow_ on selection and the
 row reflow on every tap. Final shape is border-only, with the stroke present on every chip at all
 times and painted the same colour as the fill when unselected — selection changes exactly one
 colour and nothing re-measures. Verified by cropping the chip row in both states: the unselected
 "Urgent" chip sits at an identical x, so the width is provably unchanged.
 
 **The dialog bug was a one-liner with a general lesson.** `AddExistingNotesDialog` gave its
-`ScrollView` a *fixed* height from `note_picker_max_height` — a max in name only. `WRAP_CONTENT`
+`ScrollView` a _fixed_ height from `note_picker_max_height` — a max in name only. `WRAP_CONTENT`
 alone would break the long list instead. `MaxHeightScrollView` measures `AT_MOST` against the
 ceiling, which handles both; use it for any dialog list rather than a fixed height.
 
@@ -1291,8 +1292,8 @@ minute resolution floors a seconds-old timestamp to zero rather than saying "now
 review. Migrated all seven call sites (note rows, home rows, pinned cards, collection cards,
 collection subtitle, deck rows, quiz rows); no `getRelativeTimeSpanString` remains in the codebase.
 
-**Two details that would be easy to get wrong twice:** under a day is *elapsed* time but
-"yesterday" is a *calendar* question (otherwise 30 hours ago reads as yesterday when two midnights
+**Two details that would be easy to get wrong twice:** under a day is _elapsed_ time but
+"yesterday" is a _calendar_ question (otherwise 30 hours ago reads as yesterday when two midnights
 have passed, and 2am reports "yesterday" for something three hours old); and the calendar-day
 difference is rounded, not truncated, because midnight-to-midnight is 23 or 25 hours across a DST
 change.
@@ -1304,7 +1305,7 @@ from the wording — package-private `Bucket` + `bucket()` — and covered by a 
 now / x min ago / x hours ago / short date in a single Home screenshot.
 
 **Left alone:** `NoteDisplayUtils.untitledWithDate`, which formats an absolute date into a note's
-default *name* ("Untitled Note - Aug 6, 2026"). It isn't a relative timestamp and shouldn't drift.
+default _name_ ("Untitled Note - Aug 6, 2026"). It isn't a relative timestamp and shouldn't drift.
 
 ## 2026-08-03 — Feature implementation: Whiteboards section on Home
 
@@ -1312,7 +1313,7 @@ default *name* ("Untitled Note - Aug 6, 2026"). It isn't a relative timestamp an
 
 **Found first:** whiteboards were entirely unreachable. Nothing listed them, no note screen linked
 to one, and Home's existing "New Whiteboard" FAB option navigated with an empty Bundle while
-`nav_graph.xml` declared `note_id` as a *required* argument — so that button could only ever throw.
+`nav_graph.xml` declared `note_id` as a _required_ argument — so that button could only ever throw.
 
 **Decided: whiteboards become first-class, not note-attached.** `whiteboards.note_id` stays but is
 explicitly nullable — a board created from Home stands alone, one opened from a note still belongs
@@ -1346,22 +1347,23 @@ offline sharing, or whether Quick Share/something else is nicer. Outcome: Epic C
 `note.md` gained a "Sharing and collaboration" section.
 
 **What the review turned up:**
+
 - **The NFC step as specified was built on a dead API.** "NFC tap-to-pair handshake" is Android
   Beam / NDEF push, deprecated in Android 10 and non-functional on modern devices — two phones
   cannot push to each other. Phone-to-phone means `HostApduService` + reader mode.
 - **Wi-Fi Direct was the wrong layer to hand-roll.** Epic C's own transport bullets (framing,
   reconnect/backoff) are re-implementing Nearby Connections, which is equally offline and
   peer-to-peer but supplies discovery, encryption, payloads and reconnect.
-- **Quick Share isn't an API.** It's a share *target* — `ACTION_SEND` + FileProvider and it
+- **Quick Share isn't an API.** It's a share _target_ — `ACTION_SEND` + FileProvider and it
   appears in the sheet for free. So note sharing was already 90% built by the exporter.
 
-**Decisions:** notes are *copied, not co-edited* (import mints a new id, so the conflict domain
+**Decisions:** notes are _copied, not co-edited_ (import mints a new id, so the conflict domain
 disappears — and with it the reason the Markdown storage decision's coarse merge granularity
 mattered); whiteboards are the only live collaboration, because strokes are already a CRDT;
 transport is Nearby Connections.
 
 **The load-bearing idea worth not losing:** a Nearby `endpointId` is assigned locally by the
-*discovering* device, so it can't be handed over out-of-band. What NFC carries is a **session
+_discovering_ device, so it can't be handed over out-of-band. What NFC carries is a **session
 token** the host advertises under — which makes NFC and QR interchangeable carriers of the same
 string. QR first (no NFC APIs, testable on one machine), tap second.
 
@@ -1390,7 +1392,7 @@ right, but **a vertical drag starting on a tag then did nothing at all**. Worth 
 usual `requestDisallowInterceptTouchEvent(true)` travels all the way to the `CoordinatorLayout`,
 which cancels its behaviours on the spot, and `AppBarLayout` can't pick a drag back up
 mid-stroke — so the header refused to collapse for any swipe that began on a tag. The fix was a
-`PinnedBandScrollView` the tag strip could ask *directly*, keeping the claim local so nothing
+`PinnedBandScrollView` the tag strip could ask _directly_, keeping the claim local so nothing
 above it ever heard about it. Verified on the emulator: tags scrolled, the band took over past
 the last tag, and the header collapsed again.
 
@@ -1402,7 +1404,7 @@ hard-coded 2, with a comment claiming two chips plus a `+N` always fit. They don
 "important" + "+3" needs ~164dp of a 132dp content box, which is the same blank-pill bug at a
 different tag count. `renderNeutralFitting` measures each chip, walks a prefix-width array to
 find how many fit, then gives chips back until the `+N` fits too. How many fit is a question
-about the *names*, not the count — two long tags overflow where four short ones don't.
+about the _names_, not the count — two long tags overflow where four short ones don't.
 
 **Consequence worth expecting:** the row can look sparse ("exam +4" on a 164dp card) because
 dropping one long chip frees a lot of width. That's honest — the alternative is a chip drawn
@@ -1416,7 +1418,7 @@ device has no `sqlite3` binary. Seed rows were deleted afterwards and the DB res
 
 **Asked:** the scrollable whiteboard "we talked about yesterday". **Nothing in memory recorded it** —
 the 08-06 entries cover audio, export, search and timestamps, and Epic I didn't list scrolling. The
-whiteboard *title-rename* work from that session is also sitting uncommitted and unlogged, so that
+whiteboard _title-rename_ work from that session is also sitting uncommitted and unlogged, so that
 session appears to have ended without a log. Spec came from the user instead: two-finger pan, ten
 screens of canvas, no zoom, a centre option.
 
@@ -1426,7 +1428,8 @@ live. One finger draws, two pan, `CANVAS_SCREENS = 10` bounds it. A Centre butto
 the top toolbar, `centreOnContent()` behind it.
 
 **Three things that fell out of the change rather than being asked for:**
-- Storing points in *view* coordinates was already a latent bug — a board drawn on one screen size
+
+- Storing points in _view_ coordinates was already a latent bug — a board drawn on one screen size
   opened misaligned on another. Canvas coordinates fix it, and legacy boards are unaffected because
   their ink is a screen wide at the origin.
 - **Opening a board now centres on its ink**, or a board drawn far out reopens on blank canvas with
@@ -1469,6 +1472,7 @@ show/hide eye stays in the top bar for the obvious reason that a control cannot 
 hides. A back button matching every other detail screen went in beside the title.
 
 **Three things worth remembering from the visual pass:**
+
 - Framework `Widget.ImageButton` sets `scaleType` to **center**, not `fitCenter`. That was invisible
   while every icon was a 24dp vector and obvious the moment 512px PNGs arrived — one icon vanished
   (its centre is transparent) and another showed a single corner. Every icon button now sets
@@ -1504,7 +1508,7 @@ before `connectedAndroidTest` and restored afterwards.
 **Reported:** open a board in portrait, turn the phone, and the drawing is gone; draw in landscape,
 turn back, same thing.
 
-**Cause:** the canvas extent was defined as `getWidth() * CANVAS_SCREENS` — *relative to the window*.
+**Cause:** the canvas extent was defined as `getWidth() * CANVAS_SCREENS` — _relative to the window_.
 Rotation redefines the entire coordinate space with it. On a 1080x2400 device a fresh board opens
 centred at roughly (4860, 9810) and ink drawn there lands near y≈9800; rotated, the canvas is only
 ~8600 tall, so the ink sits outside it and clamping can never bring the window back to it. The
@@ -1534,13 +1538,13 @@ correct thumb size for free. The one non-obvious part is that `scrollTo` doesn't
 draw instead of sitting on top of the drawing.
 
 **Stylus: the honest answer was "partly".** Drawing with a pen already worked, because Android
-delivers stylus input as ordinary touch events. What didn't exist was any *distinction* between a
+delivers stylus input as ordinary touch events. What didn't exist was any _distinction_ between a
 pen and a finger, so three things were added:
 
 - **Palm rejection.** Previously the hand resting on the screen mid-stroke arrived as a second
   pointer, which discarded the stroke and started a two-finger pan — the pen would stop drawing the
   moment the hand touched down. Extra pointers are now ignored while a stylus is drawing.
-- **The eraser end erases**, whatever the rail has selected — read from `TOOL_TYPE_ERASER` *or* a
+- **The eraser end erases**, whatever the rail has selected — read from `TOOL_TYPE_ERASER` _or_ a
   barrel button in `getButtonState()`, because pens report it both ways.
 - **Pressure scales stroke width**, clamped 0.5–1.5× and neutral at 1.0. Deliberately applied once
   at stroke start: a stroke carries one width in the database and `points_blob` is x/y pairs only,
@@ -1555,7 +1559,7 @@ hardware.
 ## 2026-08-07 (same session) — Text on whiteboards, treated as a stroke
 
 Asked whether text was worth adding and what it would cost; the answer was yes, but only the cut
-that treats a label as an *item you place*, not an object you edit. That is what was built.
+that treats a label as an _item you place_, not an object you edit. That is what was built.
 
 **The design constraint doing the work:** a text item is immutable. Place it, undo it, or clear the
 board — there is no editing, no selection, no dragging. That keeps the board append-only, which is
@@ -1571,6 +1575,7 @@ boolean was the wrong shape. Undo became a stack of `Undoable(id, isText, create
 load by sorting both kinds together so strokes and labels interleave by when they were added.
 
 **Details that were decisions, not defaults:**
+
 - The editor **doesn't follow the canvas** — panning is suspended while it is open. One less thing
   to keep in sync, and it makes placement feel like a single act.
 - **Single-line.** With `textMultiLine` the IME replaces Done with a newline, leaving no gesture
@@ -1580,7 +1585,7 @@ load by sorting both kinds together so strokes and labels interleave by when the
 - Text size follows the stroke-width picker (×4), so the rail keeps one meaning of "how big".
 
 **A false alarm worth recording:** undo appeared to remove a stroke instead of the newer text. The
-cause was the test data, not the code — seeded strokes carry *host* timestamps and the emulator's
+cause was the test data, not the code — seeded strokes carry _host_ timestamps and the emulator's
 clock is ~10 hours behind the host, so they sort as newer than anything created on device. Verified
 properly with two items both created on device; undo took the newer one.
 
@@ -1603,7 +1608,7 @@ indistinguishable from erasing, which is exactly why it lasted this long — the
 back when the canvas was first documented and never bit. Put a warm or dotted paper behind it and
 every eraser stroke becomes a white smear. So this had to be fixed before backgrounds were worth
 anything: ink is now drawn into its own layer (`canvas.saveLayer`) and the eraser uses
-`PorterDuffXfermode(CLEAR)`, clearing back to the paper. The paper is drawn *before* the layer or
+`PorterDuffXfermode(CLEAR)`, clearing back to the paper. The paper is drawn _before_ the layer or
 CLEAR would punch through it as well. Old eraser strokes stored as white erase correctly under the
 new rule, so nothing needed migrating.
 
@@ -1611,7 +1616,7 @@ new rule, so nothing needed migrating.
 in the rail (a menu, not a cycling button — three states whose order you can't see are worse to
 cycle than to pick), persistence per board, and export that carries the paper.
 
-**Detail worth keeping:** the dots are on a grid in *canvas* coordinates, not window ones, so they
+**Detail worth keeping:** the dots are on a grid in _canvas_ coordinates, not window ones, so they
 stay put under the drawing while you pan rather than sliding across it; only those inside the
 visible rectangle are drawn, so a ten-screen canvas costs a screenful of dots.
 
@@ -1641,7 +1646,7 @@ happens.
 
 **The paper preference took two goes, and the reason is worth keeping.** The first version taught
 `WhiteboardFragment` to read a preference when it creates a board — and boards made from Home's FAB
-stayed white, because that is a *different creation path*: `WhiteboardRepository.createWhiteboard`,
+stayed white, because that is a _different creation path_: `WhiteboardRepository.createWhiteboard`,
 which is the one actually used. Only the DB told the truth (`background=0` on the new row while the
 preference file said `2`), which is why checking storage rather than the screen found it. Now a
 shared `WhiteboardPreferences` holds the default and both paths read it. Existing boards keep their
@@ -1674,6 +1679,7 @@ collections and notes are all cards, so the card stays and the preview sits insi
 changed is the information: preview, name, date, no stroke count.
 
 **Two things the screenshots taught:**
+
 - A `MaterialCardView` does not clip its children to its rounded outline, so the preview's square
   corners sat proud of the card. Fixed with an outline provider on the image whose rounded rect is
   pushed a radius past the bottom edge, leaving only the top two corners rounded — the join with
@@ -1695,7 +1701,7 @@ ones, and rename the DAOs to repositories.
 **Built on the shape Epic D reserved**, `![whiteboard](quill://whiteboard/<id>)`. The design
 decision that makes it small: a whiteboard embed **resolves without the media registry**. Image and
 audio embeds are dropped when their asset row is missing, because the row is where the file path
-lives; a whiteboard's id *is* a `whiteboards` row, so `WhiteboardSegment.isMedia()` is false, no
+lives; a whiteboard's id _is_ a `whiteboards` row, so `WhiteboardSegment.isMedia()` is false, no
 asset row is written, and `replaceMediaAssetsSync` never touches it. The note points at the board
 rather than owning it — so removing detaches, a board can be attached to several notes, and an
 embed can outlive its board (shown as "This whiteboard was deleted").
@@ -1791,7 +1797,7 @@ Quill can keep editing it). `data/WhiteboardImporter` mints fresh ids on the way
 **Collection side.** `share/CollectionBundle` (`.quillpack`) is a zip of zips — `manifest.json` plus
 one `notes/<n>.quill` per member note, each a complete, ordinary `.quill`. The design choice that
 kept this small: nothing about a single note's format changes. `data/CollectionImporter` makes the
-new collection, then runs the *existing* note importer once per entry — which required promoting
+new collection, then runs the _existing_ note importer once per entry — which required promoting
 `NoteImporter`'s private `insert` to a public `insertBundle(contents, collectionId)`, the one place
 a collection import differs from a lone note import (which still passes `null` and lands the note
 loose on Home, as before). A corrupt member note is skipped rather than failing the whole pack,
@@ -1814,3 +1820,60 @@ does.
 **Verified via `assembleDebug`** rather than on-device this pass — a full compile and resource build
 succeeded, but the three new share/import paths haven't been exercised on the emulator or a device
 yet (left for the user, who said they'd debug independently going forward).
+
+## 2026-08-09 — Bug fix: a note's attached whiteboard wasn't in its `.quill` export
+
+**Reported:** a note with an embedded whiteboard, exported/shared as `.quill` and imported on
+another device, loses the board.
+
+**Root cause:** `BundleWriter` only ever packed segments where `isMedia()` is true — image and
+audio. A `WhiteboardSegment` isn't media by design (see note.md's "Whiteboard embeds are built"),
+so it was silently skipped: the embed line still serialized into `note.md`
+(`![whiteboard](quill://whiteboard/<id>)`), but nothing behind it made the trip. Worse than a
+merely missing board: `NoteDocument.rewriteEmbedIds` drops any embed line whose id isn't in the
+importer's id-remap table, and the whiteboard id was never added to it — so the embed line itself
+vanished on import, leaving no trace it had ever been there (not even the "This whiteboard was
+deleted" placeholder a dangling reference normally renders as).
+
+**Fixed by reusing, not duplicating, the standalone `.quillboard` format.** `BundleWriter` now
+also packs each attached whiteboard's row/strokes/text under `whiteboards/<id>.json` inside the
+`.quill` zip, via the existing `WhiteboardBundleWriter`/`WhiteboardBundleReader` (built 2026-08-08
+for the standalone board-sharing format) rather than inventing a second serialization. `BundleReader`
+parses those entries the same way it already treats `media/`. `NoteImporter` mints the new
+whiteboard its own fresh id _before_ calling `NoteDocument.rewriteEmbedIds` — into the same
+id-remap map media assets already use, since the rewrite matches purely on the id inside a
+`quill://` line and doesn't care which kind of embed it names — then inserts the whiteboard, its
+strokes and its text items inside the same transaction as the note. A whiteboard whose row was
+already gone on the sender's device (a dangling embed) is left exactly as dangling on the receiver,
+rather than inventing a board that never existed.
+
+**Also flowed through for free:** `CollectionBundleWriter`/`.quillpack` calls `BundleWriter.write`
+per note, so a collection export now carries its notes' whiteboards too — no separate fix needed
+there, just a `Context` parameter threaded through.
+
+## 2026-08-09 — Feature implementation: `.quill` opens Quill directly
+
+**Asked:** can receiving a `.quill` on another device import it automatically, instead of the
+recipient having to open Quill and use Home's manual Import option.
+
+**This was already flagged as the remaining, unbuilt half of Epic C's note-sharing checklist**
+(memory/requirements.md — "Polish, expect flakiness"), for a documented reason: a file that
+arrives over Quick Share is typed `application/octet-stream` by the transport, not `.quill`'s real
+`application/zip`, and has no meaningful path for an intent filter's `pathPattern` to match — so
+the filter can only be as good as the mime types it lists, and the real check still has to happen
+after the file is opened.
+
+**Built:** `MainActivity` (previously `exported="false"`, i.e. unreachable from outside the app)
+now declares an `ACTION_VIEW` intent-filter matching `application/zip`/`application/json`/
+`application/octet-stream` over both `content` and `file` schemes, and `android:launchMode=
+"singleTask"` so a second file opened while Quill is already running reuses the one Activity
+(`onNewIntent`) instead of stacking a second on top of the app's single nav host. The Uri is held
+until Home is the resumed fragment (a `FragmentLifecycleCallbacks` watch, not a fixed delay — cold
+start and warm start take different amounts of time to get there) and popped back to if the user
+was elsewhere, then handed to a new `HomeFragment.handleSharedFile`, which is just a public alias
+for the same three-format-cascade `importBundle` already runs for a manually picked file — same
+Snackbar-with-Open-action outcome either way.
+
+**Deliberately not covered:** `ACTION_SEND` (Quill doesn't need to _receive_ a share targeting
+itself as an attachment recipient today) and `pathPattern` matching (per the reasoning above,
+tried in an earlier draft and abandoned — it degrades a `content://` Uri delivery to guessing).

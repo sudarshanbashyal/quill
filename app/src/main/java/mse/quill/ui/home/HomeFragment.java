@@ -257,6 +257,17 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
      * and a Snackbar is right here where a dialog would not be: nothing is lost by missing it,
      * because whatever it is has already been saved.
      */
+    /**
+     * Entry point for a file Quill was launched to open — tapping a {@code .quill}/{@code
+     * .quillboard}/{@code .quillpack} in a file manager, mail client or Quick Share, rather than
+     * picking one through the FAB's Import option. {@link mse.quill.MainActivity} delivers the
+     * {@code Uri} here once Home is the resumed fragment, so this only ever needs the same
+     * three-format cascade {@link #importBundle} already runs for a manually picked file.
+     */
+    public void handleSharedFile(android.net.Uri source) {
+        importBundle(source);
+    }
+
     private void importBundle(android.net.Uri source) {
         Snackbar.make(requireView(), R.string.import_in_progress, Snackbar.LENGTH_SHORT).show();
         noteImporter.importFrom(source, new NoteImporter.OnImported() {

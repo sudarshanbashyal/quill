@@ -168,11 +168,14 @@ two physical devices** — none of it runs on the emulator.
         `NoteImporter.insertBundle` takes an optional collection id for this reason. Home's
         importer tries note → whiteboard → collection in sequence against the same `*/*` pick,
         since each format's manifest rejects the other two.
-  - [ ] *Polish, expect flakiness*: `ACTION_VIEW`/`ACTION_SEND` intent filter so a
-        received file opens straight into Quill. Files arriving over Quick Share are
-        typed `application/octet-stream` with no usable path, so `pathPattern` matching
-        is unreliable — sniff content after opening. **`MainActivity` is currently
-        `exported="false"`; receiving anything requires an exported entry point.**
+  - [x] *(2026-08-09)* `ACTION_VIEW` intent filter on `MainActivity` (now `exported="true"`,
+        `singleTask`) so a received `.quill`/`.quillboard`/`.quillpack` opens straight into
+        Quill instead of needing Home's manual Import. Matched on `mimeType` only
+        (`application/zip`, `application/json`, `application/octet-stream`) — a
+        `content://` Uri from Quick Share has no usable path for `pathPattern` to match, as
+        flagged here originally. The real check is still each bundle reader's, tried in
+        sequence by `HomeFragment.handleSharedFile` after the file is opened. `ACTION_SEND`
+        not added — nothing sends a file *to* Quill as an attachment today.
 
 - [ ] **Session join (the token seam)** — dependencies and manifest permissions staged
       2026-08-08 (`play-services-nearby`, `play-services-code-scanner`, `zxing-core`; full

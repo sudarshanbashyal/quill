@@ -825,16 +825,16 @@ Bluetooth and mail for free. The container is a `.quill` zip (`note.md` + `media
 because the Markdown export is deliberately lossy — images and audio become placeholders, which
 is fine for exporting to other tools and feels broken when sharing to another Quill.
 
-**Receiving is where the real trap is.** Three paths, and only one is dependable:
+**Receiving has three paths, all built now (2026-08-09 added the third):**
 - *No Quill* → a `.md` opens in any text editor. Free graceful degradation.
-- *Explicit Import* (`ACTION_OPEN_DOCUMENT` → picker) → works over every transport. **Build
-  this first.**
-- *Tap the received file* → wants an intent filter, but files arriving via Quick Share come as
-  `content://` typed `application/octet-stream` with no usable path, so `pathPattern` matching
-  is unreliable. Sniff the content after opening, and treat it as polish.
-
-Also note `MainActivity` is `android:exported="false"` today, so nothing can be received until
-an exported entry point exists.
+- *Explicit Import* (`ACTION_OPEN_DOCUMENT` → picker, Home's FAB) → works over every transport.
+- *Tap the received file* → `MainActivity` (now `exported="true"`, `singleTask`) carries an
+  `ACTION_VIEW` filter matched on mime type only (`application/zip`/`json`/`octet-stream`) — a
+  `pathPattern` was never worth adding, since a `content://` Uri from Quick Share has no usable
+  path for one to match. The Uri is handed to `HomeFragment.handleSharedFile` once Home is the
+  resumed fragment (a `FragmentLifecycleCallbacks` watch, since a cold start needs the nav host to
+  inflate first), which is the same three-format cascade a manual pick already runs — sniffing the
+  content after opening is still the real check, same as it always was for the picker's `*/*`.
 
 ### The `.quill` bundle, as built (2026-08-08)
 
@@ -851,11 +851,25 @@ the manifest carries the two things that live *beside* the document: the title (
 note's row) and per-asset metadata (width, duration).
 
 **Ids in a bundle are the sender's, and nothing reuses them.** The importer mints a new note id,
-new asset ids and new files, then rewrites the document to match via
-`NoteDocument.rewriteEmbedIds` — which lives on `NoteDocument` because the embed regex is that
-class's and a second copy would drift. One rule there covers two cases: **an embed whose id isn't
-in the map is dropped**. That handles an image whose file didn't make it into the archive *and* a
-whiteboard embed, since a bundle carries one note and boards aren't part of it.
+new asset ids, new whiteboard/stroke/text ids and new files, then rewrites the document to match
+via `NoteDocument.rewriteEmbedIds` — which lives on `NoteDocument` because the embed regex is that
+class's and a second copy would drift. One rule there covers every kind of embed, since the rewrite
+matches purely on the id inside a `quill://` line and never looks at which kind of embed it names:
+**an embed whose id isn't in the map is dropped.** That's what makes an image whose file didn't
+make it into the archive and a whiteboard whose row was already gone on the sender degrade the same
+way — the embed line simply disappears rather than pointing at nothing.
+
+**A note's attached whiteboard travels with it (fixed 2026-08-09; previously silently lost).**
+`BundleWriter` originally only packed segments where `isMedia()` is true, which a `WhiteboardSegment`
+deliberately isn't (see "Whiteboard embeds are built" above) — so the board never made the trip, and
+because its id was never added to the rewrite map either, the embed line itself vanished on import
+rather than degrading to "This whiteboard was deleted." Fixed by embedding each attached board under
+`whiteboards/<id>.json` inside the `.quill` zip, reusing `WhiteboardBundleWriter`/
+`WhiteboardBundleReader` (the standalone `.quillboard` format, see below) rather than a second
+serialization. `NoteImporter` mints the board's new id into the *same* map media assets use — the
+kind-agnostic rewrite is what makes that safe — then inserts the whiteboard, its strokes and its
+text items inside the note's own transaction. A dangling embed (board deleted from Home before
+export) is still simply not written, same as before.
 
 **Tags match by name, case-insensitively, and an existing tag keeps its own colour.** A tag id is
 local — "Lecture" on two phones is the same idea with different keys — so importing by id would

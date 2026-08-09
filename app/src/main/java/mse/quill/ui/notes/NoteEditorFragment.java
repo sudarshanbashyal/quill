@@ -558,7 +558,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
                 saved = NoteExportStore.save(appContext, title, QuillBundle.EXTENSION,
                         QuillBundle.MIME_TYPE,
                         out -> BundleWriter.write(title, segments, tags, createdAt,
-                                System.currentTimeMillis(), out));
+                                System.currentTimeMillis(), appContext, out));
             } else {
                 String markdown = MarkdownExporter.toMarkdown(title, segments, audioLabel, imageLabel);
                 saved = NoteExportStore.save(appContext, title, MarkdownExporter.EXTENSION,

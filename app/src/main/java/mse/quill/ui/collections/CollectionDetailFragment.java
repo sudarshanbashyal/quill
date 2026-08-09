@@ -176,7 +176,7 @@ public class CollectionDetailFragment extends Fragment {
 
             NoteExportStore.Saved saved = NoteExportStore.save(appContext, name,
                     CollectionBundle.EXTENSION, CollectionBundle.MIME_TYPE,
-                    out -> CollectionBundleWriter.write(name, color, bundleData, out));
+                    out -> CollectionBundleWriter.write(name, color, bundleData, appContext, out));
 
             AppExecutors.getInstance().mainThread(() -> {
                 if (!isAdded()) return;

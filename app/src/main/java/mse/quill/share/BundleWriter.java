@@ -1,9 +1,12 @@
 package mse.quill.share;
 
+import android.content.Context;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -15,7 +18,14 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import mse.quill.data.AppDatabase;
+import mse.quill.data.StrokeRepository;
+import mse.quill.data.WhiteboardRepository;
+import mse.quill.data.WhiteboardTextRepository;
+import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Tag;
+import mse.quill.data.model.Whiteboard;
+import mse.quill.data.model.WhiteboardText;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.AudioSegment;
 import mse.quill.ui.notes.editor.model.ImageSegment;
@@ -39,12 +49,16 @@ public final class BundleWriter {
     private BundleWriter() {}
 
     /**
-     * @param segments the note's segments in document order; media among them are copied in whole.
+     * @param segments the note's segments in document order; media among them are copied in whole,
+     *                 and any attached whiteboard is embedded losslessly alongside them.
      * @param tags     copied by name and colour, not id — the receiving device matches on name and
      *                 has no use for a tag id minted somewhere else.
+     * @param context  used only to read the attached whiteboards' rows (strokes, text, paper) —
+     *                 nothing here is written back to the database.
      */
     public static void write(String title, List<NoteSegment> segments, List<Tag> tags,
-                             long createdAt, long updatedAt, OutputStream out) throws IOException {
+                             long createdAt, long updatedAt, Context context, OutputStream out)
+            throws IOException {
         ZipOutputStream zip = new ZipOutputStream(out);
 
         // Media first, because a file that turns out to be missing has to be left out of the
@@ -54,6 +68,11 @@ public final class BundleWriter {
             if (!segment.isMedia()) continue;
             JSONObject entry = writeMedia(segment, zip);
             if (entry != null) mediaEntries.add(entry);
+        }
+
+        for (NoteSegment segment : segments) {
+            if (segment.type() != NoteSegment.TYPE_WHITEBOARD) continue;
+            writeWhiteboard(segment.id, context, zip);
         }
 
         writeEntry(zip, QuillBundle.ENTRY_DOCUMENT,
@@ -103,6 +122,32 @@ public final class BundleWriter {
         } catch (JSONException e) {
             throw new IOException("could not describe media " + segment.id, e);
         }
+    }
+
+    /**
+     * Embeds one attached whiteboard under {@code whiteboards/<id>.json}, reusing
+     * {@link WhiteboardBundleWriter} so this format doesn't grow a second serialization of a board.
+     *
+     * <p>A whiteboard whose row is gone (deleted from Home, embed left dangling — the state
+     * {@code WhiteboardSegmentView} already renders as "This whiteboard was deleted") is simply not
+     * written: there's nothing to embed, and the importer leaves the same dangling embed behind
+     * rather than inventing a board that never existed on the sender.
+     */
+    private static void writeWhiteboard(String whiteboardId, Context context, ZipOutputStream zip)
+            throws IOException {
+        AppDatabase db = AppDatabase.getInstance(context);
+        Whiteboard board = new WhiteboardRepository(db).getByIdSync(whiteboardId);
+        if (board == null) return;
+
+        List<Stroke> strokes = new StrokeRepository(db).getByWhiteboard(whiteboardId);
+        List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboard(whiteboardId);
+
+        ByteArrayOutputStream boardBytes = new ByteArrayOutputStream();
+        WhiteboardBundleWriter.write(board.title, board.background, board.createdAt, board.updatedAt,
+                strokes, texts, boardBytes);
+
+        writeEntry(zip, QuillBundle.WHITEBOARDS_DIR + whiteboardId + QuillBundle.WHITEBOARD_ENTRY_SUFFIX,
+                boardBytes.toByteArray());
     }
 
     private static String manifest(String title, List<Tag> tags, long createdAt, long updatedAt,

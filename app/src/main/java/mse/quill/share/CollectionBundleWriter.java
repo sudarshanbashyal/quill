@@ -1,5 +1,7 @@
 package mse.quill.share;
 
+import android.content.Context;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -25,14 +27,14 @@ public final class CollectionBundleWriter {
     private CollectionBundleWriter() {}
 
     public static void write(String name, int color, List<NoteRepository.NoteBundleData> notes,
-                             OutputStream out) throws IOException {
+                             Context context, OutputStream out) throws IOException {
         ZipOutputStream zip = new ZipOutputStream(out);
 
         int index = 0;
         for (NoteRepository.NoteBundleData note : notes) {
             ByteArrayOutputStream noteBytes = new ByteArrayOutputStream();
             BundleWriter.write(note.title, note.segments, note.tags,
-                    note.createdAt, note.updatedAt, noteBytes);
+                    note.createdAt, note.updatedAt, context, noteBytes);
 
             zip.putNextEntry(new ZipEntry(CollectionBundle.NOTES_DIR + index + "." + QuillBundle.EXTENSION));
             zip.write(noteBytes.toByteArray());

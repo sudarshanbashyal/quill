@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import mse.quill.data.model.Stroke;
+import mse.quill.data.model.Whiteboard;
+import mse.quill.data.model.WhiteboardText;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.share.BundleReader;
 import mse.quill.share.QuillBundle;
@@ -149,6 +152,13 @@ public final class NoteImporter {
             assetRows.add(cv);
         }
 
+        // Whiteboard ids are minted here too — before the rewrite, alongside the media ids — since
+        // rewriteEmbedIds matches purely on the id in a quill:// line, regardless of which kind of
+        // embed it names. No DB write happens yet; the rows go in inside the transaction below.
+        for (BundleReader.WhiteboardEntry entry : contents.whiteboards) {
+            newIdByOldId.put(entry.sourceId, UUID.randomUUID().toString());
+        }
+
         String markdown = NoteDocument.rewriteEmbedIds(contents.markdown, newIdByOldId);
         String title = contents.title == null ? "" : contents.title;
         long now = System.currentTimeMillis();
@@ -175,6 +185,7 @@ public final class NoteImporter {
             for (ContentValues asset : assetRows) {
                 db.insert("note_segments", null, asset);
             }
+            insertWhiteboards(noteId, contents.whiteboards, newIdByOldId, now);
             attachTags(db, noteId, contents.tags);
             indexNoteSync(db, noteId, title, markdown);
 
@@ -186,6 +197,45 @@ public final class NoteImporter {
             db.endTransaction();
         }
         return noteId;
+    }
+
+    /**
+     * Rebuilds each embedded whiteboard as a new, note-attached board — the same "new id, new rows"
+     * rule {@link #insertBundle} applies to the note itself. {@code authorId} isn't carried: it's a
+     * live-collaboration field with no meaning for a board arriving by file, the same reason
+     * {@link mse.quill.share.WhiteboardBundleReader} never wrote one.
+     */
+    private void insertWhiteboards(String noteId, List<BundleReader.WhiteboardEntry> whiteboards,
+                                   Map<String, String> newIdByOldId, long now) {
+        StrokeRepository strokeRepository = new StrokeRepository(appDatabase);
+        WhiteboardTextRepository textRepository = new WhiteboardTextRepository(appDatabase);
+
+        for (BundleReader.WhiteboardEntry entry : whiteboards) {
+            String whiteboardId = newIdByOldId.get(entry.sourceId);
+            if (whiteboardId == null) continue;   // rewriteEmbedIds already dropped its embed line
+
+            Whiteboard board = new Whiteboard();
+            board.id = whiteboardId;
+            board.noteId = noteId;
+            board.title = entry.title == null || entry.title.isEmpty() ? null : entry.title;
+            board.createdAt = entry.createdAt > 0 ? entry.createdAt : now;
+            board.updatedAt = now;
+            board.background = entry.background;
+            new WhiteboardRepository(appDatabase).insertSync(board);
+
+            for (Stroke stroke : entry.strokes) {
+                stroke.id = UUID.randomUUID().toString();
+                stroke.whiteboardId = whiteboardId;
+                stroke.authorId = null;
+                strokeRepository.insertStroke(stroke);
+            }
+            for (WhiteboardText text : entry.texts) {
+                text.id = UUID.randomUUID().toString();
+                text.whiteboardId = whiteboardId;
+                text.authorId = null;
+                textRepository.insert(text);
+            }
+        }
     }
 
     /**

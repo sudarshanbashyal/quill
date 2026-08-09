@@ -7,6 +7,8 @@ package mse.quill.share;
  * manifest.json      title, timestamps, tags, and one entry per media asset
  * note.md            the note's own Markdown document, quill:// embeds intact
  * media/&lt;id&gt;.&lt;ext&gt;    every image and recording the document references
+ * whiteboards/&lt;id&gt;.json  every whiteboard the document embeds, in the same shape a
+ *                     standalone {@link WhiteboardBundle} uses
  * </pre>
  *
  * <p>Deliberately not the Markdown export ({@link mse.quill.util.MarkdownExporter}), which is lossy
@@ -40,6 +42,12 @@ public final class QuillBundle {
     public static final String ENTRY_MANIFEST = "manifest.json";
     public static final String ENTRY_DOCUMENT = "note.md";
     public static final String MEDIA_DIR = "media/";
+    /** One entry per embedded whiteboard, named {@code <id>.json} — the id a {@code quill://whiteboard/}
+     *  line in {@link #ENTRY_DOCUMENT} points at, and the same {@link WhiteboardBundle} JSON shape a
+     *  standalone board export uses, so {@link WhiteboardBundleReader}/{@link WhiteboardBundleWriter}
+     *  are reused rather than duplicated. */
+    public static final String WHITEBOARDS_DIR = "whiteboards/";
+    public static final String WHITEBOARD_ENTRY_SUFFIX = ".json";
 
     // Manifest keys.
     static final String KEY_VERSION = "version";
