@@ -194,6 +194,21 @@
     <string name="import_succeeded_whiteboard">Imported \"%1$s\"</string>
     <string name="import_succeeded_whiteboard_untitled">Imported whiteboard</string>
 
+    <!-- Live whiteboard collaboration over Nearby Connections. -->
+    <string name="action_collaborate">Collaborate</string>
+    <string name="collab_title">Collaborate on this whiteboard</string>
+    <string name="collab_host">Host a session</string>
+    <string name="collab_join">Join a session</string>
+    <string name="collab_hosting_waiting">Waiting for someone to scan this code…</string>
+    <string name="collab_connecting">Connecting…</string>
+    <string name="collab_connected">Connected — drawing together now</string>
+    <string name="collab_disconnected">Collaboration session ended</string>
+    <string name="collab_scan_failed">Could not read that code</string>
+    <string name="collab_connect_failed">Could not connect to that session</string>
+    <string name="collab_end_session">End session</string>
+    <string name="collab_leaving_locks_others_out">Ending the session disconnects everyone.</string>
+    <string name="collab_permission_denied">Nearby needs Bluetooth/Wi-Fi permissions to find another device</string>
+
     <!-- Sharing a whole collection: a .quillpack, a zip of each member note's own .quill bundle. -->
     <string name="action_export_collection">Share collection</string>
     <string name="share_collection_chooser">Share collection</string>

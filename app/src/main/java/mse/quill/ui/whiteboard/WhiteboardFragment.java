@@ -1,7 +1,10 @@
 package mse.quill.ui.whiteboard;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
@@ -19,12 +22,23 @@ import android.widget.Toast;
 import android.provider.MediaStore;
 import android.content.ContentValues;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.fragment.app.Fragment;
 
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
+
 import mse.quill.R;
+import mse.quill.collab.CollabMessage;
+import mse.quill.collab.CollabSession;
+import mse.quill.collab.QrCodes;
 import mse.quill.data.AppDatabase;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.WhiteboardRepository;
@@ -77,8 +91,26 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private ImageButton    btnColorBlack, btnColorRed, btnColorBlue, btnColorGreen, btnColorYellow;
     private ImageButton    btnWidthThin, btnWidthMedium, btnWidthThick, btnWidthExtraThick;
     private ImageButton    btnCentre, btnUndo, btnClear, btnExport, btnToggleTools;
-    private ImageButton    btnBackground;
+    private ImageButton    btnBackground, btnCollab;
     private View           leftSidebar;
+
+    // ── Live collaboration (Epic C) ──────────────────────────────────────────
+    private CollabSession collabSession;
+    private boolean isCollabHost;
+    private CollabDialogs.StatusDialog collabStatusDialog;
+    /** What to do once the Nearby permission prompt below resolves. */
+    private Runnable pendingCollabAction;
+    private final ActivityResultLauncher<String[]> collabPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), results -> {
+                boolean allGranted = !results.containsValue(false);
+                Runnable action = pendingCollabAction;
+                pendingCollabAction = null;
+                if (allGranted && action != null) {
+                    action.run();
+                } else if (!allGranted) {
+                    Toast.makeText(requireContext(), R.string.collab_permission_denied, Toast.LENGTH_LONG).show();
+                }
+            });
 
     // ── Data ──────────────────────────────────────────────────────────────────
     private StrokeRepository     strokeDao;
@@ -213,6 +245,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        endCollabSession();
         // Null out view references to avoid holding onto a destroyed View
         whiteboardView = null;
         titleInput     = null;
@@ -254,6 +287,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnUndo         = root.findViewById(R.id.btnUndo);
         btnClear        = root.findViewById(R.id.btnClear);
         btnExport       = root.findViewById(R.id.btnExport);
+        btnCollab       = root.findViewById(R.id.btnCollab);
     }
 
     /** Attaches click listeners to every toolbar button. */
@@ -293,6 +327,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnUndo.setOnClickListener(v   -> undoLastStroke());
         btnClear.setOnClickListener(v  -> confirmClear());
         btnExport.setOnClickListener(this::showExportMenu);
+        btnCollab.setOnClickListener(v -> showCollabEntry());
 
         // Set sensible defaults on screen open
         selectTool(WhiteboardView.TOOL_PEN, btnPen);
@@ -425,6 +460,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         undoStack.push(new Undoable(item.id, true, item.createdAt));
         new Thread(() -> textDao.insert(item)).start();
         touchWhiteboard();
+        if (collabSession != null && collabSession.isConnected()) {
+            collabSession.send(CollabMessage.text(item));
+        }
     }
 
     /**
@@ -500,6 +538,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         // Save to SQLite on a background thread (never touch DB on the UI thread)
         new Thread(() -> strokeDao.insertStroke(stroke)).start();
         touchWhiteboard();
+        if (collabSession != null && collabSession.isConnected()) {
+            collabSession.send(CollabMessage.stroke(stroke));
+        }
     }
 
     // ── Undo / Clear ──────────────────────────────────────────────────────────
@@ -519,6 +560,11 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             new Thread(() -> strokeDao.deleteStroke(last.id)).start();
         }
         touchWhiteboard();
+        // Undo only ever pops something *this device* added — received strokes/text are never
+        // pushed onto undoStack — so this is always "retract my own last item", per requirements.md.
+        if (collabSession != null && collabSession.isConnected()) {
+            collabSession.send(CollabMessage.retract(last.id, last.text));
+        }
     }
 
     private void confirmClear() {
@@ -538,6 +584,23 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             textDao.deleteAllForWhiteboard(whiteboardId);
         }).start();
         touchWhiteboard();
+        // Clear is destructive to everyone in a live session, so only the host may trigger it —
+        // btnClear is disabled for a joiner (see applyCollabRoleToUi) — and the host tells the
+        // peer to do the same rather than each side clearing independently.
+        if (collabSession != null && collabSession.isConnected()) {
+            collabSession.send(CollabMessage.clear());
+        }
+    }
+
+    /** Applies a CLEAR received from the host — no re-broadcast, since the host already told
+     *  every peer directly. */
+    private void applyRemoteClear() {
+        whiteboardView.clearAll();
+        undoStack.clear();
+        new Thread(() -> {
+            strokeDao.deleteAllForWhiteboard(whiteboardId);
+            textDao.deleteAllForWhiteboard(whiteboardId);
+        }).start();
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -640,5 +703,225 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             resolver.delete(itemUri, null, null);
             Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    // ── Live collaboration (Epic C) ──────────────────────────────────────────────
+
+    /** "Host a session" / "Join a session" — the entry point for the whole feature. */
+    private void showCollabEntry() {
+        if (collabSession != null) {
+            // Already in a session: the button becomes "end session" instead of opening the
+            // choice again.
+            new MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.collab_end_session)
+                    .setMessage(R.string.collab_leaving_locks_others_out)
+                    .setPositiveButton(R.string.collab_end_session, (d, w) -> endCollabSession())
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .show();
+            return;
+        }
+        CollabDialogs.showEntryDialog(requireContext(), new CollabDialogs.EntryListener() {
+            @Override public void onHostChosen() { requestCollabPermissionsThen(WhiteboardFragment.this::startHosting); }
+            @Override public void onJoinChosen() { requestCollabPermissionsThen(WhiteboardFragment.this::startJoinByScan); }
+        });
+    }
+
+    /** Nearby needs the Bluetooth/location/Wi-Fi ladder documented in AndroidManifest.xml —
+     *  version-gated, so a device only sees the prompts for permissions it actually has. */
+    private void requestCollabPermissionsThen(Runnable action) {
+        List<String> missing = new ArrayList<>();
+        for (String permission : collabPermissionsForThisDevice()) {
+            if (ContextCompat.checkSelfPermission(requireContext(), permission)
+                    != PackageManager.PERMISSION_GRANTED) {
+                missing.add(permission);
+            }
+        }
+        if (missing.isEmpty()) {
+            action.run();
+            return;
+        }
+        pendingCollabAction = action;
+        collabPermissionLauncher.launch(missing.toArray(new String[0]));
+    }
+
+    private List<String> collabPermissionsForThisDevice() {
+        List<String> permissions = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= 31) {
+            permissions.add(Manifest.permission.BLUETOOTH_SCAN);
+            permissions.add(Manifest.permission.BLUETOOTH_ADVERTISE);
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT);
+        }
+        if (Build.VERSION.SDK_INT <= 32) {
+            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+        }
+        return permissions;
+    }
+
+    private void startHosting() {
+        isCollabHost = true;
+        collabSession = CollabSession.host(requireContext(), collabListener);
+        Bitmap qr = QrCodes.encode(collabSession.token(), dp(220));
+        collabStatusDialog = CollabDialogs.showHostDialog(requireContext(), qr, this::endCollabSession);
+    }
+
+    private void startJoinByScan() {
+        GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build();
+        GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(requireContext(), options);
+        scanner.startScan()
+                .addOnSuccessListener(barcode -> {
+                    String token = barcode.getRawValue();
+                    if (token == null || token.isEmpty()) {
+                        Toast.makeText(requireContext(), R.string.collab_scan_failed, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    isCollabHost = false;
+                    collabStatusDialog = CollabDialogs.showJoiningDialog(requireContext(), this::endCollabSession);
+                    collabSession = CollabSession.join(requireContext(), token, collabListener);
+                })
+                .addOnFailureListener(e ->
+                        Toast.makeText(requireContext(), R.string.collab_scan_failed, Toast.LENGTH_SHORT).show());
+    }
+
+    private final CollabSession.Listener collabListener = new CollabSession.Listener() {
+        @Override
+        public void onPeerConnected() {
+            requireActivity().runOnUiThread(() -> {
+                if (collabStatusDialog != null) {
+                    collabStatusDialog.setStatus(getString(R.string.collab_connected));
+                    collabStatusDialog.dialog.dismiss();
+                    collabStatusDialog = null;
+                }
+                Toast.makeText(requireContext(), R.string.collab_connected, Toast.LENGTH_SHORT).show();
+                applyCollabRoleToUi();
+                // The host is the source of truth for a device that just joined: send it
+                // everything currently on the board, read fresh off disk rather than trusting
+                // whatever the view happens to hold.
+                if (isCollabHost) {
+                    final String id = whiteboardId;
+                    new Thread(() -> {
+                        List<Stroke> strokes = strokeDao.getByWhiteboard(id);
+                        List<WhiteboardText> texts = textDao.getByWhiteboard(id);
+                        CollabSession session = collabSession;
+                        if (session != null) session.send(CollabMessage.snapshot(strokes, texts));
+                    }).start();
+                }
+            });
+        }
+
+        @Override
+        public void onPeerDisconnected() {
+            requireActivity().runOnUiThread(() -> {
+                Toast.makeText(requireContext(), R.string.collab_disconnected, Toast.LENGTH_SHORT).show();
+                endCollabSession();
+            });
+        }
+
+        @Override
+        public void onMessage(CollabMessage message) {
+            requireActivity().runOnUiThread(() -> applyIncoming(message));
+        }
+
+        @Override
+        public void onError(String reason) {
+            requireActivity().runOnUiThread(() -> {
+                Toast.makeText(requireContext(), reason, Toast.LENGTH_SHORT).show();
+                endCollabSession();
+            });
+        }
+    };
+
+    /** Applies one message from the peer. Never re-broadcasts — a message already came from the
+     *  one place a session has more than two devices worth of state (host ↔ this device). */
+    private void applyIncoming(CollabMessage message) {
+        if (whiteboardView == null) return;
+        switch (message.type) {
+            case CollabMessage.TYPE_SNAPSHOT:
+                if (!isCollabHost) applySnapshot(message);
+                break;
+            case CollabMessage.TYPE_STROKE:
+                // The peer's whiteboard_id is *their* board's row, not this device's — each side
+                // opened (or created) its own `whiteboards` row locally, so a stroke has to be
+                // re-tagged onto this device's id before it can satisfy the strokes→whiteboards
+                // foreign key. Left as the peer's own id, insertStroke throws
+                // SQLITE_CONSTRAINT_FOREIGNKEY and crashes the process — which is exactly what a
+                // real two-device run surfaced.
+                message.stroke.whiteboardId = whiteboardId;
+                whiteboardView.addStroke(message.stroke);
+                new Thread(() -> strokeDao.insertStroke(message.stroke)).start();
+                touchWhiteboard();
+                break;
+            case CollabMessage.TYPE_TEXT:
+                message.text.whiteboardId = whiteboardId;
+                whiteboardView.addText(message.text);
+                new Thread(() -> textDao.insert(message.text)).start();
+                touchWhiteboard();
+                break;
+            case CollabMessage.TYPE_RETRACT:
+                if (message.retractIsText) {
+                    whiteboardView.removeText(message.retractId);
+                    new Thread(() -> textDao.delete(message.retractId)).start();
+                } else {
+                    whiteboardView.removeStroke(message.retractId);
+                    new Thread(() -> strokeDao.deleteStroke(message.retractId)).start();
+                }
+                touchWhiteboard();
+                break;
+            case CollabMessage.TYPE_CLEAR:
+                if (!isCollabHost) applyRemoteClear();
+                break;
+        }
+    }
+
+    /** The host's whole board, replacing whatever this device had — the host is ground truth for
+     *  a session, so a joiner starts from exactly what the host sees rather than merging. */
+    private void applySnapshot(CollabMessage message) {
+        // Same re-tagging as a live STROKE/TEXT message, and for the same reason: every item in
+        // the host's snapshot still carries the host's own whiteboard_id.
+        for (Stroke s : message.strokes) s.whiteboardId = whiteboardId;
+        for (WhiteboardText t : message.texts) t.whiteboardId = whiteboardId;
+
+        whiteboardView.clearAll();
+        undoStack.clear();
+        for (Stroke s : message.strokes) whiteboardView.addStroke(s);
+        for (WhiteboardText t : message.texts) whiteboardView.addText(t);
+        whiteboardView.centreOnContent();
+        new Thread(() -> {
+            strokeDao.deleteAllForWhiteboard(whiteboardId);
+            textDao.deleteAllForWhiteboard(whiteboardId);
+            for (Stroke s : message.strokes) strokeDao.insertStroke(s);
+            for (WhiteboardText t : message.texts) textDao.insert(t);
+        }).start();
+    }
+
+    /** Clear is host-only in a live session — a joiner sees the button disabled entirely, rather
+     *  than tappable-but-rejected, so there's nothing to discover the hard way. */
+    private void applyCollabRoleToUi() {
+        if (btnClear != null) btnClear.setEnabled(collabSession == null || isCollabHost);
+        if (btnCollab != null) {
+            btnCollab.setSelected(collabSession != null);
+            btnCollab.setContentDescription(getString(collabSession != null
+                    ? R.string.collab_end_session : R.string.action_collaborate));
+        }
+    }
+
+    private void endCollabSession() {
+        if (collabSession != null) {
+            collabSession.stop();
+            collabSession = null;
+        }
+        if (collabStatusDialog != null) {
+            collabStatusDialog.dismiss();
+            collabStatusDialog = null;
+        }
+        applyCollabRoleToUi();
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density);
     }
 }

@@ -177,36 +177,50 @@ two physical devices** — none of it runs on the emulator.
         sequence by `HomeFragment.handleSharedFile` after the file is opened. `ACTION_SEND`
         not added — nothing sends a file *to* Quill as an attachment today.
 
-- [ ] **Session join (the token seam)** — dependencies and manifest permissions staged
-      2026-08-08 (`play-services-nearby`, `play-services-code-scanner`, `zxing-core`; full
-      Bluetooth/location/Wi-Fi permission ladder + optional camera feature), no code yet.
-  - [ ] Host generates a session token; `startAdvertising(endpointName = token,
-        P2P_STAR)`. Joiner discovers, matches the token, `requestConnection`; host
-        accepts only that token. The token both disambiguates a room full of
-        advertisers and authorises, so no accept-dialog is needed.
-  - [ ] **QR carrier first** — the token as a QR code. ~30 lines, no NFC APIs, works on
-        phones without NFC, joinable across a table, and testable without two NFC devices.
-  - [ ] **NFC carrier second** — the tap. Note the original plan's flaw: Android Beam
-        (NDEF push) is dead, so phone-to-phone means the host runs `HostApduService`
-        and the joiner reader mode. Emulating an **NDEF Type 4 tag holding an App Link**
-        is the version worth building: the joiner's stock NFC stack launches Quill, so
-        their app need not already be open.
-  - [ ] Treat NFC and QR as interchangeable carriers of the same token — the join code
-        below them is identical.
+- [x] **Session join (the token seam)** — built 2026-08-11, QR carrier only (see below).
+      `collab/CollabSession` wraps Nearby Connections: host mints a random token and
+      `startAdvertising(endpointName = token, P2P_STAR)`; joiner `startDiscovery`, matches
+      the token against `DiscoveredEndpointInfo.getEndpointName()`, `requestConnection`.
+      `onConnectionInitiated` accepts unconditionally on both sides — reaching that
+      callback already proves the other device knew the token, so there's no separate
+      accept dialog, exactly as planned.
+  - [x] Host generates a session token; joiner discovers, matches, connects — as above.
+  - [x] **QR carrier** — `collab/QrCodes` (zxing) renders the token; the whiteboard's new
+        "Collaborate" toolbar button shows it while hosting. Joining scans it via
+        `GmsBarcodeScanning`'s own scanner UI, so Quill never holds `CAMERA`.
+  - [ ] **NFC carrier** — deferred, not built this pass. QR alone is enough to test and
+        ship; the `HostApduService` + NDEF Type 4 tag design in the paragraph below is
+        unchanged and still the plan if NFC gets picked up later.
+  - [x] Treat NFC and QR as interchangeable carriers of the same token — true by
+        construction: `CollabSession.join` only ever needs the token string, not how it
+        arrived, so an NFC carrier would just be a second way to obtain that string.
 
-- [ ] **Live whiteboard session**
-  - [ ] Three messages only: `snapshot` (current strokes, on join), `stroke` (one
-        completed stroke — the re-entry point `WhiteboardFragment` already names in
-        `onStrokeComplete()`), `retract` (a stroke id).
-  - [ ] Idempotent apply-on-receive: dedupe by stroke id, so a replay is harmless.
-  - [ ] **Undo/clear are the only non-append-only operations.** Undo must retract only
-        the author's own last stroke and travel as `retract`, not a local delete. Clear
-        is destructive to everyone — make it host-only. (Eraser needs nothing: it is
-        `tool=1`, a stroke, so it is already append-only.)
-  - [ ] Payload sizing: Nearby's `BYTES` caps near 32 KB; chunk or use `FILE` for an
-        unusually long stroke.
-  - [ ] Once the transport exists, "tap to send a note" is nearly free — the same
-        `.quill` bundle as a `FILE` payload into the same import code.
+- [x] **Live whiteboard session** — built 2026-08-11 (`collab/CollabMessage`,
+      `collab/CollabSession`, wired into `WhiteboardFragment`), **verified on two physical
+      devices 2026-08-12**: connect via QR, live stroke sync, undo (own item only), and
+      host-only clear (disabled for the joiner; wipes both boards from the host) all
+      confirmed working. One real bug was caught and fixed in the process — see note.md's
+      "Live collaboration: joiner crash on snapshot" — a received stroke/text item kept
+      the sender's `whiteboardId` instead of being re-homed onto the receiving device's
+      own board row, which violated the `strokes` foreign key and crashed the joiner's
+      process the moment a snapshot arrived.
+  - [x] Three messages, plus `clear`: `snapshot` (the host's full board, sent once on
+        join), `stroke`/`text` (one completed item), `retract` (an id). `clear` was added
+        beyond the original three because host-only destructive clear needs to travel
+        as a message too, not just a local action.
+  - [x] Idempotent apply-on-receive: `WhiteboardView.addStroke`/`addText` dedupe by id, so
+        a replay is harmless.
+  - [x] **Undo/clear are the only non-append-only operations.** Undo retracts only the
+        author's own last item because received strokes/text are never pushed onto the
+        local `undoStack` — only things *this device* drew are, so popping it can never
+        reach into someone else's ink. Clear is host-only: `btnClear` is disabled outright
+        for a joiner during a live session (`applyCollabRoleToUi`), and the host's clear
+        travels as a `CLEAR` message rather than each side clearing independently.
+  - [ ] Payload sizing: Nearby's `BYTES` caps near 32 KB; an unusually long single stroke
+        or a snapshot of a very large board could exceed it. Not hit in testing, not
+        guarded against — chunking or a `FILE` payload is the fix if it comes up.
+  - [ ] "Tap to send a note" (the `.quill` bundle as a `FILE` payload) — not built; the
+        transport exists now, this is next to fall out of it near-free, as planned.
 
 - [x] **Boundary with Epic B**: decided 2026-08-08 — **a locked collection's notes are not
       shareable**, rather than unlock-on-both-ends. A bundle is plaintext, so sharing one

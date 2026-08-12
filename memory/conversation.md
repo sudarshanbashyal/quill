@@ -1938,3 +1938,78 @@ still free to relabel a file to something generic on the way and both need to be
 **Worth remembering:** check what actually wrote the bytes (here, `NoteExportStore`'s `MediaStore`
 insert) before reasoning about what carried them — the first-pass theory blamed the transport for
 what turned out to be a save-time rename.
+
+## 2026-08-11 — Feature implementation: live whiteboard collaboration (Epic C)
+
+**Asked:** build the live whiteboard session the requirements had only designed — host/join over
+Nearby Connections, QR as the token carrier (NFC deferred), snapshot/stroke/text/retract messages,
+and host-only Clear. Confirmed upfront: build session-join and message sync together in one pass,
+QR only, and two physical devices are available for real verification.
+
+**Built:** `collab/CollabMessage` (JSON wire format for `snapshot`/`stroke`/`text`/`retract`/
+`clear`), `collab/CollabSession` (Nearby `ConnectionsClient` wrapper, host or joiner, one fixed
+`SERVICE_ID` with the session token as the advertised endpoint name), `collab/QrCodes` (zxing
+encode), `ui/whiteboard/CollabDialogs` (entry/host/joining dialogs, built in code like
+`WhiteboardDialogs`). Wired into `WhiteboardFragment` via a new "Collaborate" toolbar button:
+Host shows a QR and waits; Join opens `GmsBarcodeScanning`'s own scanner UI (Quill never holds
+`CAMERA`) and connects on a successful scan.
+
+**Why no accept dialog:** the token *is* the authorisation. A host only advertises under it and a
+joiner only discovers by matching it, so reaching `onConnectionInitiated` on either side already
+proves the other device saw the QR — a second "accept this stranger?" prompt would be asking about
+someone who, by construction, already passed the real gate.
+
+**Undo/Clear, enforced by construction rather than by checking a permission:**
+- Undo only ever pops `WhiteboardFragment`'s own `undoStack`, and messages received from a peer
+  are applied to the view/DB directly without ever being pushed onto it — so "retract only your own
+  last item" needed no author check, it's just what the stack already contains.
+- Clear is host-only: `btnClear.setEnabled(isHost)` while a session is live, and the host's clear
+  travels as a `CLEAR` message rather than each device clearing on its own. `CLEAR` isn't one of
+  the three messages requirements.md named — it was added because a destructive, everyone-affecting
+  action still has to travel as a message like the other three, it just isn't append-only.
+
+**Snapshot semantics:** on join, the host reads its current strokes/text straight off disk (not off
+the view, which could be stale) and sends everything; the joiner wipes its own board and DB first,
+then loads the host's snapshot as ground truth. That's a replace, not a merge — there's no vector
+clock or CRDT reconciliation here, matching the plan's "dedupe by id" scope, which only covers
+*during* a session, not reconciling two boards that diverged before one connected.
+
+**Deferred, stated rather than hidden:** NFC carrier (QR alone ships and tests fine); payload
+chunking for a stroke/snapshot that would exceed Nearby's ~32KB `BYTES` cap (not hit in testing);
+"tap to send a note" as a `FILE` payload (the obvious next near-free feature once this transport
+existed, per requirements.md, just not asked for this pass).
+
+**Verified:** `./gradlew :app:compileDebugJavaWithJavac` and `:app:assembleDebug` both clean.
+**Also verified end-to-end on two physical devices** in the same session — see the next entry for
+a bug the first real run caught.
+
+## 2026-08-12 — Bug fix: joiner crashed on receiving the host's snapshot
+
+**Reported:** the first live two-device run — as soon as host and joiner connected, the host
+reported the session had ended and the joiner's app had dropped to the home screen.
+
+**Found:** not two bugs, one. The joiner's process had actually crashed
+(`SQLiteConstraintException: FOREIGN KEY constraint failed`, from `StrokeRepository.insertStroke`
+inside `applySnapshot`), which is what silently sent it to the home screen; the host's "session
+ended" message was just its normal, correct reaction to losing the connection that crash caused.
+
+**Root cause:** the host and joiner each have their own row in their own `whiteboards` table —
+there is no shared board id between two devices. But a received `Stroke`/`WhiteboardText` still
+carried the *sender's* `whiteboardId`, unchanged, straight into a local `insertStroke`/`insert`
+call. Inserting a row whose `whiteboard_id` names a board that doesn't exist on this device is
+exactly the case `strokes.whiteboard_id`'s foreign key exists to reject, and the resulting
+uncaught exception (thrown from a background thread with no catch around it) took the whole
+process down rather than just failing that one insert.
+
+**Fixed:** re-tag every received item onto `whiteboardId` — this device's own board — before it
+touches the view or the database, at all three receive sites (`TYPE_STROKE`, `TYPE_TEXT`, and the
+loop inside `applySnapshot`). `authorId` was deliberately left alone; it's specifically a foreign
+key onto a *local* table that can never be trusted verbatim off the wire, and the fix generalises
+to any future message that carries one.
+
+**Verified**: rebuilt, reinstalled on both devices, redid the full flow — connect, live stroke
+sync, undo (confirmed it only ever retracts your own last item), and clear (confirmed disabled on
+the joiner, and wipes both boards when triggered from the host). All working. Also confirmed as
+intentional, not a leftover: a joiner keeps the host's drawing in its own local `strokes` table
+after the session ends — joining is a one-time copy, the two boards are independent again once
+the session is over, same shape as importing a shared note.

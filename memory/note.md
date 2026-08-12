@@ -942,14 +942,129 @@ Two more things travel the same share-sheet-and-picker path as a note, each with
   on a disk thread — the existing async `loadNote` is shaped for one screen, not a batch.
 
 **Dependencies and manifest permissions for session join were added ahead of the code (2026-08-08),
-while the `.quill` bundle work was in flight.** `play-services-nearby`, `play-services-code-scanner`
-and `zxing-core` are in `libs.versions.toml`/`app/build.gradle.kts`, and `AndroidManifest.xml`
-already carries the full Bluetooth/location/Wi-Fi permission ladder plus an optional camera feature
-— see the comments there for the API-level split (unversioned Bluetooth + location below 31, the
-`BLUETOOTH_SCAN`/`ADVERTISE`/`CONNECT` trio at 31, `NEARBY_WIFI_DEVICES` at 33). None of it is wired
-to any code yet: no `HostApduService`, no QR generation/scanning, no `ConnectionsClient`. Don't
-mistake the presence of these permissions for the session-join feature being started — they're
-staged so the next session can start writing `ConnectionsClient` code directly.
+while the `.quill` bundle work was in flight** — `play-services-nearby`, `play-services-code-scanner`,
+`zxing-core` in `libs.versions.toml`/`app/build.gradle.kts`, and the full Bluetooth/location/Wi-Fi
+permission ladder in `AndroidManifest.xml` (see the comments there for the API-level split:
+unversioned Bluetooth + location below 31, the `BLUETOOTH_SCAN`/`ADVERTISE`/`CONNECT` trio at 31,
+`NEARBY_WIFI_DEVICES` at 33). **The code itself landed 2026-08-11** — see "Live whiteboard
+collaboration" just below. NFC (`HostApduService`) is the one piece still not built; QR is.
+
+## Live whiteboard collaboration
+
+**Status: built 2026-08-11** (Epic C's session-join and live-session checklist items). Three new
+classes under `collab/` plus one dialog helper under `ui/whiteboard/`:
+
+- `collab/CollabMessage` — the wire format. A tagged union serialized to JSON
+  (`org.json`, already on the classpath, no new dependency): `SNAPSHOT` (a board's full
+  strokes+texts), `STROKE`, `TEXT`, `RETRACT` (an id plus which table it's in), `CLEAR`. `CLEAR`
+  is a fourth message beyond the three requirements.md named, because a destructive,
+  everyone-affecting action still needs to travel as a message — it just isn't append-only like
+  the other three.
+- `collab/CollabSession` — one class, host or joiner, wrapping Nearby's `ConnectionsClient`
+  directly rather than through a service. `SERVICE_ID` is fixed and app-wide
+  (`"mse.quill.whiteboard"`); what disambiguates one session from every other nearby Quill user is
+  the **session token**, a short random string the host advertises under
+  (`startAdvertising(endpointName = token, …)`) and the joiner matches against
+  `DiscoveredEndpointInfo.getEndpointName()` before ever calling `requestConnection`. Both sides
+  accept in `onConnectionInitiated` with no extra prompt — reaching that callback at all already
+  proves the other device saw the token, so a second "accept this stranger?" dialog would be
+  asking about someone who, by construction, already passed the real gate.
+- `collab/QrCodes` — the token rendered to a `Bitmap` via zxing's `QRCodeWriter`. Pure Java, no
+  Android type crosses into it except `Bitmap` on the way out.
+- `ui/whiteboard/CollabDialogs` — entry ("Host" / "Join"), a host dialog (QR + status line), and a
+  joining dialog (status line only), built the same way `WhiteboardDialogs` builds its dialogs —
+  `MaterialAlertDialogBuilder` plus views assembled in code, since none of this has a
+  `res/layout` counterpart.
+
+**Scanning never asks for `CAMERA`.** Joining calls `GmsBarcodeScanning.getClient(...).startScan()`
+— Play Services owns the scanner UI and its own process, and only the decoded string comes back to
+Quill. The manifest's `<uses-feature android:name="android.hardware.camera" android:required="false">`
+was already staged for exactly this.
+
+**Wiring lives in `WhiteboardFragment`**, behind a new "Collaborate" toolbar button
+(`ic_collab.xml`, a hand-drawn placeholder vector — no glyph for this existed in the supplied icon
+set, matching how the Q&A toolbar icon was handled the same way in July). A `CollabSession.Listener`
+field (`collabListener`) is the single place incoming events land:
+
+- **`onPeerConnected`**: dismisses whichever status dialog is showing, and — only if this device is
+  the host — reads the board's current strokes/texts straight off disk (not off the view, which
+  could be stale relative to a save still in flight) and sends them as one `SNAPSHOT`. The snapshot
+  is a **replace, not a merge**: the joiner wipes its own board and DB first, then loads the host's
+  snapshot as ground truth. There's no vector-clock or CRDT reconciliation for two boards that
+  diverged *before* a session started — only for what happens *during* one, which is exactly the
+  scope requirements.md drew.
+- **`onMessage`**: `STROKE`/`TEXT` go straight to `WhiteboardView.addStroke`/`addText` (both now
+  dedupe by id, added alongside this feature — a replay after a reconnect is harmless) and to the
+  matching repository's insert. `RETRACT` removes from the view and deletes from the DB. `CLEAR`
+  wipes the board, but **only if this device isn't the host** — see below for why a host can't
+  receive its own clear back.
+
+**Undo/Clear are enforced by what already exists, not by an author check added for this feature:**
+- `WhiteboardFragment.undoStack` only ever gets pushed to when *this device* creates a stroke or
+  text item locally (`onStrokeComplete`, `commitText`). Anything applied from `onMessage` goes
+  straight to the view/DB and is never pushed onto that stack. So "undo can only retract your own
+  last item" cost nothing to add — the stack it pops from was already scoped that way, for a
+  completely different reason (surviving app restarts via `created_at` order). Undo still sends a
+  `RETRACT` so the peer's copy is removed too.
+- Clear is gated at the UI, not the message handler: `applyCollabRoleToUi()` disables `btnClear`
+  outright for a joiner for as long as a session is connected, so there's nothing to reject
+  server-side and nothing for a joiner to discover the hard way by tapping it. The host's own clear
+  sends `CLEAR` to the peer; a device only ever *applies* an incoming `CLEAR` when it isn't the
+  host, which is what stops the host from wiping its own just-cleared board a second time if a
+  message ever echoed back.
+
+**Not done, deliberately, this pass:**
+- **NFC carrier.** QR alone is enough to build and test with two devices; the `HostApduService` +
+  NDEF Type 4 tag design is unchanged from the original write-up and still the plan if it's picked
+  up later — nothing here forecloses it, since `CollabSession.join` only ever takes a token
+  string, not an opinion on how it arrived.
+- **Payload chunking.** Nearby's `BYTES` payload caps near 32 KB. An unusually long single stroke,
+  or a `SNAPSHOT` of a very large board, could exceed it; not hit in testing, not guarded against.
+  `Payload.fromFile` is the fix if it comes up.
+- **`.quill` bundle over the wire** ("tap to send a note" as a `FILE` payload) — the transport this
+  would ride on now exists, but it wasn't asked for this pass.
+
+**Verified on two physical devices (2026-08-12).** Host/join over Nearby, the QR handshake, live
+stroke sync, undo (own-item-only), and host-only clear (disabled on the joiner, wipes both boards
+when the host triggers it) all confirmed working. One real bug was caught doing this, not by
+reading the code — see "Live collaboration: joiner crash on snapshot" below.
+
+**A joined board's content is a real local copy, not a session-scoped overlay.** The snapshot
+writes the host's strokes/text into the joiner's own `strokes`/`whiteboard_texts` rows, so when the
+session ends the joiner keeps everything that was drawn during it — confirmed intentional behaviour,
+not a leftover to clean up. From that point the two boards are independent copies again (no
+ongoing link), consistent with "notes are copied, not co-edited" applying here too: joining a
+whiteboard session is a one-time copy-and-then-diverge, same shape as importing a shared note.
+
+### Live collaboration: joiner crash on snapshot (bug found and fixed 2026-08-12)
+
+First two-device run: the moment the peers connected, the joiner's process died
+(`SQLiteConstraintException: FOREIGN KEY constraint failed`, thrown from
+`StrokeRepository.insertStroke` inside `applySnapshot`) and silently dropped to the home screen —
+which the host read as an ordinary disconnect and reported as "Collaboration session ended". Both
+halves of that were real symptoms of one bug, not two.
+
+**Root cause:** each device's whiteboard is its own row in its own `whiteboards` table — the host
+and joiner never share one `whiteboards.id`. But `CollabMessage`'s `Stroke`/`WhiteboardText`
+objects still carried the *host's* `whiteboardId` field, unchanged, all the way into
+`applyIncoming`/`applySnapshot`'s `insertStroke`/`insert` calls. Inserting a stroke whose
+`whiteboard_id` points at a row that doesn't exist on this device is exactly what
+`strokes.whiteboard_id`'s foreign key exists to catch — and a plain, uncaught
+`SQLiteConstraintException` on a background thread takes the whole process down with it, not just
+the collaboration feature.
+
+**Fix:** re-tag every received `Stroke`/`WhiteboardText` onto `whiteboardId` (this device's own
+board id) before it touches the view or the database — one line at each of the three receive
+sites (`TYPE_STROKE`, `TYPE_TEXT`, and the loop inside `applySnapshot`). The wire format itself
+didn't need to change; `authorId` deliberately stays whatever the sender wrote (still "local-user"
+today, since neither device tags it with a real per-device id yet), it's specifically
+`whiteboardId` that must always mean "my local board," never "whichever board the sender drew it
+on."
+
+**Lesson worth keeping for the rest of Epic C:** any model object that carries a foreign key onto a
+*local* table (here, `whiteboardId`; the same shape would bite `note_id` if a future feature ever
+transmits a segment) has to be re-homed on receipt, not trusted verbatim off the wire — the id is
+only ever valid on the device that minted it.
 
 ## Timestamps
 
