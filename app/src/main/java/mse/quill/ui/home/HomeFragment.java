@@ -35,7 +35,9 @@ import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.ui.collections.CollectionDetailFragment;
+import mse.quill.ui.collections.CollectionLockFlow;
 import mse.quill.ui.notes.NoteEditorFragment;
+import mse.quill.ui.profile.ProfilePreferences;
 import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
@@ -113,7 +115,13 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCollectionClicked(String collectionId, String displayName) {
-                openCollection(collectionId, displayName);
+                // Gated here rather than on the collection screen itself: opening the screen and
+                // then covering it means the destination has already queried its notes, and a
+                // dismissed prompt would leave the user looking at an empty version of a
+                // collection that isn't empty.
+                CollectionLockFlow.openCollection(requireActivity(), collectionId, displayName,
+                        isCollectionLocked(collectionId),
+                        () -> openCollection(collectionId, displayName));
             }
 
             @Override public void onCollectionLongPressed(Collection collection) {
@@ -363,6 +371,17 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     public void onResume() {
         super.onResume();
         reloadAll();
+        // On resume, not just once: Profile is a tab away, so the name can change and come
+        // straight back here without this fragment ever being recreated.
+        renderGreeting();
+    }
+
+    private void renderGreeting() {
+        String name = ProfilePreferences.displayName(requireContext());
+        TextView greeting = requireView().findViewById(R.id.home_greeting);
+        greeting.setText(name == null
+                ? getString(R.string.home_greeting)
+                : getString(R.string.home_greeting_named, name));
     }
 
     private void openNote(String noteId) {
@@ -402,11 +421,30 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         });
     }
 
+    /** Read off the list the cards were built from, which is the same read that drew their
+     *  padlocks — so the gate and the badge can never disagree about a given card. */
+    private boolean isCollectionLocked(String collectionId) {
+        for (Collection c : allCollections) {
+            if (c.id.equals(collectionId)) return c.biometricLocked;
+        }
+        return false;
+    }
+
     private void showManageCollectionDialog(Collection collection) {
         CollectionDialogs.showManageDialog(requireContext(), collection, new CollectionDialogs.ManageListener() {
             @Override public void onRename() {
                 CollectionDialogs.showRenameDialog(requireContext(), collection.name, newName ->
                         collectionRepository.renameCollection(collection.id, newName, HomeFragment.this::reloadCollections));
+            }
+
+            @Override public void onToggleLock() {
+                if (collection.biometricLocked) {
+                    CollectionLockFlow.removeLock(requireActivity(), collection,
+                            HomeFragment.this::reloadAll);
+                } else {
+                    CollectionLockFlow.lock(requireActivity(), collection,
+                            HomeFragment.this::reloadAll);
+                }
             }
 
             @Override public void onDelete() {

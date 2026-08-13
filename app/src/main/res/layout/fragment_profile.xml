@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Top-level destination, so no back arrow — the bottom bar is how you got here and how you
+     leave, same as Home/Flashcards/Quizzes.
+
+     Grouped into labelled cards rather than one long list of rows, because the four groups answer
+     different questions and one of them is destructive. The Danger Zone sitting under its own
+     heading, outlined in red, at the very bottom, is the whole point of the arrangement: nothing
+     above it can be reached by a mis-tap on the way to it. -->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/app_background"
+    tools:context=".ui.profile.ProfileFragment">
+
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/spacing_md"
+        android:paddingTop="@dimen/spacing_lg"
+        android:paddingBottom="@dimen/spacing_sm"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/profile_title"
+            android:textColor="@color/text_primary"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:text="@string/profile_subtitle"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingBottom="@dimen/spacing_lg"
+        app:layout_constraintTop_toBottomOf="@id/header"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/spacing_md">
+
+            <!-- ==================== Avatar ==================== -->
+
+            <!-- The initial, not a photo. Quill has no account and no image to fetch, and asking
+                 for one would be asking for a permission to decorate a settings screen. -->
+            <TextView
+                android:id="@+id/avatar"
+                android:layout_width="@dimen/profile_avatar_size"
+                android:layout_height="@dimen/profile_avatar_size"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:background="@drawable/bg_avatar"
+                android:gravity="center"
+                android:textColor="@color/brand_purple_dark"
+                android:textSize="@dimen/profile_avatar_text_size"
+                android:textStyle="bold"
+                tools:text="S" />
+
+            <TextView
+                android:id="@+id/avatar_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:gravity="center"
+                android:textColor="@color/text_primary"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                tools:text="Sudarshan" />
+
+            <!-- ==================== You ==================== -->
+
+            <TextView
+                style="@style/Widget.Quill.SettingsSectionLabel"
+                android:text="@string/profile_section_you" />
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Quill.SettingsCard">
+
+                <LinearLayout
+                    android:id="@+id/row_display_name"
+                    style="@style/Widget.Quill.SettingsRow">
+
+                    <ImageView
+                        style="@style/Widget.Quill.SettingsRow.Icon"
+                        android:src="@drawable/ic_user"
+                        android:contentDescription="@null" />
+
+                    <LinearLayout style="@style/Widget.Quill.SettingsRow.Text">
+
+                        <TextView
+                            style="@style/Widget.Quill.SettingsRow.Title"
+                            android:text="@string/profile_display_name" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/value_display_name"
+                        style="@style/Widget.Quill.SettingsRow.Value"
+                        tools:text="Sudarshan" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ==================== Notifications ==================== -->
+
+            <TextView
+                style="@style/Widget.Quill.SettingsSectionLabel"
+                android:text="@string/profile_section_notifications" />
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Quill.SettingsCard">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:id="@+id/row_reminders"
+                        style="@style/Widget.Quill.SettingsRow">
+
+                        <ImageView
+                            style="@style/Widget.Quill.SettingsRow.Icon"
+                            android:src="@drawable/ic_bell"
+                            android:contentDescription="@null" />
+
+                        <LinearLayout style="@style/Widget.Quill.SettingsRow.Text">
+
+                            <TextView
+                                style="@style/Widget.Quill.SettingsRow.Title"
+                                android:text="@string/profile_study_reminders" />
+
+                            <TextView
+                                android:id="@+id/summary_reminders"
+                                style="@style/Widget.Quill.SettingsRow.Summary"
+                                tools:text="Get a daily nudge when flashcards are due." />
+
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_reminders"
+                            style="@style/Widget.Quill.SettingsRow.Switch" />
+
+                    </LinearLayout>
+
+                    <!-- Only while reminders are on, for the same reason the app lock's timeout
+                         row is: a time to fire at means nothing when nothing fires. -->
+                    <View
+                        android:id="@+id/divider_reminder_time"
+                        style="@style/Widget.Quill.SettingsRow.Divider"
+                        android:visibility="gone"
+                        tools:visibility="visible" />
+
+                    <LinearLayout
+                        android:id="@+id/row_reminder_time"
+                        style="@style/Widget.Quill.SettingsRow"
+                        android:visibility="gone"
+                        tools:visibility="visible">
+
+                        <Space
+                            android:layout_width="@dimen/settings_icon_size"
+                            android:layout_height="0dp"
+                            android:layout_marginEnd="@dimen/spacing_md" />
+
+                        <LinearLayout style="@style/Widget.Quill.SettingsRow.Text">
+
+                            <TextView
+                                style="@style/Widget.Quill.SettingsRow.Title"
+                                android:text="@string/profile_reminder_time" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/value_reminder_time"
+                            style="@style/Widget.Quill.SettingsRow.Value"
+                            tools:text="20:00" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Shown only while reminders are on: it explains an absence, which is confusing to
+                 read about before there is anything to be absent from. -->
+            <TextView
+                android:id="@+id/note_reminders_locked"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:paddingHorizontal="@dimen/spacing_xs"
+                android:text="@string/profile_reminders_locked_note"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <!-- ==================== Security ==================== -->
+
+            <TextView
+                style="@style/Widget.Quill.SettingsSectionLabel"
+                android:text="@string/profile_section_security" />
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Quill.SettingsCard">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:id="@+id/row_app_lock"
+                        style="@style/Widget.Quill.SettingsRow">
+
+                        <ImageView
+                            style="@style/Widget.Quill.SettingsRow.Icon"
+                            android:src="@drawable/ic_private"
+                            android:contentDescription="@null" />
+
+                        <LinearLayout style="@style/Widget.Quill.SettingsRow.Text">
+
+                            <TextView
+                                style="@style/Widget.Quill.SettingsRow.Title"
+                                android:text="@string/profile_app_lock" />
+
+                            <TextView
+                                android:id="@+id/summary_app_lock"
+                                style="@style/Widget.Quill.SettingsRow.Summary"
+                                tools:text="Quill asks for your fingerprint before opening." />
+
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_app_lock"
+                            style="@style/Widget.Quill.SettingsRow.Switch" />
+
+                    </LinearLayout>
+
+                    <!-- Only present while the lock is on. A grace period is meaningless without
+                         something to grant it, and a permanently visible row that does nothing
+                         four times out of five is clutter. -->
+                    <View
+                        android:id="@+id/divider_timeout"
+                        style="@style/Widget.Quill.SettingsRow.Divider"
+                        android:visibility="gone"
+                        tools:visibility="visible" />
+
+                    <LinearLayout
+                        android:id="@+id/row_lock_timeout"
+                        style="@style/Widget.Quill.SettingsRow"
+                        android:visibility="gone"
+                        tools:visibility="visible">
+
+                        <!-- Indented to the title column above rather than given an icon of its
+                             own: it's a detail of the row above it, not a fifth setting. -->
+                        <Space
+                            android:layout_width="@dimen/settings_icon_size"
+                            android:layout_height="0dp"
+                            android:layout_marginEnd="@dimen/spacing_md" />
+
+                        <LinearLayout style="@style/Widget.Quill.SettingsRow.Text">
+
+                            <TextView
+                                style="@style/Widget.Quill.SettingsRow.Title"
+                                android:text="@string/profile_app_lock_timeout" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/value_lock_timeout"
+                            style="@style/Widget.Quill.SettingsRow.Value"
+                            tools:text="1 minute" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:paddingHorizontal="@dimen/spacing_xs"
+                android:text="@string/profile_app_lock_note"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <!-- ==================== Danger zone ==================== -->
+
+            <TextView
+                android:id="@+id/label_danger"
+                style="@style/Widget.Quill.SettingsSectionLabel"
+                android:text="@string/profile_section_danger"
+                android:textColor="@color/danger" />
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Quill.SettingsCard.Danger">
+
+                <LinearLayout
+                    android:id="@+id/row_delete_all"
+                    style="@style/Widget.Quill.SettingsRow">
+
+                    <ImageView
+                        style="@style/Widget.Quill.SettingsRow.Icon"
+                        android:src="@drawable/ic_delete"
+                        android:contentDescription="@null"
+                        app:tint="@color/danger" />
+
+                    <LinearLayout style="@style/Widget.Quill.SettingsRow.Text">
+
+                        <TextView
+                            style="@style/Widget.Quill.SettingsRow.Title"
+                            android:text="@string/profile_delete_all"
+                            android:textColor="@color/danger" />
+
+                        <TextView
+                            style="@style/Widget.Quill.SettingsRow.Summary"
+                            android:text="@string/profile_delete_all_summary" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

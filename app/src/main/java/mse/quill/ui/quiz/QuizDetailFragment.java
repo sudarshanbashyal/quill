@@ -23,6 +23,7 @@ import mse.quill.data.NoteRepository;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.model.Quiz;
 import mse.quill.data.model.QuizAttempt;
+import mse.quill.util.NoteDisplayUtils;
 
 /**
  * One quiz between sittings: what it will ask, how it has gone before, and the way in.
@@ -101,7 +102,8 @@ public class QuizDetailFragment extends Fragment {
                 return;
             }
             quiz = loaded;
-            titleView.setText(quiz.noteTitle);
+            titleView.setText(NoteDisplayUtils.resolveTitle(
+                    requireContext(), quiz.noteTitle, quiz.noteCreatedAt));
             loadQuestionCount();
         });
         quizRepository.loadAttempts(quizId, attempts -> {
@@ -149,7 +151,9 @@ public class QuizDetailFragment extends Fragment {
 
     private void confirmDelete() {
         if (quiz == null) return;
-        DeleteQuizDialog.show(requireContext(), quiz.noteTitle, () ->
+        DeleteQuizDialog.show(requireContext(),
+                NoteDisplayUtils.resolveTitle(
+                        requireContext(), quiz.noteTitle, quiz.noteCreatedAt), () ->
                 quizRepository.deleteQuiz(quiz.id, () -> {
                     if (!isAdded()) return;
                     Toast.makeText(requireContext(), R.string.quiz_deleted, Toast.LENGTH_SHORT)

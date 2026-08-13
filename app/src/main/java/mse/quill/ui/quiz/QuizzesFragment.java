@@ -20,6 +20,7 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.model.Quiz;
+import mse.quill.util.NoteDisplayUtils;
 
 /**
  * The Quizzes tab: every note that has been turned into a quiz.
@@ -94,7 +95,9 @@ public class QuizzesFragment extends Fragment {
     }
 
     private void confirmDelete(Quiz quiz) {
-        DeleteQuizDialog.show(requireContext(), quiz.noteTitle, () ->
+        DeleteQuizDialog.show(requireContext(),
+                NoteDisplayUtils.resolveTitle(
+                        requireContext(), quiz.noteTitle, quiz.noteCreatedAt), () ->
                 quizRepository.deleteQuiz(quiz.id, () -> {
                     if (!isAdded()) return;
                     Snackbar.make(requireView(), R.string.quiz_deleted, Snackbar.LENGTH_SHORT)

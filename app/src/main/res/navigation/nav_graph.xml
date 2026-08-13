@@ -91,4 +91,11 @@
             app:nullable="true"
             android:defaultValue="@null" />
     </fragment>
+
+    <!-- A top-level destination (see menu_bottom_nav), so it takes no arguments and has no
+         actions into it — the bar is the only way in. -->
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="mse.quill.ui.profile.ProfileFragment"
+        android:label="Profile" />
 </navigation>

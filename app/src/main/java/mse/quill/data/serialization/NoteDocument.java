@@ -145,6 +145,27 @@ public final class NoteDocument {
     // ── Decode ─────────────────────────────────────────────────────────────
 
     /**
+     * The whiteboards this document embeds, in order, without building segments for anything else.
+     *
+     * <p>For the callers that only need the references: rebuilding the link rows on save, and the
+     * migration that seeds them from notes written before the table existed. Reading the embed
+     * lines here rather than with a regex of their own is what keeps those in step with the format
+     * {@link #toMarkdown} writes.
+     */
+    public static List<String> whiteboardIdsIn(String markdown) {
+        List<String> ids = new ArrayList<>();
+        if (markdown == null) return ids;
+
+        for (String line : markdown.split("\n", -1)) {
+            Matcher embed = EMBED_LINE.matcher(line);
+            if (embed.matches() && KIND_WHITEBOARD.equals(embed.group(1))) {
+                ids.add(embed.group(2));
+            }
+        }
+        return ids;
+    }
+
+    /**
      * Rebuilds the editor's segment list from the document.
      *
      * @param mediaById image/audio segments from the asset registry, keyed by id. An embed whose

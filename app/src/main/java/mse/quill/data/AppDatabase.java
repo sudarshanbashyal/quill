@@ -1,10 +1,16 @@
 package mse.quill.data;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import mse.quill.data.serialization.NoteDocument;
 
 public class AppDatabase extends SQLiteOpenHelper {
 
@@ -14,7 +20,7 @@ public class AppDatabase extends SQLiteOpenHelper {
      * different things, so the next number has to clear the highest either of them used. See
      * {@link #ensureAdditiveSchema} for why the migration doesn't trust this number alone.
      */
-    private static final int DATABASE_VERSION = 8;
+    private static final int DATABASE_VERSION = 9;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -26,6 +32,25 @@ public class AppDatabase extends SQLiteOpenHelper {
 
     private AppDatabase(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
+    }
+
+    /**
+     * Closes the shared connection and deletes the database file. Only {@link mse.quill.util.DataWipe}
+     * has any business calling this.
+     *
+     * <p>The close and the null have to happen before the delete, and together: deleting the file
+     * out from under an open {@code SQLiteOpenHelper} leaves the helper holding a handle to
+     * something that is no longer there, and leaving the singleton in place would hand that same
+     * dead helper to the next caller. Nulling it means the next {@link #getInstance} builds a fresh
+     * one, which recreates the schema through {@link #onCreate} — an empty Quill rather than a
+     * broken one.
+     */
+    public static synchronized void destroy(Context context) {
+        if (instance != null) {
+            instance.close();
+            instance = null;
+        }
+        context.getApplicationContext().deleteDatabase(DATABASE_NAME);
     }
 
     @Override
@@ -171,6 +196,19 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "created_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
+        // Which notes embed which whiteboards. Not the source of truth — the embed lives in the
+        // note's Markdown, and this is rewritten from it on every save, the way note_segments is.
+        // It exists because a locked note's Markdown is ciphertext: without a link outside the
+        // encrypted body, there is no way to ask "is this board inside a collection that is shut",
+        // and an imported board would sit on Home with its drawing showing. Many-to-many on
+        // purpose — an embed can be imported into a second note without moving.
+        db.execSQL("CREATE TABLE note_whiteboards (" +
+                "note_id TEXT NOT NULL, " +
+                "whiteboard_id TEXT NOT NULL, " +
+                "PRIMARY KEY(note_id, whiteboard_id), " +
+                "FOREIGN KEY(note_id) REFERENCES notes(id), " +
+                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
+
         db.execSQL("CREATE TABLE tags (" +
                 "id TEXT PRIMARY KEY, " +
                 "name TEXT, " +
@@ -212,6 +250,10 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_voice_memos_note_id ON voice_memos(note_id)");
         db.execSQL("CREATE INDEX idx_note_segments_note_id ON note_segments(note_id)");
         db.execSQL("CREATE INDEX idx_note_tags_tag_id ON note_tags(tag_id)");
+        // Indexed by board, not by note: the question this table answers is "which notes hold this
+        // board", asked once per board on every Home load.
+        db.execSQL("CREATE INDEX idx_note_whiteboards_whiteboard_id " +
+                "ON note_whiteboards(whiteboard_id)");
 
     }
 
@@ -281,6 +323,26 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_whiteboard_texts_whiteboard_id " +
                 "ON whiteboard_texts(whiteboard_id)");
 
+        // Per-collection encryption. Shipped in onCreate but never added here, so a database made
+        // before it upgraded into a build that queries a column it doesn't have — every read that
+        // consults the lock throwing "no such column" on exactly the devices that have notes worth
+        // locking. Default 0: an existing collection is unlocked, which is what it was.
+        addColumnIfMissing(db, "collections", "biometric_locked", "INTEGER DEFAULT 0");
+
+        // Which notes embed which whiteboards; see onCreate for why it exists. Backfilled once,
+        // when the table is first created, because until then the only record of an embed is the
+        // note's Markdown.
+        boolean linksAreNew = !tableExists(db, "note_whiteboards");
+        db.execSQL("CREATE TABLE IF NOT EXISTS note_whiteboards (" +
+                "note_id TEXT NOT NULL, " +
+                "whiteboard_id TEXT NOT NULL, " +
+                "PRIMARY KEY(note_id, whiteboard_id), " +
+                "FOREIGN KEY(note_id) REFERENCES notes(id), " +
+                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_note_whiteboards_whiteboard_id " +
+                "ON note_whiteboards(whiteboard_id)");
+        if (linksAreNew) backfillWhiteboardLinks(db);
+
         // Whiteboards gained a name and timestamps so Home can list them: a board has no body text
         // to derive a preview or a date from the way a note does.
         boolean whiteboardsDated = !addColumnIfMissing(db, "whiteboards", "title", "TEXT");
@@ -318,6 +380,47 @@ public class AppDatabase extends SQLiteOpenHelper {
         }
         db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
         return true;
+    }
+
+    private boolean tableExists(SQLiteDatabase db, String table) {
+        try (android.database.Cursor c = db.rawQuery(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                new String[]{table})) {
+            return c.moveToFirst();
+        }
+    }
+
+    /**
+     * Reads every note that can be read and records the whiteboards its Markdown embeds.
+     *
+     * <p>Notes in a locked collection are skipped, not failed: their bodies are ciphertext and the
+     * key is behind a prompt no migration can raise. Those get their links when the collection is
+     * next locked or unlocked — {@code CollectionLockRepository} holds the plaintext at both — or
+     * on the next save, whichever comes first.
+     */
+    private void backfillWhiteboardLinks(SQLiteDatabase db) {
+        List<String> lockedIds = new ArrayList<>();
+        try (android.database.Cursor c = db.rawQuery(
+                "SELECT id FROM collections WHERE biometric_locked = 1", null)) {
+            while (c.moveToNext()) lockedIds.add(c.getString(0));
+        }
+
+        try (android.database.Cursor c = db.rawQuery(
+                "SELECT id, collection_id, content_blob FROM notes", null)) {
+            while (c.moveToNext()) {
+                if (!c.isNull(1) && lockedIds.contains(c.getString(1))) continue;
+                if (c.isNull(2)) continue;
+
+                String markdown = new String(c.getBlob(2), java.nio.charset.StandardCharsets.UTF_8);
+                for (String boardId : NoteDocument.whiteboardIdsIn(markdown)) {
+                    ContentValues cv = new ContentValues();
+                    cv.put("note_id", c.getString(0));
+                    cv.put("whiteboard_id", boardId);
+                    db.insertWithOnConflict("note_whiteboards", null, cv,
+                            SQLiteDatabase.CONFLICT_IGNORE);
+                }
+            }
+        }
     }
 
     private void rebuild(SQLiteDatabase db) {

@@ -7,6 +7,8 @@ import android.widget.LinearLayout;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 
+import mse.quill.R;
+
 /**
  * Builds Material 3 outlined text fields in code, for the dialogs that assemble their views
  * programmatically instead of inflating XML (see NoteRowView for why this codebase avoids the
@@ -43,5 +45,23 @@ public final class TextFieldUtils {
         layout.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         return layout;
+    }
+
+    /**
+     * Wraps a field in the padding a dialog doesn't supply: {@code setView()} places content flush
+     * against the dialog's edges, which puts the outlined box hard against the title above it.
+     *
+     * <p>Lives here rather than beside the first dialog that needed it (it started out inside
+     * {@code CollectionDialogs}) because every {@code setView}-with-a-text-field dialog wants the
+     * same treatment, and the Profile screen's are in another package.
+     */
+    public static LinearLayout inset(Context context, TextInputLayout field) {
+        LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int horizontal = context.getResources().getDimensionPixelSize(R.dimen.spacing_lg);
+        int top = context.getResources().getDimensionPixelSize(R.dimen.spacing_sm);
+        container.setPadding(horizontal, top, horizontal, 0);
+        container.addView(field);
+        return container;
     }
 }

@@ -20,6 +20,7 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.model.FlashcardDeck;
+import mse.quill.util.NoteDisplayUtils;
 
 /**
  * The Flashcards tab: every note that has generated cards, most urgent first.
@@ -90,7 +91,9 @@ public class FlashcardDecksFragment extends Fragment {
     }
 
     private void confirmDelete(FlashcardDeck deck) {
-        DeleteFlashcardsDialog.show(requireContext(), deck.noteTitle, () ->
+        DeleteFlashcardsDialog.show(requireContext(),
+                NoteDisplayUtils.resolveTitle(
+                        requireContext(), deck.noteTitle, deck.noteCreatedAt), () ->
                 flashcardRepository.deleteForNote(deck.noteId, () -> {
                     if (!isAdded()) return;
                     Snackbar.make(requireView(), R.string.flashcards_deleted, Snackbar.LENGTH_SHORT)

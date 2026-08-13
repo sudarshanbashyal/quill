@@ -235,6 +235,27 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         }).start();
     }
 
+    /**
+     * Leaves if the board is no longer ours to show — deleted from Home behind this screen, or
+     * belonging to a note whose collection shut while the app was away.
+     *
+     * <p>The second case is why this is on resume rather than only on load: leaving the app
+     * re-locks every open collection ({@code MainActivity.onStop}), and a board reached through a
+     * locked note would otherwise still be sitting here, fully drawn, when the user came back.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        final String id = whiteboardId;
+        new Thread(() -> {
+            if (whiteboardRepo.getByIdSync(id) != null) return;
+            requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
+                androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp();
+            });
+        }).start();
+    }
+
     @Override
     public void onPause() {
         super.onPause();

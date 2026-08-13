@@ -186,6 +186,7 @@ public final class NoteImporter {
                 db.insert("note_segments", null, asset);
             }
             insertWhiteboards(noteId, contents.whiteboards, newIdByOldId, now);
+            WhiteboardLinks.replace(db, noteId, markdown);
             attachTags(db, noteId, contents.tags);
             indexNoteSync(db, noteId, title, markdown);
 

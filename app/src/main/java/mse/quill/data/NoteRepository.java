@@ -8,6 +8,7 @@ import android.database.sqlite.SQLiteException;
 import android.util.Log;
 
 import java.io.File;
+import java.security.GeneralSecurityException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import mse.quill.data.model.Note;
+import mse.quill.security.CollectionLock;
 import mse.quill.data.model.Tag;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.AudioSegment;
@@ -33,6 +35,19 @@ public class NoteRepository {
     public interface OnNoteLoaded { void onLoaded(Note note, List<NoteSegment> segments); }
     public interface OnNotesLoaded { void onLoaded(List<Note> notes); }
     public interface OnPinResult { void onPinned(); void onLimitReached(); }
+
+    /** Outcome of a save into a collection that may be encrypted. */
+    public interface OnNoteSaved {
+        void onSaved();
+
+        /**
+         * The note's collection is locked and its key would not encrypt — the authentication
+         * window closed while the note was open. <b>Nothing was written.</b> The editor still
+         * holds the text, so the caller's job is to get the collection unlocked and save again,
+         * not to warn about lost work.
+         */
+        default void onNeedsUnlock() {}
+    }
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
@@ -82,32 +97,77 @@ public class NoteRepository {
     }
 
     public void saveNote(String noteId, String title, List<NoteSegment> segments, Runnable onSaved) {
+        saveNote(noteId, title, segments, new OnNoteSaved() {
+            @Override public void onSaved() {
+                if (onSaved != null) onSaved.run();
+            }
+        });
+    }
+
+    public void saveNote(String noteId, String title, List<NoteSegment> segments, OnNoteSaved cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             Set<String> orphanedMediaPaths;
 
             String markdown = NoteDocument.toMarkdown(segments);
 
+            String collectionId = NoteCrypto.collectionIdOfNote(db, noteId);
+            boolean encrypted = NoteCrypto.isLocked(db, collectionId);
+
             // Nothing to write if nothing changed. The editor auto-saves on pause whether or not
             // anything was typed, and this used to bump updated_at regardless — so merely opening
             // a note and backing out of it reported "Updated now" on Home and jumped it to the top
             // of the list. Checked here rather than in the editor because the markdown is already
             // built on this thread, and because it fixes every caller at once.
-            if (nothingToWrite(db, noteId, title, markdown)) {
-                if (onSaved != null) executors.mainThread(onSaved);
+            if (nothingToWrite(db, noteId, collectionId, encrypted, title, markdown)) {
+                if (cb != null) executors.mainThread(cb::onSaved);
                 return;
+            }
+
+            // Encrypted before the transaction opens, not inside it: a Keystore operation can
+            // block on the TEE, and an expired authentication window throws rather than returning
+            // — neither belongs inside a held write lock, and the throw must abandon the save
+            // without a half-written row behind it.
+            String storedTitle = title;
+            byte[] storedBody = markdown.getBytes(StandardCharsets.UTF_8);
+            if (encrypted) {
+                try {
+                    storedTitle = NoteCrypto.encryptTitle(collectionId, title);
+                    storedBody = NoteCrypto.encryptBody(collectionId, markdown);
+                } catch (GeneralSecurityException e) {
+                    // Nothing is written, so nothing is lost that the editor isn't still holding.
+                    // Telling the caller is what lets it offer to unlock and try again, instead of
+                    // reporting a save that didn't happen.
+                    Log.w("NoteRepository", "could not encrypt note; save abandoned", e);
+                    CollectionLock.relock(collectionId);
+                    if (cb != null) executors.mainThread(cb::onNeedsUnlock);
+                    return;
+                }
             }
 
             db.beginTransaction();
             try {
                 ContentValues cv = new ContentValues();
-                cv.put("title", title);
-                cv.put("content_blob", markdown.getBytes(StandardCharsets.UTF_8));
+                cv.put("title", storedTitle);
+                cv.put("content_blob", storedBody);
                 cv.put("updated_at", System.currentTimeMillis());
                 db.update("notes", cv, "id = ?", new String[]{noteId});
 
                 orphanedMediaPaths = replaceMediaAssetsSync(db, noteId, segments);
-                indexNoteSync(db, noteId, title, markdown);
+                // From the markdown rather than the segments so that the rows say exactly what the
+                // stored document says — the two are built from the same list here, but the
+                // migration and the lock migrations have only the markdown to work from, and one
+                // source keeps all three honest.
+                WhiteboardLinks.replace(db, noteId, markdown);
+                // A locked note is deliberately not indexed: notes_fts stores the body as plain
+                // text, so indexing one would file a readable copy of everything the encryption
+                // just protected in a table with no lock on it at all. The delete covers the note
+                // that was indexed before its collection was locked.
+                if (encrypted) {
+                    deleteFromIndexSync(db, noteId);
+                } else {
+                    indexNoteSync(db, noteId, title, markdown);
+                }
 
                 db.setTransactionSuccessful();
             } finally {
@@ -118,7 +178,7 @@ public class NoteRepository {
                 new File(path).delete();
             }
 
-            if (onSaved != null) executors.mainThread(onSaved);
+            if (cb != null) executors.mainThread(cb::onSaved);
         });
     }
 
@@ -130,20 +190,41 @@ public class NoteRepository {
      * {@link #createNote} doesn't write one — a note created and then saved without being typed in
      * would otherwise be skipped here and never reach {@code notes_fts}, leaving it unsearchable.
      */
-    private boolean nothingToWrite(SQLiteDatabase db, String noteId, String title, String markdown) {
+    private boolean nothingToWrite(SQLiteDatabase db, String noteId, String collectionId,
+                                   boolean encrypted, String title, String markdown) {
         Cursor c = db.query("notes", new String[]{"title", "content_blob"},
                 "id = ?", new String[]{noteId}, null, null, null);
         try {
             if (!c.moveToFirst()) return false;   // no row yet: this save is what creates it
-            String storedTitle = c.getString(0);
-            byte[] storedBlob = c.getBlob(1);
-            String storedMarkdown = storedBlob == null
-                    ? "" : new String(storedBlob, StandardCharsets.UTF_8);
+
+            String storedTitle;
+            String storedMarkdown;
+            if (encrypted) {
+                // Compared as plaintext, because the ciphertext can't be: GCM takes a fresh IV
+                // every time, so encrypting the same note twice gives two different blobs. A
+                // byte comparison would call every save a change and rewrite the row — bumping
+                // updated_at, and re-encrypting, merely for opening a note.
+                storedTitle = NoteCrypto.decryptTitleOrNull(collectionId, c.getString(0));
+                storedMarkdown = c.isNull(1)
+                        ? "" : NoteCrypto.decryptBodyOrNull(collectionId, c.getBlob(1));
+                // Undecryptable: say there is something to write, and let the save path produce
+                // the proper onNeedsUnlock rather than silently reporting success here.
+                if (storedTitle == null && title != null) return false;
+                if (storedMarkdown == null) return false;
+            } else {
+                storedTitle = c.getString(0);
+                byte[] storedBlob = c.getBlob(1);
+                storedMarkdown = storedBlob == null
+                        ? "" : new String(storedBlob, StandardCharsets.UTF_8);
+            }
+
             if (!Objects.equals(storedTitle, title) || !storedMarkdown.equals(markdown)) return false;
         } finally {
             c.close();
         }
-        return isIndexed(db, noteId);
+        // A locked note is never in the index and never should be, so its absence is not the
+        // "unindexed, needs a rewrite" case this check exists for.
+        return encrypted || isIndexed(db, noteId);
     }
 
     private boolean isIndexed(SQLiteDatabase db, String noteId) {
@@ -176,12 +257,78 @@ public class NoteRepository {
         });
     }
 
+    /**
+     * Moves a note between collections, re-encrypting it to match where it lands.
+     *
+     * <p>The conversion is the whole job. {@code collection_id} decides how the row is read — a
+     * plaintext note dropped into a locked collection would be read as ciphertext and fail to
+     * decrypt, and a still-encrypted note moved out of one would be handed to the editor as
+     * gibberish. Changing the column without changing the bytes is therefore never correct, in
+     * either direction.
+     *
+     * <p>A move that can't be converted is abandoned rather than half-done: the note stays where
+     * it is, readable, which is the only safe way to fail here.
+     */
     public void assignCollection(String noteId, String collectionId, Runnable onDone) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
+
+            String from = NoteCrypto.collectionIdOfNote(db, noteId);
+            boolean wasEncrypted = NoteCrypto.isLocked(db, from);
+            boolean willBeEncrypted = NoteCrypto.isLocked(db, collectionId);
+
+            String title;
+            String markdown;
+            try (Cursor c = db.rawQuery("SELECT title, content_blob FROM notes WHERE id = ?",
+                    new String[]{noteId})) {
+                if (!c.moveToFirst()) {
+                    if (onDone != null) executors.mainThread(onDone);
+                    return;
+                }
+                if (wasEncrypted) {
+                    title = NoteCrypto.decryptTitle(from, c.getString(0));
+                    markdown = c.isNull(1) ? "" : NoteCrypto.decryptBody(from, c.getBlob(1));
+                } else {
+                    title = c.getString(0);
+                    markdown = c.isNull(1) ? "" : new String(c.getBlob(1), StandardCharsets.UTF_8);
+                }
+            } catch (GeneralSecurityException e) {
+                Log.w("NoteRepository", "could not read note for move; leaving it put", e);
+                CollectionLock.relock(from);
+                if (onDone != null) executors.mainThread(onDone);
+                return;
+            }
+
             ContentValues cv = new ContentValues();
             cv.put("collection_id", collectionId);
-            db.update("notes", cv, "id = ?", new String[]{noteId});
+            try {
+                cv.put("title", willBeEncrypted ? NoteCrypto.encryptTitle(collectionId, title) : title);
+                cv.put("content_blob", willBeEncrypted
+                        ? NoteCrypto.encryptBody(collectionId, markdown)
+                        : markdown.getBytes(StandardCharsets.UTF_8));
+            } catch (GeneralSecurityException e) {
+                Log.w("NoteRepository", "could not encrypt note for move; leaving it put", e);
+                CollectionLock.relock(collectionId);
+                if (onDone != null) executors.mainThread(onDone);
+                return;
+            }
+
+            db.beginTransaction();
+            try {
+                db.update("notes", cv, "id = ?", new String[]{noteId});
+                // The index follows the destination: a note moving into a locked collection has to
+                // leave notes_fts, and one moving out has to rejoin it or it stays unsearchable.
+                if (willBeEncrypted) {
+                    deleteFromIndexSync(db, noteId);
+                    db.delete("flashcards", "note_id = ?", new String[]{noteId});
+                } else {
+                    indexNoteSync(db, noteId, title, markdown);
+                }
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -263,7 +410,11 @@ public class NoteRepository {
      * bundle of several notes at once (see {@code share/CollectionBundleWriter}) — the async
      * {@link #loadNote} exists for a single screen, not a loop over a collection's worth.
      *
-     * @return null if the note doesn't exist (or was soft-deleted).
+     * @return null if the note doesn't exist, was soft-deleted, or sits in a collection that is
+     *     locked and not open — {@link #getNoteSync} refuses it, and refusing here is what stops a
+     *     locked note being written into a shareable bundle in the clear. Callers already ask
+     *     {@code CollectionRepository.isLocked} before offering to share; this is the backstop
+     *     that doesn't depend on them remembering to.
      */
     public NoteBundleData loadForBundleSync(String noteId) {
         SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -277,6 +428,11 @@ public class NoteRepository {
 
     // ── Sync helpers (must run on the diskIO executor) ──────────────────────
 
+    /**
+     * @return null if the note doesn't exist, was soft-deleted, or belongs to a collection that is
+     *     locked and not open in this session — a caller that can't read the body has no business
+     *     being handed the title either.
+     */
     private Note getNoteSync(SQLiteDatabase db, String noteId) {
         Cursor c = db.rawQuery(
                 "SELECT id, collection_id, title, created_at, updated_at, deleted_at, pinned_at " +
@@ -284,7 +440,12 @@ public class NoteRepository {
                 new String[]{noteId});
         try {
             if (!c.moveToFirst()) return null;
-            return readNote(c);
+            Note note = readNote(c);
+            if (!NoteCrypto.isLocked(db, note.collectionId)) return note;
+            if (!CollectionLock.isUnlocked(note.collectionId)) return null;
+
+            note.title = NoteCrypto.decryptTitleOrNull(note.collectionId, note.title);
+            return note.title == null ? null : note;
         } finally {
             c.close();
         }
@@ -301,6 +462,16 @@ public class NoteRepository {
             sql.append(" AND n.collection_id = ?");
             args.add(filter);
         }
+
+        // Shut collections drop out of every list this method feeds — Home, the pinned band, the
+        // collection screen — rather than each caller being trusted to remember. A pinned note in
+        // a locked collection is the case that makes this the right place: it would otherwise sit
+        // at the top of Home, preview and all, having never gone through a collection screen.
+        Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
+        Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
+        sql.append(NoteCrypto.hiddenClause(hidden));
+        args.addAll(hidden);
+
         if (pinnedOnly) {
             sql.append(" AND n.pinned_at IS NOT NULL");
         }
@@ -315,9 +486,24 @@ public class NoteRepository {
         try {
             while (c.moveToNext()) {
                 Note note = readNote(c);
-                note.preview = c.isNull(7)
-                        ? ""
-                        : NoteDocument.toPreview(new String(c.getBlob(7), StandardCharsets.UTF_8));
+                boolean encrypted = lockedIds.contains(note.collectionId);
+
+                String markdown;
+                if (encrypted) {
+                    // Only reachable for a collection the user has opened — the shut ones were
+                    // excluded by the query above.
+                    note.title = NoteCrypto.decryptTitleOrNull(note.collectionId, note.title);
+                    markdown = c.isNull(7)
+                            ? "" : NoteCrypto.decryptBodyOrNull(note.collectionId, c.getBlob(7));
+                    // Decryption failed and relock() has already shut the collection; leaving the
+                    // row out is what stops a half-readable note reaching the list.
+                    if (note.title == null || markdown == null) continue;
+                } else {
+                    markdown = c.isNull(7)
+                            ? "" : new String(c.getBlob(7), StandardCharsets.UTF_8);
+                }
+
+                note.preview = markdown.isEmpty() ? "" : NoteDocument.toPreview(markdown);
                 notes.add(note);
                 noteIds.add(note.id);
             }
@@ -378,10 +564,22 @@ public class NoteRepository {
     }
 
     private String getMarkdownSync(SQLiteDatabase db, String noteId) {
-        Cursor c = db.rawQuery("SELECT content_blob FROM notes WHERE id = ?", new String[]{noteId});
+        Cursor c = db.rawQuery(
+                "SELECT content_blob, collection_id FROM notes WHERE id = ?", new String[]{noteId});
         try {
             if (!c.moveToFirst() || c.isNull(0)) return "";
-            return new String(c.getBlob(0), StandardCharsets.UTF_8);
+            byte[] stored = c.getBlob(0);
+            String collectionId = c.isNull(1) ? null : c.getString(1);
+
+            if (!NoteCrypto.isLocked(db, collectionId)) {
+                return new String(stored, StandardCharsets.UTF_8);
+            }
+            // Empty rather than ciphertext-as-text on failure: callers parse this as Markdown, and
+            // handing them random bytes would render as garbage in the editor instead of as the
+            // "can't read this" that it is. getNoteSync has already refused the note in that case,
+            // so a caller reaching here with an unreadable body has nothing to display anyway.
+            String markdown = NoteCrypto.decryptBodyOrNull(collectionId, stored);
+            return markdown == null ? "" : markdown;
         } finally {
             c.close();
         }

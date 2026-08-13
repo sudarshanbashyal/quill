@@ -1,0 +1,15 @@
+<!-- The padlock at label size, for a collection card's name and the detail screen's title.
+
+     A 16dp vector rather than ic_private.png, which is a 512px bitmap: as a compound drawable it
+     would be laid out at its intrinsic size and swallow the card. Sized here so callers can use
+     setCompoundDrawablesRelativeWithIntrinsicBounds and get the right thing. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="@color/brand_purple">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M12,2a5,5 0 0,0 -5,5v3H6a2,2 0 0,0 -2,2v8a2,2 0 0,0 2,2h12a2,2 0 0,0 2,-2v-8a2,2 0 0,0 -2,-2h-1V7a5,5 0 0,0 -5,-5zM9,7a3,3 0 0,1 6,0v3H9V7z" />
+</vector>

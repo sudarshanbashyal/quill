@@ -189,6 +189,22 @@
     <dimen name="quiz_result_rule_width">3dp</dimen>
     <dimen name="quiz_badge_min_width">52dp</dimen>
 
+    <!-- Profile / settings. Rows are a fixed minimum rather than wrapped: a two-line row and a
+         one-line row next to each other looked ragged, and 56dp keeps the whole row past the 48dp
+         touch guidance even where only the switch is interactive. -->
+    <dimen name="profile_avatar_size">72dp</dimen>
+    <dimen name="profile_avatar_text_size">28sp</dimen>
+    <dimen name="settings_row_min_height">56dp</dimen>
+    <dimen name="settings_icon_size">20dp</dimen>
+    <dimen name="settings_section_spacing">20dp</dimen>
+    <dimen name="settings_card_padding">4dp</dimen>
+    <!-- The Danger Zone card is outlined rather than filled — a red block that size would shout
+         from the moment the screen opens, which is not where the emphasis belongs. -->
+    <dimen name="danger_card_stroke">1dp</dimen>
+
+    <!-- App lock gate (the overlay over MainActivity while locked). -->
+    <dimen name="app_lock_icon_size">48dp</dimen>
+
     <!-- Formatting toolbar (FormattingToolbarController). Items carry no fixed width — they are
          added with equal weights so the eight of them divide the full bar width evenly. The glyph
          is small but the whole weighted slot is the touch target, so it stays comfortably past

@@ -11,6 +11,7 @@ import java.util.List;
 
 import mse.quill.R;
 import mse.quill.data.model.Collection;
+import mse.quill.ui.collections.CollectionLockFlow;
 import mse.quill.util.TextFieldUtils;
 
 /**
@@ -26,6 +27,9 @@ public final class CollectionDialogs {
     public interface ManageListener {
         void onRename();
         void onDelete();
+        /** Lock an unlocked collection, or remove the lock from a locked one — which of the two is
+         *  decided by the collection's own state, so there is only one entry. */
+        void onToggleLock();
     }
 
     private CollectionDialogs() {}
@@ -60,14 +64,13 @@ public final class CollectionDialogs {
                 .show();
     }
 
-    /** Dialog setView() places content flush against the dialog edges; the field needs breathing room. */
+    /**
+     * Dialog setView() places content flush against the dialog edges; the field needs breathing
+     * room. Moved to {@link TextFieldUtils} once the Profile screen — in another package — needed
+     * the same wrapper; kept here as a delegate so the call sites in this package read unchanged.
+     */
     static LinearLayout inset(Context context, TextInputLayout field) {
-        LinearLayout container = new LinearLayout(context);
-        container.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(context, R.dimen.spacing_lg);
-        container.setPadding(pad, dp(context, R.dimen.spacing_sm), pad, 0);
-        container.addView(field);
-        return container;
+        return TextFieldUtils.inset(context, field);
     }
 
     public static void showManageDialog(Context context, Collection collection, ManageListener listener) {
@@ -75,9 +78,11 @@ public final class CollectionDialogs {
                 .setTitle(collection.name)
                 .setItems(new String[]{
                         context.getString(R.string.action_rename),
+                        CollectionLockFlow.toggleLabel(context, collection),
                         context.getString(R.string.action_delete)
                 }, (dialog, which) -> {
                     if (which == 0) listener.onRename();
+                    else if (which == 1) listener.onToggleLock();
                     else listener.onDelete();
                 })
                 .show();

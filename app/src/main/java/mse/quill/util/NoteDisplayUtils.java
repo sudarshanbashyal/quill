@@ -16,10 +16,20 @@ public final class NoteDisplayUtils {
     /** Resolves what to show as a note's title: its title if set, else a generated
      *  "Untitled Note - <date>" placeholder using the note's creation date. */
     public static String resolveTitle(Context context, Note note) {
-        boolean hasTitle = note.title != null && !note.title.trim().isEmpty();
-        if (hasTitle) return note.title.trim();
+        return resolveTitle(context, note.title, note.createdAt);
+    }
 
-        return untitledWithDate(context, note.createdAt);
+    /**
+     * The same fallback for the screens that hold a note's title and creation date without holding
+     * the note — a flashcard deck, a quiz. An untitled note stores an empty title on purpose (the
+     * editor offers the generated name as a hint rather than typing it in for you), so every list
+     * that shows one has to resolve it, or the row arrives with no name at all.
+     */
+    public static String resolveTitle(Context context, String title, long createdAt) {
+        boolean hasTitle = title != null && !title.trim().isEmpty();
+        if (hasTitle) return title.trim();
+
+        return untitledWithDate(context, createdAt);
     }
 
     /** "Untitled Note - <date>" for the given timestamp — shared by the display fallback above

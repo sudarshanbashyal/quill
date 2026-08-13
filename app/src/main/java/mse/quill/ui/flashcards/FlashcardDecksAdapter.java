@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.RelativeTime;
 import mse.quill.data.model.FlashcardDeck;
 
@@ -70,7 +71,8 @@ public class FlashcardDecksAdapter extends RecyclerView.Adapter<FlashcardDecksAd
             views.badge.setTextColor(ContextCompat.getColor(
                     context, hasDue ? R.color.text_on_brand : R.color.text_secondary));
 
-            views.title.setText(deck.noteTitle);
+            views.title.setText(NoteDisplayUtils.resolveTitle(
+                    context, deck.noteTitle, deck.noteCreatedAt));
             views.detail.setText(hasDue
                     ? context.getString(R.string.flashcards_deck_due_format, deck.due, deck.total)
                     : context.getString(R.string.flashcards_deck_none_due_format, deck.total));

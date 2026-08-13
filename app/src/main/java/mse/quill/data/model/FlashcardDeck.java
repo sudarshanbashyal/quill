@@ -9,7 +9,11 @@ package mse.quill.data.model;
 public class FlashcardDeck {
 
     public String noteId;
+    /** Empty for a note the user never named — resolve it for display with
+     *  {@code NoteDisplayUtils.resolveTitle(context, noteTitle, noteCreatedAt)}. */
     public String noteTitle;
+    /** The note's creation date, carried only so the untitled fallback can be dated. */
+    public long noteCreatedAt;
 
     /** Every card generated from the note. */
     public int total;

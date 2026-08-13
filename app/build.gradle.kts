@@ -38,6 +38,9 @@ android {
 dependencies {
     implementation(libs.activity.ktx)
     implementation(libs.appcompat)
+    implementation(libs.barcode.scanning.common)
+    implementation(libs.biometric)
+    implementation(libs.work.runtime)
     implementation(libs.constraintlayout)
     implementation(libs.material)
     implementation(libs.navigation.fragment.ktx)
