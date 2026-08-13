@@ -783,9 +783,10 @@ prompt down the page read as clutter. `NoteEditorView.updateHints()` re-points i
 
 ## Sharing and collaboration
 
-**Status: designed 2026-08-06, not built.** Supersedes the NFC + Wi-Fi Direct plan; the
-checklist lives in [requirements.md](requirements.md) Epic C. Three decisions, each with a
-reason that is easy to lose:
+**Status: designed 2026-08-06. Note sharing built 2026-08-08; the P2P half is still design
+only.** Supersedes the NFC + Wi-Fi Direct plan; the checklist lives in
+[requirements.md](requirements.md) Epic C. Three decisions, each with a reason that is easy to
+lose:
 
 **Notes are copied, not co-edited.** Live note collaboration is dropped. Importing a shared
 note mints a **new id**, so two people editing "the same" note hold two notes and there is no
@@ -824,20 +825,246 @@ Bluetooth and mail for free. The container is a `.quill` zip (`note.md` + `media
 because the Markdown export is deliberately lossy — images and audio become placeholders, which
 is fine for exporting to other tools and feels broken when sharing to another Quill.
 
-**Receiving is where the real trap is.** Three paths, and only one is dependable:
+**Receiving has three paths, all built now (2026-08-09 added the third):**
 - *No Quill* → a `.md` opens in any text editor. Free graceful degradation.
-- *Explicit Import* (`ACTION_OPEN_DOCUMENT` → picker) → works over every transport. **Build
-  this first.**
-- *Tap the received file* → wants an intent filter, but files arriving via Quick Share come as
-  `content://` typed `application/octet-stream` with no usable path, so `pathPattern` matching
-  is unreliable. Sniff the content after opening, and treat it as polish.
+- *Explicit Import* (`ACTION_OPEN_DOCUMENT` → picker, Home's FAB) → works over every transport.
+- *Tap the received file* → `MainActivity` (now `exported="true"`, `singleTask`) carries an
+  `ACTION_VIEW` filter matched on mime type only (`application/zip`/`json`/`octet-stream`) — a
+  `pathPattern` was never worth adding, since a `content://` Uri from Quick Share has no usable
+  path for one to match. The Uri is handed to `HomeFragment.handleSharedFile` once Home is the
+  resumed fragment (a `FragmentLifecycleCallbacks` watch, since a cold start needs the nav host to
+  inflate first), which is the same three-format cascade a manual pick already runs — sniffing the
+  content after opening is still the real check, same as it always was for the picker's `*/*`.
 
-Also note `MainActivity` is `android:exported="false"` today, so nothing can be received until
-an exported entry point exists.
+### The `.quill` bundle, as built (2026-08-08)
+
+`share/QuillBundle` is the format, `share/BundleWriter` packs, `share/BundleReader` unpacks, and
+`data/NoteImporter` inserts. The reader/importer split is deliberate: the format is testable
+without a database, and a malformed file never reaches a transaction.
+
+**`note.md` inside the bundle is the stored document, not the Markdown export.** That is the
+whole difference between the two. `MarkdownExporter` is lossy on purpose — images and audio become
+italic placeholders, Q&A fences become bold paragraphs — because its destination is someone else's
+editor. A bundle's destination is another Quill, where the same flattening reads as a note that
+arrived broken. So the bundle carries `notes.content_blob` verbatim, `quill://` embeds intact, and
+the manifest carries the two things that live *beside* the document: the title (a column on the
+note's row) and per-asset metadata (width, duration).
+
+**Ids in a bundle are the sender's, and nothing reuses them.** The importer mints a new note id,
+new asset ids, new whiteboard/stroke/text ids and new files, then rewrites the document to match
+via `NoteDocument.rewriteEmbedIds` — which lives on `NoteDocument` because the embed regex is that
+class's and a second copy would drift. One rule there covers every kind of embed, since the rewrite
+matches purely on the id inside a `quill://` line and never looks at which kind of embed it names:
+**an embed whose id isn't in the map is dropped.** That's what makes an image whose file didn't
+make it into the archive and a whiteboard whose row was already gone on the sender degrade the same
+way — the embed line simply disappears rather than pointing at nothing.
+
+**A note's attached whiteboard travels with it (fixed 2026-08-09; previously silently lost).**
+`BundleWriter` originally only packed segments where `isMedia()` is true, which a `WhiteboardSegment`
+deliberately isn't (see "Whiteboard embeds are built" above) — so the board never made the trip, and
+because its id was never added to the rewrite map either, the embed line itself vanished on import
+rather than degrading to "This whiteboard was deleted." Fixed by embedding each attached board under
+`whiteboards/<id>.json` inside the `.quill` zip, reusing `WhiteboardBundleWriter`/
+`WhiteboardBundleReader` (the standalone `.quillboard` format, see below) rather than a second
+serialization. `NoteImporter` mints the board's new id into the *same* map media assets use — the
+kind-agnostic rewrite is what makes that safe — then inserts the whiteboard, its strokes and its
+text items inside the note's own transaction. A dangling embed (board deleted from Home before
+export) is still simply not written, same as before.
+
+**Tags match by name, case-insensitively, and an existing tag keeps its own colour.** A tag id is
+local — "Lecture" on two phones is the same idea with different keys — so importing by id would
+grow a second invisible "Lecture" per arrival. The colour stays because the user chose it.
+
+**`created_at` is inherited, `updated_at` is now.** When the note was written is a fact about it
+and the one thing a copy can honestly keep; arriving is this copy's most recent event, and it is
+what puts the import at the top of Home where the user is looking. Imports land in no collection —
+the sender's folders are theirs.
+
+**Media moves before the transaction opens**, not inside it. Holding SQLite's write transaction
+across file copies would block every other repository on the shared single disk thread for the
+duration. The trade is orphaned files in private storage if the process dies in between — the
+cheaper failure, and the same one an interrupted image embed already produces. The move itself is
+`renameTo` first (cache and files are normally the same filesystem, so no bytes move) with a copy
+behind it for devices that split them.
+
+**The bundle is untrusted input**, because it arrived from another device over a transport with no
+sender identity. Two guards: entry names are whitelisted to a plain file directly inside `media/`
+(a check for `".."` is not enough — `media/../../databases/quill.db` is what a hostile archive
+writes), and the 256 MB cap is counted **as bytes arrive**, never read from the entry's declared
+size, which a zip bomb writes itself.
+
+**The share sheet is the entire transport story for a note.** Quick Share, Bluetooth and mail are
+share *targets*, not APIs — `ACTION_SEND` with a FileProvider uri and
+`FLAG_GRANT_READ_URI_PERMISSION` gets all three for nothing. The import filter is `*/*` rather
+than `application/zip` for the mirror-image reason: a bundle that came over Quick Share is typed
+`application/octet-stream`, so a correct filter would grey out the files this feature exists to
+open. Sniffing after opening is the only reliable check, and `BundleReader` is where it happens.
+
+**Locked collections can't be shared** (the Epic B boundary, decided here). A bundle is plaintext,
+so it would be the lock's only hole. `CollectionRepository.isLocked` answers, the editor reads it
+when the note loads so the menu can decide synchronously, and the menu item stays *tappable* —
+greyed out explains nothing and hidden reads as a feature Quill lacks, so the tap carries the
+reason. Nothing writes `biometric_locked` yet, so it always answers false today.
 
 **None of the P2P work is testable on the emulator** — NFC and Nearby both need two physical
 devices. That is a real planning cost for a project that has otherwise been verified entirely
 on `emulator-5554`, and another reason the QR and Import paths come first.
+
+### Whiteboard and collection sharing (built 2026-08-08, same day as the note bundle)
+
+Two more things travel the same share-sheet-and-picker path as a note, each with its own format:
+
+- **`share/WhiteboardBundle`** (`.quillboard`) is plain JSON, not a zip — a board has no files to
+  carry, just point lists and strings, and both are already JSON's native shape. `authorId` on a
+  `Stroke`/`WhiteboardText` is dropped entirely rather than carried and ignored: it's a
+  live-collaboration field the single-device bundle format has no use for.
+  `WhiteboardFragment`'s export button is now a `PopupMenu` — the pre-existing flat-PNG export
+  (lossy, a picture of the board) alongside the new **Share whiteboard** (lossless, another Quill
+  can keep drawing on it). `data/WhiteboardImporter` inserts with fresh ids, same rule as a note.
+- **`share/CollectionBundle`** (`.quillpack`) is a zip of zips: `manifest.json` plus one
+  `notes/<n>.quill` entry per member note, each entry a complete, ordinary `.quill` that
+  `BundleReader`/`NoteImporter` already know how to read. Nothing about a single note's format had
+  to change — `data/CollectionImporter` makes a new collection, then calls
+  `NoteImporter.insertBundle(contents, collectionId)` once per entry. That method (public now,
+  was `private insert`) is what lets a collection import assign notes into the collection it made,
+  while a lone `.quill` import still passes `null` and lands the note loose on Home as before. One
+  corrupt member note is skipped, not fatal to the rest of the pack — reported back as "N of M".
+- **The manifest tells the formats apart.** `CollectionBundle.KEY_NOTE_COUNT` is a key a `.quill`
+  manifest never has, which is what lets an importer try note → whiteboard → collection in
+  sequence against a file of unknown type (Home's picker is still `*/*`) without a false positive:
+  each reader's `InvalidBundleException` on the wrong format is the signal to try the next one.
+  `WhiteboardBundle` carries an explicit `"type":"quillboard"` for the same reason, since its
+  format has no zip structure to fail on first.
+- **Locked collections still can't be shared** — `CollectionDetailFragment`'s share button asks
+  `CollectionRepository.isLocked` before packing, same guard as a single note's Export menu.
+- `NoteRepository.loadForBundleSync` is a new public synchronous read (title, segments, tags,
+  timestamps) added for `CollectionBundleWriter`'s caller, which is already looping over note ids
+  on a disk thread — the existing async `loadNote` is shaped for one screen, not a batch.
+
+**Dependencies and manifest permissions for session join were added ahead of the code (2026-08-08),
+while the `.quill` bundle work was in flight** — `play-services-nearby`, `play-services-code-scanner`,
+`zxing-core` in `libs.versions.toml`/`app/build.gradle.kts`, and the full Bluetooth/location/Wi-Fi
+permission ladder in `AndroidManifest.xml` (see the comments there for the API-level split:
+unversioned Bluetooth + location below 31, the `BLUETOOTH_SCAN`/`ADVERTISE`/`CONNECT` trio at 31,
+`NEARBY_WIFI_DEVICES` at 33). **The code itself landed 2026-08-11** — see "Live whiteboard
+collaboration" just below. NFC (`HostApduService`) is the one piece still not built; QR is.
+
+## Live whiteboard collaboration
+
+**Status: built 2026-08-11** (Epic C's session-join and live-session checklist items). Three new
+classes under `collab/` plus one dialog helper under `ui/whiteboard/`:
+
+- `collab/CollabMessage` — the wire format. A tagged union serialized to JSON
+  (`org.json`, already on the classpath, no new dependency): `SNAPSHOT` (a board's full
+  strokes+texts), `STROKE`, `TEXT`, `RETRACT` (an id plus which table it's in), `CLEAR`. `CLEAR`
+  is a fourth message beyond the three requirements.md named, because a destructive,
+  everyone-affecting action still needs to travel as a message — it just isn't append-only like
+  the other three.
+- `collab/CollabSession` — one class, host or joiner, wrapping Nearby's `ConnectionsClient`
+  directly rather than through a service. `SERVICE_ID` is fixed and app-wide
+  (`"mse.quill.whiteboard"`); what disambiguates one session from every other nearby Quill user is
+  the **session token**, a short random string the host advertises under
+  (`startAdvertising(endpointName = token, …)`) and the joiner matches against
+  `DiscoveredEndpointInfo.getEndpointName()` before ever calling `requestConnection`. Both sides
+  accept in `onConnectionInitiated` with no extra prompt — reaching that callback at all already
+  proves the other device saw the token, so a second "accept this stranger?" dialog would be
+  asking about someone who, by construction, already passed the real gate.
+- `collab/QrCodes` — the token rendered to a `Bitmap` via zxing's `QRCodeWriter`. Pure Java, no
+  Android type crosses into it except `Bitmap` on the way out.
+- `ui/whiteboard/CollabDialogs` — entry ("Host" / "Join"), a host dialog (QR + status line), and a
+  joining dialog (status line only), built the same way `WhiteboardDialogs` builds its dialogs —
+  `MaterialAlertDialogBuilder` plus views assembled in code, since none of this has a
+  `res/layout` counterpart.
+
+**Scanning never asks for `CAMERA`.** Joining calls `GmsBarcodeScanning.getClient(...).startScan()`
+— Play Services owns the scanner UI and its own process, and only the decoded string comes back to
+Quill. The manifest's `<uses-feature android:name="android.hardware.camera" android:required="false">`
+was already staged for exactly this.
+
+**Wiring lives in `WhiteboardFragment`**, behind a new "Collaborate" toolbar button
+(`ic_collab.xml`, a hand-drawn placeholder vector — no glyph for this existed in the supplied icon
+set, matching how the Q&A toolbar icon was handled the same way in July). A `CollabSession.Listener`
+field (`collabListener`) is the single place incoming events land:
+
+- **`onPeerConnected`**: dismisses whichever status dialog is showing, and — only if this device is
+  the host — reads the board's current strokes/texts straight off disk (not off the view, which
+  could be stale relative to a save still in flight) and sends them as one `SNAPSHOT`. The snapshot
+  is a **replace, not a merge**: the joiner wipes its own board and DB first, then loads the host's
+  snapshot as ground truth. There's no vector-clock or CRDT reconciliation for two boards that
+  diverged *before* a session started — only for what happens *during* one, which is exactly the
+  scope requirements.md drew.
+- **`onMessage`**: `STROKE`/`TEXT` go straight to `WhiteboardView.addStroke`/`addText` (both now
+  dedupe by id, added alongside this feature — a replay after a reconnect is harmless) and to the
+  matching repository's insert. `RETRACT` removes from the view and deletes from the DB. `CLEAR`
+  wipes the board, but **only if this device isn't the host** — see below for why a host can't
+  receive its own clear back.
+
+**Undo/Clear are enforced by what already exists, not by an author check added for this feature:**
+- `WhiteboardFragment.undoStack` only ever gets pushed to when *this device* creates a stroke or
+  text item locally (`onStrokeComplete`, `commitText`). Anything applied from `onMessage` goes
+  straight to the view/DB and is never pushed onto that stack. So "undo can only retract your own
+  last item" cost nothing to add — the stack it pops from was already scoped that way, for a
+  completely different reason (surviving app restarts via `created_at` order). Undo still sends a
+  `RETRACT` so the peer's copy is removed too.
+- Clear is gated at the UI, not the message handler: `applyCollabRoleToUi()` disables `btnClear`
+  outright for a joiner for as long as a session is connected, so there's nothing to reject
+  server-side and nothing for a joiner to discover the hard way by tapping it. The host's own clear
+  sends `CLEAR` to the peer; a device only ever *applies* an incoming `CLEAR` when it isn't the
+  host, which is what stops the host from wiping its own just-cleared board a second time if a
+  message ever echoed back.
+
+**Not done, deliberately, this pass:**
+- **NFC carrier.** QR alone is enough to build and test with two devices; the `HostApduService` +
+  NDEF Type 4 tag design is unchanged from the original write-up and still the plan if it's picked
+  up later — nothing here forecloses it, since `CollabSession.join` only ever takes a token
+  string, not an opinion on how it arrived.
+- **Payload chunking.** Nearby's `BYTES` payload caps near 32 KB. An unusually long single stroke,
+  or a `SNAPSHOT` of a very large board, could exceed it; not hit in testing, not guarded against.
+  `Payload.fromFile` is the fix if it comes up.
+- **`.quill` bundle over the wire** ("tap to send a note" as a `FILE` payload) — the transport this
+  would ride on now exists, but it wasn't asked for this pass.
+
+**Verified on two physical devices (2026-08-12).** Host/join over Nearby, the QR handshake, live
+stroke sync, undo (own-item-only), and host-only clear (disabled on the joiner, wipes both boards
+when the host triggers it) all confirmed working. One real bug was caught doing this, not by
+reading the code — see "Live collaboration: joiner crash on snapshot" below.
+
+**A joined board's content is a real local copy, not a session-scoped overlay.** The snapshot
+writes the host's strokes/text into the joiner's own `strokes`/`whiteboard_texts` rows, so when the
+session ends the joiner keeps everything that was drawn during it — confirmed intentional behaviour,
+not a leftover to clean up. From that point the two boards are independent copies again (no
+ongoing link), consistent with "notes are copied, not co-edited" applying here too: joining a
+whiteboard session is a one-time copy-and-then-diverge, same shape as importing a shared note.
+
+### Live collaboration: joiner crash on snapshot (bug found and fixed 2026-08-12)
+
+First two-device run: the moment the peers connected, the joiner's process died
+(`SQLiteConstraintException: FOREIGN KEY constraint failed`, thrown from
+`StrokeRepository.insertStroke` inside `applySnapshot`) and silently dropped to the home screen —
+which the host read as an ordinary disconnect and reported as "Collaboration session ended". Both
+halves of that were real symptoms of one bug, not two.
+
+**Root cause:** each device's whiteboard is its own row in its own `whiteboards` table — the host
+and joiner never share one `whiteboards.id`. But `CollabMessage`'s `Stroke`/`WhiteboardText`
+objects still carried the *host's* `whiteboardId` field, unchanged, all the way into
+`applyIncoming`/`applySnapshot`'s `insertStroke`/`insert` calls. Inserting a stroke whose
+`whiteboard_id` points at a row that doesn't exist on this device is exactly what
+`strokes.whiteboard_id`'s foreign key exists to catch — and a plain, uncaught
+`SQLiteConstraintException` on a background thread takes the whole process down with it, not just
+the collaboration feature.
+
+**Fix:** re-tag every received `Stroke`/`WhiteboardText` onto `whiteboardId` (this device's own
+board id) before it touches the view or the database — one line at each of the three receive
+sites (`TYPE_STROKE`, `TYPE_TEXT`, and the loop inside `applySnapshot`). The wire format itself
+didn't need to change; `authorId` deliberately stays whatever the sender wrote (still "local-user"
+today, since neither device tags it with a real per-device id yet), it's specifically
+`whiteboardId` that must always mean "my local board," never "whichever board the sender drew it
+on."
+
+**Lesson worth keeping for the rest of Epic C:** any model object that carries a foreign key onto a
+*local* table (here, `whiteboardId`; the same shape would bite `note_id` if a future feature ever
+transmits a segment) has to be re-homed on receipt, not trusted verbatim off the wire — the id is
+only ever valid on the device that minted it.
 
 ## Timestamps
 
@@ -969,9 +1196,10 @@ a button that could only ever fail. PDF needs no fallback (Google's viewer handl
 Images are the cost that would matter — each is decoded to ≤1600px and drawn — and that has not
 been measured.
 
-**Not done: sharing.** Export writes a file and offers to open it; it does not offer a share sheet,
-despite the share icon. Images in a Markdown export are a placeholder, not a file — a single `.md`
-can't carry them, and a folder-based export was out of scope.
+**Sharing arrived as a third format, not as a button on these two** (2026-08-08). PDF and Markdown
+still only offer **Open** — they are for reading elsewhere, and a `.md` whose images are
+placeholders is not a thing to send someone. The Export menu's third item writes a `.quill` bundle
+instead and its dialog's positive button is **Share**. See "Sharing and collaboration".
 
 ## Who owns a press on a waveform
 

@@ -141,53 +141,92 @@ plan is superseded. Three decisions drive everything below:
 Sequence so that each step is testable on its own, and note that **the P2P steps need
 two physical devices** — none of it runs on the emulator.
 
-- [ ] **Note sharing (no session, no transport of our own)**
-  - [ ] `.quill` bundle: a zip of `note.md` + `media/` + manifest. Lossless, unlike the
-        Markdown export, which reduces images/audio to placeholders. A note with no
-        media may ship as a bare `.md` so it still opens in any text editor.
-  - [ ] Share via `ACTION_SEND` + FileProvider → the system sheet (Quick Share,
+- [x] **Note sharing (no session, no transport of our own)** — built 2026-08-08.
+  - [x] `.quill` bundle: a zip of `note.md` + `media/` + manifest. Lossless, unlike the
+        Markdown export, which reduces images/audio to placeholders. `share/QuillBundle`
+        (format), `share/BundleWriter`, `share/BundleReader`.
+        *Deviation*: always a zip, never a bare `.md` for a media-free note. The
+        original was a "may"; one container means one import path, and the graceful
+        degradation it bought is already covered by the Markdown export.
+  - [x] Share via `ACTION_SEND` + FileProvider → the system sheet (Quick Share,
         Bluetooth, mail). No integration work: Quick Share is a share *target*, not an API.
-  - [ ] **Import**: `ACTION_OPEN_DOCUMENT` → picker → unpack. Build this first; it is
-        the only receive path that works across every transport.
-  - [ ] Import semantics: mint a new note id, re-id media into private storage and
-        rewrite `quill://` URIs, match tags by name (create if missing).
-  - [ ] *Polish, expect flakiness*: `ACTION_VIEW`/`ACTION_SEND` intent filter so a
-        received file opens straight into Quill. Files arriving over Quick Share are
-        typed `application/octet-stream` with no usable path, so `pathPattern` matching
-        is unreliable — sniff content after opening. **`MainActivity` is currently
-        `exported="false"`; receiving anything requires an exported entry point.**
+        Options → Export → **Share to another Quill**; the file also lands in
+        `Downloads/Quill` like the other two formats, and the confirmation dialog's
+        positive button becomes **Share** instead of **Open**.
+  - [x] **Import**: `ACTION_OPEN_DOCUMENT` → picker → unpack. Home's FAB → **Import
+        Note**. Filter is `*/*`, not `application/zip` — a bundle that came over Quick
+        Share is typed `application/octet-stream`, so a narrow filter would grey out
+        exactly the files this exists to open.
+  - [x] Import semantics: mint a new note id, re-id media into private storage and
+        rewrite `quill://` URIs (`NoteDocument.rewriteEmbedIds`), match tags by name
+        (create if missing). `data/NoteImporter`.
+  - [x] **Extended to whiteboards and collections** (2026-08-08, not in the original plan):
+        `.quillboard` (JSON, `share/WhiteboardBundle`) shares one board losslessly via a new
+        "Share whiteboard" option beside the existing flat-image export; `.quillpack`
+        (`share/CollectionBundle`) shares a whole collection as a zip of each note's own
+        `.quill`. Both reuse the note bundle's import machinery rather than duplicating it —
+        `NoteImporter.insertBundle` takes an optional collection id for this reason. Home's
+        importer tries note → whiteboard → collection in sequence against the same `*/*` pick,
+        since each format's manifest rejects the other two.
+  - [x] *(2026-08-09)* `ACTION_VIEW` intent filter on `MainActivity` (now `exported="true"`,
+        `singleTask`) so a received `.quill`/`.quillboard`/`.quillpack` opens straight into
+        Quill instead of needing Home's manual Import. Matched on `mimeType` only
+        (`application/zip`, `application/json`, `application/octet-stream`) — a
+        `content://` Uri from Quick Share has no usable path for `pathPattern` to match, as
+        flagged here originally. The real check is still each bundle reader's, tried in
+        sequence by `HomeFragment.handleSharedFile` after the file is opened. `ACTION_SEND`
+        not added — nothing sends a file *to* Quill as an attachment today.
 
-- [ ] **Session join (the token seam)**
-  - [ ] Host generates a session token; `startAdvertising(endpointName = token,
-        P2P_STAR)`. Joiner discovers, matches the token, `requestConnection`; host
-        accepts only that token. The token both disambiguates a room full of
-        advertisers and authorises, so no accept-dialog is needed.
-  - [ ] **QR carrier first** — the token as a QR code. ~30 lines, no NFC APIs, works on
-        phones without NFC, joinable across a table, and testable without two NFC devices.
-  - [ ] **NFC carrier second** — the tap. Note the original plan's flaw: Android Beam
-        (NDEF push) is dead, so phone-to-phone means the host runs `HostApduService`
-        and the joiner reader mode. Emulating an **NDEF Type 4 tag holding an App Link**
-        is the version worth building: the joiner's stock NFC stack launches Quill, so
-        their app need not already be open.
-  - [ ] Treat NFC and QR as interchangeable carriers of the same token — the join code
-        below them is identical.
+- [x] **Session join (the token seam)** — built 2026-08-11, QR carrier only (see below).
+      `collab/CollabSession` wraps Nearby Connections: host mints a random token and
+      `startAdvertising(endpointName = token, P2P_STAR)`; joiner `startDiscovery`, matches
+      the token against `DiscoveredEndpointInfo.getEndpointName()`, `requestConnection`.
+      `onConnectionInitiated` accepts unconditionally on both sides — reaching that
+      callback already proves the other device knew the token, so there's no separate
+      accept dialog, exactly as planned.
+  - [x] Host generates a session token; joiner discovers, matches, connects — as above.
+  - [x] **QR carrier** — `collab/QrCodes` (zxing) renders the token; the whiteboard's new
+        "Collaborate" toolbar button shows it while hosting. Joining scans it via
+        `GmsBarcodeScanning`'s own scanner UI, so Quill never holds `CAMERA`.
+  - [ ] **NFC carrier** — deferred, not built this pass. QR alone is enough to test and
+        ship; the `HostApduService` + NDEF Type 4 tag design in the paragraph below is
+        unchanged and still the plan if NFC gets picked up later.
+  - [x] Treat NFC and QR as interchangeable carriers of the same token — true by
+        construction: `CollabSession.join` only ever needs the token string, not how it
+        arrived, so an NFC carrier would just be a second way to obtain that string.
 
-- [ ] **Live whiteboard session**
-  - [ ] Three messages only: `snapshot` (current strokes, on join), `stroke` (one
-        completed stroke — the re-entry point `WhiteboardFragment` already names in
-        `onStrokeComplete()`), `retract` (a stroke id).
-  - [ ] Idempotent apply-on-receive: dedupe by stroke id, so a replay is harmless.
-  - [ ] **Undo/clear are the only non-append-only operations.** Undo must retract only
-        the author's own last stroke and travel as `retract`, not a local delete. Clear
-        is destructive to everyone — make it host-only. (Eraser needs nothing: it is
-        `tool=1`, a stroke, so it is already append-only.)
-  - [ ] Payload sizing: Nearby's `BYTES` caps near 32 KB; chunk or use `FILE` for an
-        unusually long stroke.
-  - [ ] Once the transport exists, "tap to send a note" is nearly free — the same
-        `.quill` bundle as a `FILE` payload into the same import code.
+- [x] **Live whiteboard session** — built 2026-08-11 (`collab/CollabMessage`,
+      `collab/CollabSession`, wired into `WhiteboardFragment`), **verified on two physical
+      devices 2026-08-12**: connect via QR, live stroke sync, undo (own item only), and
+      host-only clear (disabled for the joiner; wipes both boards from the host) all
+      confirmed working. One real bug was caught and fixed in the process — see note.md's
+      "Live collaboration: joiner crash on snapshot" — a received stroke/text item kept
+      the sender's `whiteboardId` instead of being re-homed onto the receiving device's
+      own board row, which violated the `strokes` foreign key and crashed the joiner's
+      process the moment a snapshot arrived.
+  - [x] Three messages, plus `clear`: `snapshot` (the host's full board, sent once on
+        join), `stroke`/`text` (one completed item), `retract` (an id). `clear` was added
+        beyond the original three because host-only destructive clear needs to travel
+        as a message too, not just a local action.
+  - [x] Idempotent apply-on-receive: `WhiteboardView.addStroke`/`addText` dedupe by id, so
+        a replay is harmless.
+  - [x] **Undo/clear are the only non-append-only operations.** Undo retracts only the
+        author's own last item because received strokes/text are never pushed onto the
+        local `undoStack` — only things *this device* drew are, so popping it can never
+        reach into someone else's ink. Clear is host-only: `btnClear` is disabled outright
+        for a joiner during a live session (`applyCollabRoleToUi`), and the host's clear
+        travels as a `CLEAR` message rather than each side clearing independently.
+  - [ ] Payload sizing: Nearby's `BYTES` caps near 32 KB; an unusually long single stroke
+        or a snapshot of a very large board could exceed it. Not hit in testing, not
+        guarded against — chunking or a `FILE` payload is the fix if it comes up.
+  - [ ] "Tap to send a note" (the `.quill` bundle as a `FILE` payload) — not built; the
+        transport exists now, this is next to fall out of it near-free, as planned.
 
-- [ ] **Boundary with Epic B**: a locked/encrypted collection must not be shareable, or
-      requires unlock-on-both-ends — still needs an explicit product decision on which.
+- [x] **Boundary with Epic B**: decided 2026-08-08 — **a locked collection's notes are not
+      shareable**, rather than unlock-on-both-ends. A bundle is plaintext, so sharing one
+      would be the lock's only hole. `CollectionRepository.isLocked` exists and the editor
+      consults it; nothing sets `biometric_locked` yet, so it always answers false today.
+      The guard is in place for when Epic B starts writing the column.
 
 **Dropped from the original plan** (do not resurrect without re-reading the above):
 per-note vector-clock conflict resolution, the `outbox` writer/drainer for notes, and

@@ -9,6 +9,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -21,7 +23,10 @@ import java.util.List;
 import java.util.UUID;
 
 import mse.quill.R;
+import com.google.android.material.snackbar.Snackbar;
+
 import mse.quill.data.CollectionRepository;
+import mse.quill.data.NoteImporter;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Collection;
@@ -72,6 +77,22 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private SearchFilterBar searchBar;
     private TagRepository tagRepository;
 
+    private NoteImporter noteImporter;
+    private mse.quill.data.WhiteboardImporter whiteboardImporter;
+    private mse.quill.data.CollectionImporter collectionImporter;
+    private ActivityResultLauncher<String[]> importPicker;
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Registered here rather than in onViewCreated: a launcher has to exist before the fragment
+        // reaches STARTED, or the result of a picker that outlived a process death has nowhere to
+        // be delivered.
+        importPicker = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                uri -> { if (uri != null) importBundle(uri); });
+    }
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                               Bundle savedInstanceState) {
@@ -86,6 +107,9 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         collectionRepository = new CollectionRepository(requireContext());
         tagRepository = new TagRepository(requireContext());
         whiteboardRepository = new WhiteboardRepository(requireContext());
+        noteImporter = new NoteImporter(requireContext());
+        whiteboardImporter = new mse.quill.data.WhiteboardImporter(requireContext());
+        collectionImporter = new mse.quill.data.CollectionImporter(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCollectionClicked(String collectionId, String displayName) {
@@ -191,6 +215,16 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                             name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
         });
 
+        View fabOptionImport = view.findViewById(R.id.fab_option_import);
+        fabOptionImport.setOnClickListener(v -> {
+            collapseFabOptions(fabOptions, sweepDistance);
+            // Every MIME type, not just application/zip. A .quill that arrived over Quick Share or
+            // Bluetooth is typed application/octet-stream by the transport that carried it, and a
+            // narrower filter would grey out exactly the files this exists to open. The real check
+            // is BundleReader's, after the file is opened — the filter here is only a hint.
+            importPicker.launch(new String[]{"*/*"});
+        });
+
         // A board created here is standalone (no parent note) — it's owned by Home's Whiteboards
         // section. The row is inserted up front so the board exists in that list even if the user
         // backs out without drawing anything.
@@ -202,6 +236,101 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
             whiteboardRepository.createWhiteboard(null, null,
                     mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
                     whiteboardId -> openWhiteboard(whiteboardId, null));
+        });
+    }
+
+    /**
+     * Unpacks a picked file, trying each of the three things Quill can share in turn — a note, a
+     * whiteboard, a whole collection — and offers to open whatever came in.
+     *
+     * <p>The picker's filter is {@code *&#47;*} (see the FAB listener above), so there is nothing
+     * upstream telling this which of the three it is. Each reader rejects a file that isn't its
+     * own format ({@link NoteImporter.Failure#NOT_A_BUNDLE}), which is what makes trying them in
+     * sequence safe rather than a guess — a {@code .quill} note is rejected by the whiteboard and
+     * collection readers for lacking their required entries, and vice versa (see the class docs on
+     * {@code WhiteboardBundle} and {@code CollectionBundle} for exactly how each tells the others
+     * apart). Order is note, then whiteboard, then collection — notes are the common case.
+     *
+     * <p>The Snackbar's action is the point. An import lands among however many others are already
+     * on Home and, since it arrives with a fresh {@code updated_at}, at the top of its list — but
+     * "at the top of a list" is still something to go and find. Offering it directly is one tap,
+     * and a Snackbar is right here where a dialog would not be: nothing is lost by missing it,
+     * because whatever it is has already been saved.
+     */
+    /**
+     * Entry point for a file Quill was launched to open — tapping a {@code .quill}/{@code
+     * .quillboard}/{@code .quillpack} in a file manager, mail client or Quick Share, rather than
+     * picking one through the FAB's Import option. {@link mse.quill.MainActivity} delivers the
+     * {@code Uri} here once Home is the resumed fragment, so this only ever needs the same
+     * three-format cascade {@link #importBundle} already runs for a manually picked file.
+     */
+    public void handleSharedFile(android.net.Uri source) {
+        importBundle(source);
+    }
+
+    private void importBundle(android.net.Uri source) {
+        Snackbar.make(requireView(), R.string.import_in_progress, Snackbar.LENGTH_SHORT).show();
+        noteImporter.importFrom(source, new NoteImporter.OnImported() {
+            @Override public void onImported(String noteId, String title) {
+                if (!isAdded()) return;
+                reloadAll();
+                String message = title == null || title.trim().isEmpty()
+                        ? getString(R.string.import_succeeded_untitled)
+                        : getString(R.string.import_succeeded, title);
+                Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_open_import, v -> openNote(noteId))
+                        .show();
+            }
+
+            @Override public void onFailed(NoteImporter.Failure failure) {
+                if (!isAdded()) return;
+                importWhiteboardBundle(source);
+            }
+        });
+    }
+
+    private void importWhiteboardBundle(android.net.Uri source) {
+        whiteboardImporter.importFrom(source, new mse.quill.data.WhiteboardImporter.OnImported() {
+            @Override public void onImported(String whiteboardId, String title) {
+                if (!isAdded()) return;
+                reloadAll();
+                String message = title == null || title.trim().isEmpty()
+                        ? getString(R.string.import_succeeded_whiteboard_untitled)
+                        : getString(R.string.import_succeeded_whiteboard, title);
+                Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_open_import, v -> openWhiteboard(whiteboardId, null))
+                        .show();
+            }
+
+            @Override public void onFailed(mse.quill.data.WhiteboardImporter.Failure failure) {
+                if (!isAdded()) return;
+                importCollectionBundle(source);
+            }
+        });
+    }
+
+    private void importCollectionBundle(android.net.Uri source) {
+        collectionImporter.importFrom(source, new mse.quill.data.CollectionImporter.OnImported() {
+            @Override public void onImported(String collectionId, String name, int imported, int total) {
+                if (!isAdded()) return;
+                reloadAll();
+                String displayName = name == null || name.trim().isEmpty()
+                        ? getString(R.string.imported_collection_untitled) : name;
+                String message = imported == total
+                        ? getString(R.string.import_succeeded_collection, displayName, imported)
+                        : getString(R.string.import_succeeded_collection_partial, displayName, imported, total);
+                Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_open_import, v -> openCollection(collectionId, displayName))
+                        .show();
+            }
+
+            @Override public void onFailed(mse.quill.data.CollectionImporter.Failure failure) {
+                if (!isAdded()) return;
+                Snackbar.make(requireView(),
+                        failure == mse.quill.data.CollectionImporter.Failure.NOT_A_BUNDLE
+                                ? R.string.import_not_a_bundle : R.string.import_failed,
+                        Snackbar.LENGTH_LONG).show();
+            }
         });
     }
 

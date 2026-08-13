@@ -212,6 +212,9 @@ public class WhiteboardView extends View {
 
     /** Show a text item that has just been typed. Persisting it is the fragment's job. */
     public void addText(WhiteboardText item) {
+        for (WhiteboardText existing : texts) {
+            if (existing.id.equals(item.id)) return; // already applied — dedupe by id
+        }
         texts.add(item);
         invalidate();
     }
@@ -280,6 +283,20 @@ public class WhiteboardView extends View {
         }
         // Hiding the tool rail widens the window, which changes how far there is left to scroll.
         scrollTo(clamp(getScrollX(), maxScrollX()), clamp(getScrollY(), maxScrollY()));
+    }
+
+    /**
+     * Adds one stroke someone else just drew, arriving over a live collaboration session — unlike
+     * {@link #loadStrokes}, this neither clears what's already here nor re-centres, since drawing
+     * shouldn't yank the window out from under whoever is looking at it.
+     */
+    public void addStroke(Stroke stroke) {
+        for (Stroke existing : committedStrokes) {
+            if (existing.id.equals(stroke.id)) return; // already applied — dedupe by id
+        }
+        committedStrokes.add(stroke);
+        buildPathForStroke(stroke);
+        invalidate();
     }
 
     /** Remove one stroke (used by Undo). */

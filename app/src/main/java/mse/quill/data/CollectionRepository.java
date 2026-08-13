@@ -41,6 +41,34 @@ public class CollectionRepository {
         });
     }
 
+    public interface OnLockChecked { void onChecked(boolean locked); }
+
+    /**
+     * Whether a collection is biometric-locked — the guard on sharing anything out of it.
+     *
+     * <p>Nothing sets {@code biometric_locked} yet (Epic B owns the lock flow), so today this
+     * always answers false. It is asked anyway rather than deferred, because the boundary belongs
+     * with the feature that has to respect it: a locked collection's notes must not leave the
+     * device as a plaintext bundle, and wiring that in later means remembering to.
+     *
+     * <p>A null id — a note filed nowhere — is not locked. There is no collection to lock it.
+     */
+    public void isLocked(String collectionId, OnLockChecked cb) {
+        if (collectionId == null) {
+            if (cb != null) cb.onChecked(false);
+            return;
+        }
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            boolean locked;
+            try (Cursor c = db.rawQuery("SELECT biometric_locked FROM collections WHERE id = ?",
+                    new String[]{collectionId})) {
+                locked = c.moveToFirst() && c.getInt(0) != 0;
+            }
+            if (cb != null) executors.mainThread(() -> cb.onChecked(locked));
+        });
+    }
+
     public void renameCollection(String id, String newName, Runnable onDone) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();

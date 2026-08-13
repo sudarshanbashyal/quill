@@ -12,4 +12,11 @@
         android:icon="@drawable/ic_menu_markdown"
         android:title="@string/action_export_markdown" />
 
+    <!-- Last of the three because it is the one that isn't for leaving Quill: PDF and Markdown go
+         to other tools, a bundle goes to another copy of this app. -->
+    <item
+        android:id="@+id/action_export_bundle"
+        android:icon="@drawable/ic_menu_share"
+        android:title="@string/action_export_bundle" />
+
 </menu>

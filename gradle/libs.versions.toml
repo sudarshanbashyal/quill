@@ -10,6 +10,9 @@ constraintlayout = "2.1.4"
 navigationFragmentKtx = "2.9.8"
 navigationUiKtx = "2.9.8"
 recyclerview = "1.3.2"
+playServicesNearby = "19.3.0"
+playServicesCodeScanner = "16.1.0"
+zxingCore = "3.5.3"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -22,6 +25,15 @@ constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayo
 navigation-fragment-ktx = { group = "androidx.navigation", name = "navigation-fragment-ktx", version.ref = "navigationFragmentKtx" }
 navigation-ui-ktx = { group = "androidx.navigation", name = "navigation-ui-ktx", version.ref = "navigationUiKtx" }
 recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "recyclerview" }
+# Offline peer-to-peer for the live whiteboard session. Picks BLE/Bluetooth/Wi-Fi Direct/hotspot
+# itself and supplies discovery, encryption, framing and reconnect — the layers the original
+# hand-rolled WifiP2pManager plan was going to write by hand.
+play-services-nearby = { group = "com.google.android.gms", name = "play-services-nearby", version.ref = "playServicesNearby" }
+# Scans the join QR without Quill holding CAMERA: the scanner UI belongs to Play Services and only
+# the decoded string comes back. A permission not asked for is one that can't be denied.
+play-services-code-scanner = { group = "com.google.android.gms", name = "play-services-code-scanner", version.ref = "playServicesCodeScanner" }
+# Generating the QR, which the scanner library doesn't do. Pure-Java, no Android dependency.
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

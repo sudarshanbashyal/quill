@@ -41,11 +41,14 @@ import com.google.android.material.snackbar.Snackbar;
 import mse.quill.audio.AudioPlayback;
 import mse.quill.audio.ReadAloud;
 import mse.quill.data.AppExecutors;
+import mse.quill.data.CollectionRepository;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
+import mse.quill.share.BundleWriter;
+import mse.quill.share.QuillBundle;
 import mse.quill.ui.flashcards.FlashcardsFragment;
 import mse.quill.ui.quiz.QuizDetailFragment;
 import mse.quill.ui.quiz.QuizRules;
@@ -116,6 +119,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
 
     private NoteRepository noteRepository;
     private TagRepository tagRepository;
+    private CollectionRepository collectionRepository;
     private FlashcardRepository flashcardRepository;
     private QuizRepository quizRepository;
     /** Whether this note has already generated cards — decides which of the two flashcard labels
@@ -125,6 +129,12 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
     private boolean hasQuiz;
     private String noteId;
     private String pendingCollectionId;
+    /** The note's own creation date, so a bundle can carry it — an imported copy inherits when the
+     *  note was written, which is a fact about it, rather than pretending it was written today. */
+    private long noteCreatedAt;
+    /** Whether this note's collection is locked. Read when the note loads so the options menu can
+     *  answer synchronously; see {@link CollectionRepository#isLocked}. */
+    private boolean collectionLocked;
     private boolean suppressAutoSave = false;
     /**
      * Whether the editor's fields hold the note they are supposed to. False from the moment an
@@ -179,6 +189,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
 
         noteRepository = new NoteRepository(requireContext());
         tagRepository = new TagRepository(requireContext());
+        collectionRepository = new CollectionRepository(requireContext());
         flashcardRepository = new FlashcardRepository(requireContext());
         quizRepository = new QuizRepository(requireContext());
 
@@ -264,7 +275,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
 
             @Override
             public void onImageFailed() {
-                // TODO: show a snackbar "Could not load image"
+                Snackbar.make(requireView(), R.string.image_load_failed, Snackbar.LENGTH_LONG).show();
             }
         });
 
@@ -289,13 +300,13 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
             public void onRecordingFailed() {
                 toolbarController.setRecordingState(false);
                 dismissRecordingDialog();
-                // TODO: show a snackbar "Could not record audio"
+                Snackbar.make(requireView(), R.string.record_audio_failed, Snackbar.LENGTH_LONG).show();
             }
 
             @Override
             public void onPermissionDenied() {
                 toolbarController.setRecordingState(false);
-                // TODO: show a snackbar "Microphone permission is required to record audio"
+                Snackbar.make(requireView(), R.string.microphone_permission_required, Snackbar.LENGTH_LONG).show();
             }
         });
 
@@ -504,7 +515,9 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         return true;
     }
 
-    private enum ExportFormat { PDF, MARKDOWN }
+    /** PDF and Markdown leave Quill for another tool and are lossy on purpose; BUNDLE leaves for
+     *  another Quill and is not. See {@link mse.quill.share.QuillBundle}. */
+    private enum ExportFormat { PDF, MARKDOWN, BUNDLE }
 
     /**
      * Writes the note out as a file in Downloads/Quill.
@@ -529,6 +542,10 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         Context appContext = requireContext().getApplicationContext();
         String audioLabel = getString(R.string.export_audio_placeholder);
         String imageLabel = getString(R.string.export_image_placeholder);
+        // Read here, on the main thread, for the same reason the segments are: a bundle is of the
+        // note as it stands, and both lists belong to the UI.
+        List<Tag> tags = new ArrayList<>(currentTags);
+        long createdAt = noteCreatedAt > 0 ? noteCreatedAt : System.currentTimeMillis();
 
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
@@ -537,6 +554,11 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
                 saved = NoteExportStore.save(appContext, title, PdfExporter.EXTENSION,
                         PdfExporter.MIME_TYPE,
                         out -> PdfExporter.write(title, segments, audioLabel, out));
+            } else if (format == ExportFormat.BUNDLE) {
+                saved = NoteExportStore.save(appContext, title, QuillBundle.EXTENSION,
+                        QuillBundle.MIME_TYPE,
+                        out -> BundleWriter.write(title, segments, tags, createdAt,
+                                System.currentTimeMillis(), appContext, out));
             } else {
                 String markdown = MarkdownExporter.toMarkdown(title, segments, audioLabel, imageLabel);
                 saved = NoteExportStore.save(appContext, title, MarkdownExporter.EXTENSION,
@@ -568,15 +590,29 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
     private void showExportComplete(ExportFormat format, NoteExportStore.Saved saved) {
         View content = getLayoutInflater().inflate(R.layout.dialog_export_complete, null);
         ((ImageView) content.findViewById(R.id.export_badge_icon)).setImageResource(
-                format == ExportFormat.PDF ? R.drawable.ic_pdf : R.drawable.ic_markdown);
+                badgeIconFor(format));
         ((TextView) content.findViewById(R.id.export_filename)).setText(
                 getString(R.string.export_complete_location, saved.displayName));
+        // A bundle isn't "exported" in the sense the other two are — nothing on the device will
+        // display it, and the point of making it was to send it somewhere.
+        boolean bundle = format == ExportFormat.BUNDLE;
+        if (bundle) {
+            ((TextView) content.findViewById(R.id.export_title))
+                    .setText(R.string.export_bundle_complete_title);
+        }
 
         androidx.appcompat.app.AlertDialog dialog =
                 new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                         .setView(content)
-                        .setPositiveButton(R.string.action_open_export,
-                                (d, which) -> openExport(saved, format))
+                        // Same button, different verb: Open for a file a viewer can show, Share for
+                        // one only another copy of Quill can read. The file is saved in Downloads
+                        // either way, so dismissing here loses nothing.
+                        .setPositiveButton(bundle ? R.string.action_share_export
+                                                  : R.string.action_open_export,
+                                (d, which) -> {
+                                    if (bundle) shareExport(saved);
+                                    else openExport(saved, format);
+                                })
                         .setNegativeButton(R.string.action_done, null)
                         .create();
         dialog.setOnShowListener(d -> animateExportDialog(content));
@@ -623,6 +659,37 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         if (!startViewer(saved.uri, MarkdownExporter.MIME_TYPE)
                 && !startViewer(saved.uri, "text/plain")) {
             noViewer();
+        }
+    }
+
+    private static int badgeIconFor(ExportFormat format) {
+        if (format == ExportFormat.PDF) return R.drawable.ic_pdf;
+        if (format == ExportFormat.BUNDLE) return R.drawable.ic_share;
+        return R.drawable.ic_markdown;
+    }
+
+    /**
+     * Hands the bundle to the system share sheet.
+     *
+     * <p>This is the whole of Quill's transport story for a shared note, and deliberately so.
+     * Quick Share, Bluetooth and mail are share <em>targets</em>, not APIs — there is nothing to
+     * integrate with, and building any of it by hand would be re-implementing a chooser the system
+     * already draws. What arrives on the other phone is a file, which the receiving Quill imports
+     * through the picker.
+     *
+     * <p>{@code FLAG_GRANT_READ_URI_PERMISSION} is what makes the uri usable by whichever app the
+     * user picks; without it the chooser opens and every target fails on read.
+     */
+    private void shareExport(NoteExportStore.Saved saved) {
+        Intent send = new Intent(Intent.ACTION_SEND)
+                .setType(QuillBundle.MIME_TYPE)
+                .putExtra(Intent.EXTRA_STREAM, saved.uri)
+                .putExtra(Intent.EXTRA_TITLE, saved.displayName)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivity(Intent.createChooser(send, getString(R.string.share_export_chooser)));
+        } catch (android.content.ActivityNotFoundException e) {
+            Snackbar.make(requireView(), R.string.share_no_target, Snackbar.LENGTH_LONG).show();
         }
     }
 
@@ -678,6 +745,8 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
                 // a hint, so it stays as easy to name as it was on the day it was created.
                 showUntitledHint(note.createdAt);
                 pendingCollectionId = note.collectionId;
+                noteCreatedAt = note.createdAt;
+                collectionRepository.isLocked(note.collectionId, locked -> collectionLocked = locked);
             }
             noteEditorView.loadSegments(segments);
             noteEditorView.setAudioClipTitle(clipTitle());
@@ -853,6 +922,19 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
             }
             if (id == R.id.action_export_markdown) {
                 exportNote(ExportFormat.MARKDOWN);
+                return true;
+            }
+            if (id == R.id.action_export_bundle) {
+                // A locked collection's notes don't leave the device — a bundle is plaintext, so
+                // sharing one would be the lock's only hole. The item stays tappable rather than
+                // being disabled or hidden, because a greyed-out row explains nothing and a missing
+                // one reads as a feature Quill doesn't have; the tap is what carries the reason.
+                if (collectionLocked) {
+                    Snackbar.make(requireView(), R.string.share_locked_collection,
+                            Snackbar.LENGTH_LONG).show();
+                    return true;
+                }
+                exportNote(ExportFormat.BUNDLE);
                 return true;
             }
             return false;

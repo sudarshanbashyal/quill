@@ -16,6 +16,43 @@
         android:maxSdkVersion="28" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
+    <!-- Nearby Connections, for the live whiteboard session. Nothing here reaches the internet:
+         Nearby picks among BLE, Bluetooth, Wi-Fi Direct and a local hotspot, which is why the list
+         spans all of them, and why it is this long.
+
+         The API-level split is Android's, not ours. Up to 30 the Bluetooth permissions are
+         unversioned and *location* is what gates BLE scanning; 31 renamed them into the
+         BLUETOOTH_SCAN/ADVERTISE/CONNECT trio; 33 added NEARBY_WIFI_DEVICES so Wi-Fi peer
+         discovery no longer has to borrow location either. Each is capped to the range where it
+         is still the right one, or the newer devices ask for permissions they don't use.
+
+         usesPermissionFlags="neverForLocation" on the two scanning permissions is the honest
+         declaration and worth making: Quill uses these to find one phone across a table, never to
+         work out where the user is. -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="28" />
+    <!-- Still required up to 31: below 31 it gates BLE scanning outright, and on 31/32 Nearby's
+         Wi-Fi discovery has no NEARBY_WIFI_DEVICES to use instead. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <!-- The join QR is scanned by Play Services' own scanner UI, in its process, so Quill never
+         holds CAMERA. Declared optional so a device without one still installs — it simply can't
+         be the joiner. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -38,9 +75,45 @@
             </intent-filter>
         </activity>
 
+        <!-- Exported so a file manager, mail client or Quick Share can hand a received .quill /
+             .quillboard / .quillpack straight to Quill instead of leaving the user to run Home's
+             manual Import option afterwards. A pathPattern can't be trusted here: a file arriving
+             over Quick Share is a content:// Uri typed application/octet-stream with no usable
+             path, so the mimeTypes below are the only thing worth matching on, and the real check
+             is still BundleReader/WhiteboardBundleReader/CollectionBundleReader's, tried in
+             sequence by HomeFragment.handleSharedFile after the file is actually opened — same
+             posture as the FAB's own *&#47;* picker filter. application/octet-stream is
+             deliberately broad for that reason: it's what most transports label an unrecognised
+             attachment, and narrowing it would silently exclude the common case. -->
+        <!-- singleTask: without it, tapping a second file while Quill is already open would launch
+             a second MainActivity instance stacked on the first (the default "standard" launch
+             mode's answer to any external VIEW intent) rather than reusing the running one and its
+             single nav host — this app is one Activity by design (see note.md). -->
         <activity
             android:name=".MainActivity"
-            android:exported="false" />
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- The vendor types QuillBundle/WhiteboardBundle/CollectionBundle actually declare
+                     (see their MIME_TYPE docs) — kept alongside the generic ones below because a
+                     transport is free to relabel on the way, and often does. -->
+                <data android:scheme="content" android:mimeType="application/x-quill" />
+                <data android:scheme="content" android:mimeType="application/x-quillboard" />
+                <data android:scheme="content" android:mimeType="application/x-quillpack" />
+                <data android:scheme="file" android:mimeType="application/x-quill" />
+                <data android:scheme="file" android:mimeType="application/x-quillboard" />
+                <data android:scheme="file" android:mimeType="application/x-quillpack" />
+                <data android:scheme="content" android:mimeType="application/zip" />
+                <data android:scheme="content" android:mimeType="application/json" />
+                <data android:scheme="content" android:mimeType="application/octet-stream" />
+                <data android:scheme="file" android:mimeType="application/zip" />
+                <data android:scheme="file" android:mimeType="application/json" />
+                <data android:scheme="file" android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
 
         <!-- Not exported: nothing outside the app has any business starting playback. Its actions
              arrive from its own notification's PendingIntents and from the media session. -->
