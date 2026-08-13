@@ -1,0 +1,23 @@
+<!-- Notifications. A vector rather than another PNG in the icon set: nothing in the Figma covers
+     this row, so there is no asset to match, and an outline bell at the same 2dp weight as
+     ic_user/ic_private is what makes the three settings rows read as one column. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:strokeWidth="2"
+        android:strokeColor="#000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M18,9a6,6 0 0,0 -12,0c0,5 -2,6.5 -2,6.5h16c0,0 -2,-1.5 -2,-6.5z" />
+    <path
+        android:strokeWidth="2"
+        android:strokeColor="#000000"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M13.7,19.5a2,2 0 0,1 -3.4,0" />
+</vector>

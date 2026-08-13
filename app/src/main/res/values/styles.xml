@@ -37,4 +37,125 @@
         <item name="android:insetBottom">0dp</item>
     </style>
 
+    <!--
+        The Profile screen's settings rows.
+
+        Styles rather than a custom view or an <include>, because what repeats here is only
+        appearance — every row has different children and a different listener, and there is no
+        behaviour to share. Pulling the padding, sizes and text scales up here is what keeps the
+        eight rows aligned to the same column as they're edited, which is the failure mode a
+        settings screen actually has.
+
+        Every style below states parent="" explicitly. A dotted name is how AAPT infers a parent,
+        so without it "Widget.Quill.SettingsRow.Icon" would inherit from the row — picking up its
+        match_parent width, its 56dp minimum, and its ripple — and "Widget.Quill.SettingsSectionLabel"
+        would look for a "Widget.Quill" that doesn't exist. The two that do want a parent name a
+        real Material one; SettingsCard.Danger is the single deliberate use of the implicit rule.
+    -->
+    <style name="Widget.Quill.SettingsSectionLabel" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/settings_section_spacing</item>
+        <item name="android:layout_marginBottom">@dimen/spacing_sm</item>
+        <item name="android:paddingHorizontal">@dimen/spacing_xs</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.06</item>
+    </style>
+
+    <!-- Flat tonal fill, no shadow — the same treatment note rows and collection cards get, so a
+         settings group reads as part of the same app rather than as a platform preference screen. -->
+    <style name="Widget.Quill.SettingsCard" parent="Widget.Material3.CardView.Filled">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="cardBackgroundColor">@color/surface_container</item>
+        <item name="cardCornerRadius">@dimen/card_corner_radius</item>
+        <item name="cardElevation">@dimen/card_elevation</item>
+        <item name="contentPadding">@dimen/settings_card_padding</item>
+    </style>
+
+    <!-- Outlined and unfilled. A red block the width of the screen would be the loudest thing on
+         a settings page whose other three groups are the ordinary ones; the border says "careful"
+         without the card having to shout it from the moment the screen opens. -->
+    <style name="Widget.Quill.SettingsCard.Danger">
+        <item name="cardBackgroundColor">@android:color/transparent</item>
+        <item name="strokeColor">@color/danger</item>
+        <item name="strokeWidth">@dimen/danger_card_stroke</item>
+    </style>
+
+    <style name="Widget.Quill.SettingsRow" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">@dimen/settings_row_min_height</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingHorizontal">@dimen/spacing_md</item>
+        <item name="android:paddingVertical">@dimen/spacing_sm</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="Widget.Quill.SettingsRow.Icon" parent="">
+        <item name="android:layout_width">@dimen/settings_icon_size</item>
+        <item name="android:layout_height">@dimen/settings_icon_size</item>
+        <item name="android:layout_marginEnd">@dimen/spacing_md</item>
+        <item name="tint">@color/text_secondary</item>
+    </style>
+
+    <!-- Weighted, so the title/summary column absorbs the leftover width and the value or switch
+         on the right keeps its natural size however long the label gets. -->
+    <style name="Widget.Quill.SettingsRow.Text" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:orientation">vertical</item>
+    </style>
+
+    <style name="Widget.Quill.SettingsRow.Title" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="Widget.Quill.SettingsRow.Summary" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!-- The current setting, shown on the right of a row that opens a chooser. Capped so a long
+         value wraps into the row rather than pushing the title out of it. -->
+    <style name="Widget.Quill.SettingsRow.Value" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">@dimen/spacing_sm</item>
+        <item name="android:maxWidth">@dimen/chip_max_width</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <!-- The row itself carries the click, so the switch must not: a switch that is separately
+         focusable gives the row two touch targets that do the same thing, and TalkBack reads it
+         as two controls. -->
+    <style name="Widget.Quill.SettingsRow.Switch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">@dimen/spacing_sm</item>
+        <item name="android:clickable">false</item>
+        <item name="android:focusable">false</item>
+    </style>
+
+    <style name="Widget.Quill.SettingsRow.Divider" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginStart">@dimen/spacing_md</item>
+        <item name="android:background">@color/divider</item>
+    </style>
+
 </resources>

@@ -100,23 +100,50 @@ usage anywhere in the codebase today). The one-pager specifically says "biometri
 land before Epic C lets a locked collection be shared to another device — otherwise
 there's a window where "locked" content leaves the device unencrypted.
 
-- [ ] **Lock/unlock UX**
-  - [ ] "Lock this collection" toggle in collection management UI
-  - [ ] `BiometricPrompt` gate before a locked collection's notes are opened/decrypted
-  - [ ] Non-biometric device fallback (device PIN/pattern via
+- [x] **App-wide lock (done 2026-08-13)** — a gate, not encryption, and labelled as such in the UI
+  - [x] Profile screen (4th bottom-nav tab): display name, notifications placeholder, security,
+        danger zone
+  - [x] Optional app lock via `BiometricPrompt` with `BIOMETRIC_STRONG | DEVICE_CREDENTIAL`,
+        re-prompting after a configurable grace period (default 1 min)
+  - [x] Gate raised in `onPause` too, so the recents thumbnail can't leak the open note
+  - [x] Delete-all-data with typed confirmation (`DataWipe`)
+  - Decision: **no Quill-specific PIN, at either level.** A custom passcode needs a recovery path
+    that either weakens the lock or loses the notes, and it can't gate a Keystore key — which is
+    what the per-collection work below actually needs. One device credential everywhere.
+- [x] **Lock/unlock UX (done 2026-08-13)**
+  - [x] "Lock collection" / "Remove lock" in the collection long-press manage dialog
+  - [x] `BiometricPrompt` gate before a locked collection's notes are opened/decrypted
+  - [x] Non-biometric device fallback (device PIN/pattern via
         `BiometricManager.Authenticators.DEVICE_CREDENTIAL`)
-- [ ] **Actual cryptographic protection, not just an access gate**
-  - [ ] Per-collection key in Android Keystore, generated with
-        `setUserAuthenticationRequired(true)`
-  - [ ] Encrypt locked collections' note content (`notes.title`, `notes.content_blob`, and
-        the media files referenced by `note_segments.file_path`) at rest; decrypt only
-        after biometric auth. Note this changed shape with the Markdown migration — the
-        body is now one blob per note, not per-segment `text_content` rows
-  - [ ] Handle key invalidation gracefully (e.g. user re-enrolls a fingerprint) instead
-        of silently locking the user out of their own data
-- [ ] **Migration cases**
-  - [ ] Locking a previously-unlocked collection: encrypt existing notes in place
-  - [ ] Unlocking: decrypt and re-store in plaintext, with explicit user confirmation
+  - [x] Unlock lasts the session; `CollectionLock.relockAll()` on `MainActivity.onStop`
+- [x] **Actual cryptographic protection, not just an access gate**
+  - [x] Per-collection AES-256-GCM key in Android Keystore, `setUserAuthenticationRequired(true)`
+        with a 5-minute validity window (`setUserAuthenticationParameters` on API 30+,
+        `setUserAuthenticationValidityDurationSeconds` below). Time-bound rather than per-use
+        `CryptoObject`, or reading a collection would cost one prompt per note
+  - [x] `notes.title` (Base64'd, TEXT column) and `notes.content_blob` (raw) encrypted at rest
+  - [ ] **Media files (`note_segments.file_path`) are still plaintext on disk** — see the
+        deferral note below. This is the one part of the epic not delivered
+  - [x] Key invalidation handled: `KeyGoneException` surfaces a dialog offering to keep or
+        delete the unreadable notes, rather than silently eating the collection
+- [x] **Migration cases**
+  - [x] Locking encrypts existing notes in place, in one transaction with the flag flip
+  - [x] Unlocking decrypts and re-stores in plaintext, behind an explicit confirmation
+  - [x] Moving a note in or out of a locked collection converts it (`assignCollection`) —
+        without this the row's bytes and its `collection_id` would disagree about the format
+- [x] **Leak surfaces closed while a collection is shut**: Home's note list, the pinned band,
+      search, flashcard decks and the quiz list all exclude it; `notes_fts` rows are deleted
+      on lock (the index stores the body as plain text); flashcards for those notes are
+      deleted on lock for the same reason (`front`/`back` are plaintext columns), which costs
+      the SM-2 schedule and is stated in the confirmation dialog
+
+> **Deferred — media encryption.** Images and recordings referenced by `note_segments.file_path`
+> are unreachable through the UI while a collection is shut, but the files themselves are still
+> unencrypted in `filesDir`. Doing this properly means a decrypt-on-demand path through all four
+> decode sites (`BitmapUtils`, `PdfExporter`, `AudioPlayback`, `WaveformCache`); audio in
+> particular needs a real seekable file, so it can't be done in memory the way images can. A
+> half-version that writes decrypted temp files and forgets to clean them up would be worse than
+> the current state, which is why it is called out rather than rushed.
 
 ---
 
@@ -325,10 +352,26 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
   - [ ] Per-card management (inspect/edit/delete an individual card, rather than a note's
         whole deck)
   - [ ] Global review session screen — today's due cards across *all* notes
-- [ ] **Reminders (background infrastructure, reusable beyond flashcards)**
-  - [ ] Notification channel setup
-  - [ ] WorkManager/AlarmManager job to notify when cards are due
-  - [ ] User-configurable reminder schedule (time of day / frequency)
+- [x] **Reminders (background infrastructure, reusable beyond flashcards) — done 2026-08-13**
+  - [x] Notification channel (`quill_study_reminders`, IMPORTANCE_DEFAULT, VISIBILITY_PRIVATE)
+  - [x] WorkManager job to notify when cards are due (`reminders/StudyReminderWorker`)
+  - [x] User-configurable time of day, via `MaterialTimePicker` on the Profile screen
+  - [x] Tapping the notification lands on the Flashcards tab, with the tab selected
+  - Design: **one-time work that re-arms itself**, not `PeriodicWorkRequest`. A periodic
+    request's period runs from enqueue and the system slides each run within a flex window, so
+    "remind me at 20:00" drifts into the afternoon within a week. Each run computes the delay to
+    the next occurrence from the calendar, which also absorbs DST and timezone changes. The
+    re-arm is in a `finally`, so a run that throws still schedules tomorrow's.
+  - Nothing is sent when nothing is due — a daily "0 cards due" is how a reminder teaches
+    someone to ignore it.
+  - Locked collections are excluded, and in a background worker that means *all* of them
+    (nothing is unlocked). Intended: a lock-screen notification naming a collection the user
+    deliberately encrypted would leak both its existence and their neglect of it.
+  - **Reusable beyond flashcards, as the epic asks**: `StudyReminders.sync()` is the whole
+    scheduling contract, so a second reminder type needs a worker and a preference, not new
+    infrastructure. Epic J's watch tile and Epic I's home-screen widget can read
+    `FlashcardRepository.countDueSync` directly — that's the "projected count" they were
+    blocked on.
 
 ---
 

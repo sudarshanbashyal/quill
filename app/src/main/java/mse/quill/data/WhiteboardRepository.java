@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import mse.quill.data.model.Whiteboard;
@@ -91,14 +92,37 @@ public class WhiteboardRepository {
         });
     }
 
-    /** Most recently edited first, so Home's section reads like the notes list. */
+    /**
+     * Most recently edited first, so Home's section reads like the notes list.
+     *
+     * <p>Boards belonging to a shut collection's notes drop out, the same way those notes do. The
+     * strokes are not encrypted by the lock — the migration converts note text and nothing else —
+     * so this filter is the whole of what keeps a locked note's drawing off Home, thumbnail
+     * included.
+     *
+     * <p>Two ways a board can belong to a note, and both are checked: {@code note_id}, set when the
+     * board was created from a note, and {@link WhiteboardLinks}, which records the embeds — "Import
+     * whiteboard" attaches an existing board without changing whose it is. A board that is neither
+     * created from nor embedded in any note is in no collection and is never hidden.
+     */
     public void loadWhiteboards(OnWhiteboardsLoaded cb) {
         executors.diskIO(() -> {
-            Cursor c = appDatabase.getWritableDatabase().rawQuery(
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
+
+            List<String> args = new ArrayList<>(hidden);
+            args.addAll(hidden);
+
+            Cursor c = db.rawQuery(
                     "SELECT w.id, w.note_id, w.title, w.created_at, w.updated_at, w.background, " +
                             "(SELECT COUNT(*) FROM strokes s WHERE s.whiteboard_id = w.id) AS stroke_count " +
-                            "FROM whiteboards w ORDER BY w.updated_at DESC, w.created_at DESC",
-                    null);
+                            "FROM whiteboards w LEFT JOIN notes n ON n.id = w.note_id " +
+                            // hiddenClause passes rows whose n.collection_id is null, which an
+                            // unowned board's outer join gives it for free.
+                            "WHERE 1 = 1 " + NoteCrypto.hiddenClause(hidden) +
+                            WhiteboardLinks.hiddenClause(hidden) +
+                            "ORDER BY w.updated_at DESC, w.created_at DESC",
+                    args.toArray(new String[0]));
             List<Whiteboard> whiteboards = new ArrayList<>();
             try {
                 while (c.moveToNext()) {
@@ -164,32 +188,44 @@ public class WhiteboardRepository {
         appDatabase.getWritableDatabase().update("whiteboards", v, "id = ?", new String[]{id});
     }
 
-    /** Fetch a whiteboard by its id. Returns null if not found. */
+    /**
+     * Fetch a whiteboard by its id.
+     *
+     * @return null if there is no such board, or if it belongs to a note in a shut collection —
+     *     which every caller here already renders as "this whiteboard is gone", the same answer a
+     *     deleted board gets. Holding an id is not permission to read the board: the note embed,
+     *     the thumbnailer and the share bundle all reach boards this way.
+     */
     public Whiteboard getByIdSync(String id) {
-        Cursor c = appDatabase.getReadableDatabase().query(
-                "whiteboards", null,
-                "id = ?", new String[]{id},
-                null, null, null);
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
+        Cursor c = db.query("whiteboards", null, "id = ?", new String[]{id}, null, null, null);
         Whiteboard wb = null;
         if (c.moveToFirst()) {
             wb = fromCursor(c);
         }
         c.close();
-        return wb;
+        if (wb == null) return null;
+
+        if (NoteCrypto.isNoteHidden(db, wb.noteId)) return null;
+        return WhiteboardLinks.isHidden(db, wb.id, NoteCrypto.hiddenCollectionIds(db)) ? null : wb;
     }
 
-    /** Fetch the whiteboard belonging to a given note (a note has at most one whiteboard). */
+    /** Fetch the whiteboard belonging to a given note (a note has at most one whiteboard). Null
+     *  for a note in a shut collection, as {@link #getByIdSync}. */
     public Whiteboard getByNoteIdSync(String noteId) {
-        Cursor c = appDatabase.getReadableDatabase().query(
-                "whiteboards", null,
-                "note_id = ?", new String[]{noteId},
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
+        if (NoteCrypto.isNoteHidden(db, noteId)) return null;
+
+        Cursor c = db.query("whiteboards", null, "note_id = ?", new String[]{noteId},
                 null, null, null);
         Whiteboard wb = null;
         if (c.moveToFirst()) {
             wb = fromCursor(c);
         }
         c.close();
-        return wb;
+        if (wb == null) return null;
+
+        return WhiteboardLinks.isHidden(db, wb.id, NoteCrypto.hiddenCollectionIds(db)) ? null : wb;
     }
 
     static Whiteboard fromCursor(Cursor c) {

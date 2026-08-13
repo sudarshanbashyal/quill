@@ -47,7 +47,10 @@
                 <!-- Playfair Display, the display serif from the MSE Figma file. Its font-family
                      ships real italic and bold cuts (see font/playfair_display.xml), so the
                      textStyle below selects them rather than synthesising a slant. -->
+                <!-- Text set in code: it gains the display name once Profile has one (see
+                     HomeFragment.renderGreeting), and falls back to this. -->
                 <TextView
+                    android:id="@+id/home_greeting"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/home_greeting"

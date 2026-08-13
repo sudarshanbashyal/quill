@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import mse.quill.data.model.Quiz;
@@ -95,15 +96,32 @@ public class QuizRepository {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             abandonStaleSync(db);
 
+            // A quiz row carries its note's title, so a shut collection's quizzes would list those
+            // titles on the Quizzes tab. Sitting one isn't possible either way — the session loads
+            // the note through NoteRepository, which refuses a locked one — but the list is a leak
+            // on its own.
+            Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
+            Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
+            List<String> args = new ArrayList<>();
+            args.add(QuizAttempt.STATUS_COMPLETED);
+            args.add(QuizAttempt.STATUS_COMPLETED);
+            args.addAll(hidden);
+
             List<Quiz> quizzes = new ArrayList<>();
             Cursor c = db.rawQuery(SELECT_QUIZ_SUMMARY +
                             "WHERE n.deleted_at IS NULL " +
-                            "GROUP BY q.id, q.note_id, n.title, q.created_at " +
+                            NoteCrypto.hiddenClause(hidden) +
+                            GROUP_QUIZ_SUMMARY +
                             "ORDER BY (CASE WHEN MAX(a.started_at) IS NULL THEN 0 ELSE 1 END), " +
                             "MAX(a.started_at) DESC, q.created_at DESC",
-                    new String[]{QuizAttempt.STATUS_COMPLETED, QuizAttempt.STATUS_COMPLETED});
+                    args.toArray(new String[0]));
             try {
-                while (c.moveToNext()) quizzes.add(readQuiz(c));
+                while (c.moveToNext()) {
+                    // An open collection's quiz still stores its title encrypted; readQuiz decrypts
+                    // it, and drops the row if the key has gone since the collection was opened.
+                    Quiz quiz = readQuiz(c, lockedIds);
+                    if (quiz != null) quizzes.add(quiz);
+                }
             } finally {
                 c.close();
             }
@@ -112,18 +130,31 @@ public class QuizRepository {
         });
     }
 
-    /** One quiz by id, or null if it has been deleted from underneath the screen showing it. */
+    /**
+     * One quiz by id, or null if it has been deleted from underneath the screen showing it — or if
+     * its collection has been shut since, which both callers treat the same way and leave.
+     */
     public void loadQuiz(String quizId, OnQuizReady cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             abandonStaleSync(db);
 
+            Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
+            Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
+            List<String> args = new ArrayList<>();
+            args.add(QuizAttempt.STATUS_COMPLETED);
+            args.add(QuizAttempt.STATUS_COMPLETED);
+            args.add(quizId);
+            args.addAll(hidden);
+
             Quiz quiz = null;
             Cursor c = db.rawQuery(SELECT_QUIZ_SUMMARY +
-                            "WHERE q.id = ? GROUP BY q.id, q.note_id, n.title, q.created_at",
-                    new String[]{QuizAttempt.STATUS_COMPLETED, QuizAttempt.STATUS_COMPLETED, quizId});
+                            "WHERE q.id = ? " +
+                            NoteCrypto.hiddenClause(hidden) +
+                            GROUP_QUIZ_SUMMARY,
+                    args.toArray(new String[0]));
             try {
-                if (c.moveToNext()) quiz = readQuiz(c);
+                if (c.moveToNext()) quiz = readQuiz(c, lockedIds);
             } finally {
                 c.close();
             }
@@ -243,19 +274,36 @@ public class QuizRepository {
                     "SUM(CASE WHEN a.status = ? THEN 1 ELSE 0 END), " +
                     "MAX(CASE WHEN a.status = ? AND a.total > 0 " +
                     "THEN (a.score * 100) / a.total ELSE NULL END), " +
-                    "MAX(a.started_at) " +
+                    "MAX(a.started_at), n.collection_id, " +
+                    // Only so an unnamed note's quiz can be titled with the same dated fallback the
+                    // rest of the app shows it under.
+                    "n.created_at " +
                     "FROM quizzes q JOIN notes n ON n.id = q.note_id " +
                     "LEFT JOIN quiz_attempts a ON a.quiz_id = q.id ";
 
-    private static Quiz readQuiz(Cursor c) {
+    /** The GROUP BY every listing off {@link #SELECT_QUIZ_SUMMARY} shares. */
+    private static final String GROUP_QUIZ_SUMMARY =
+            "GROUP BY q.id, q.note_id, n.title, n.collection_id, n.created_at, q.created_at ";
+
+    /**
+     * @return null if the note's title is encrypted and can no longer be read — the collection is
+     *     shut again by then, and a quiz named in ciphertext is worse than one that isn't listed.
+     */
+    private static Quiz readQuiz(Cursor c, Set<String> lockedIds) {
+        String collectionId = c.isNull(7) ? null : c.getString(7);
+        String title = c.isNull(2)
+                ? "" : NoteCrypto.titleForDisplay(lockedIds, collectionId, c.getString(2));
+        if (title == null) return null;
+
         Quiz quiz = new Quiz();
         quiz.id = c.getString(0);
         quiz.noteId = c.getString(1);
-        quiz.noteTitle = c.isNull(2) ? "" : c.getString(2);
+        quiz.noteTitle = title;
         quiz.createdAt = c.getLong(3);
         quiz.attempts = c.getInt(4);
         quiz.bestPercent = c.isNull(5) ? null : c.getInt(5);
         quiz.lastAttemptAt = c.isNull(6) ? null : c.getLong(6);
+        quiz.noteCreatedAt = c.getLong(8);
         return quiz;
     }
 

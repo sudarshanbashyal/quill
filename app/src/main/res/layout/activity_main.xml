@@ -54,4 +54,72 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- The app lock's gate. Last child on purpose: a ConstraintLayout draws its children in order,
+         so being declared after the nav host, the bottom bar and the now-playing bar is what puts
+         it over all three — a gate that left the tabs tappable underneath would be scenery.
+
+         An overlay in this window rather than an Activity of its own, because a separate Activity
+         would have to be launched before the content it hides was ever composed, and the moment it
+         got that wrong the notes would flash up behind it. Here there is nothing to race: the view
+         is either visible or it isn't, and MainActivity sets that before the frame is drawn.
+
+         clickable/focusable are what stop touches and TalkBack reaching what's behind. -->
+    <LinearLayout
+        android:id="@+id/app_lock_gate"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@color/app_background"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/spacing_lg"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:visibility="gone">
+
+        <ImageView
+            android:layout_width="@dimen/app_lock_icon_size"
+            android:layout_height="@dimen/app_lock_icon_size"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_private"
+            app:tint="@color/brand_purple" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:text="@string/app_lock_gate_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <!-- Empty until something goes wrong, and gone rather than blank so the button doesn't
+             shift down a line the first time a lockout is reported. -->
+        <TextView
+            android:id="@+id/app_lock_message"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:visibility="gone"
+            tools:text="Too many attempts. Try again in a moment."
+            tools:visibility="visible" />
+
+        <!-- The system dialog opens by itself when the gate appears; this is for after it has been
+             dismissed, which otherwise leaves a locked screen with no way forward. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/app_lock_unlock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_lg"
+            android:text="@string/app_lock_gate_action" />
+
+    </LinearLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

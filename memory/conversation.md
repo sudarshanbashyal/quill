@@ -2013,3 +2013,295 @@ the joiner, and wipes both boards when triggered from the host). All working. Al
 intentional, not a leftover: a joiner keeps the host's drawing in its own local `strokes` table
 after the session ends — joining is a one-time copy, the two boards are independent again once
 the session is over, same shape as importing a shared note.
+
+## 2026-08-13 — Profile screen + optional app-wide biometric lock
+
+**Asked:** a security pass, starting with an optional biometric lock at app open, toggled from a
+Profile page; per-collection PIN locks floated as a second idea.
+
+**Design decision — one authenticator, no Quill passcode.** The per-collection *PIN* idea was
+argued down and replaced with the same device credential the app lock uses
+(`BIOMETRIC_STRONG | DEVICE_CREDENTIAL`). Three reasons, in order of weight: a custom PIN needs a
+recovery path, and every version of that either weakens the lock or loses the notes; a custom PIN
+cannot gate an Android Keystore key, so Epic B's real encryption would have to hand-roll its own
+crypto instead of using `setUserAuthenticationRequired(true)`; and two different secrets for two
+levels of the same app is a model users won't hold. Per-collection locking stays in Epic B — this
+pass is the gate only.
+
+**Stated plainly in the UI, because it's the honest framing:** the app lock is a door, not a safe.
+`quill.db` is plaintext on disk either way, so this defends against a phone already unlocked and in
+someone else's hand — nothing more. The Profile screen says so under the toggle, so the switch
+can't be mistaken for encryption.
+
+**Built:** `AppLock` (prefs, availability, session state, prompt), `ProfilePreferences` (display
+name, notifications placeholder), `ProfileFragment` + a fourth bottom-nav tab, `DataWipe`, and the
+gate overlay in `activity_main`. Home's greeting picks up the display name.
+
+**Grace period defaults to 1 minute, not "Immediately".** Importing a file, copying from another
+app, answering a notification — all stop the Activity, so a zero grace re-prompts on the way back
+from each one, which is the behaviour that gets app locks switched off.
+
+**Recents snapshot is part of the lock.** The gate is raised in `onPause`, not just `onStart`:
+without it the task switcher keeps showing whatever note was open, and the lock is bypassed by a
+gesture. The *grace period* still starts in `onStop`, because a dialog or the system's own
+biometric sheet pauses nothing but does sit in front of the app.
+
+**Bug found on-device, worth remembering:** `BiometricPrompt`'s callback lives in an
+Activity-scoped ViewModel that holds exactly one callback — the most recently constructed prompt's.
+The gate built its prompt once in `onCreate`; the moment the user had visited the Profile tab, that
+fragment's prompt claimed the slot, and the gate's unlock result was delivered to Profile's
+listener instead. Symptom: credential accepted (`resetLockout … hat=present` in logcat), gate stays
+up over an unlocked app. Fix: `AppLock.authenticate()` now always constructs immediately before
+showing, so claiming and showing are inseparable, and `MainActivity` re-claims in `onCreate` *only
+when the gate is due* — unconditionally would swallow Profile's own answer after a rotation.
+
+**Delete-all-data** is two steps: a warning naming what goes, then a typed `DELETE` with the
+confirm button disabled until it matches. One "are you sure?" is dismissed by the same reflex that
+opened it, and this is the only action in Quill with nothing behind it. The wipe drops the DB,
+empties `filesDir`/`cacheDir` (recordings and images would otherwise be orphaned but still on
+disk), clears all three preference files, and relaunches via `CLEAR_TASK` — the back stack holds
+ids of rows that no longer exist.
+
+**Verified on emulator-5554**, including the destructive path: set a device PIN with
+`locksettings set-pin 1234`, backed the app data up with `run-as … tar` first, confirmed the wipe
+emptied every table and reset both prefs to `<map/>`, then restored the backup (1 note, 3
+whiteboards, 5 strokes back). Note the emulator now has PIN 1234 set and the app lock left on.
+
+## 2026-08-13 (later) — Collection lock: real per-collection encryption
+
+**Asked:** implement the collection lock, and cap the display name at 20 characters allowing
+letters, numbers, `-`, `_` and emoji.
+
+**Display name** (`ui/profile/DisplayName`): an `InputFilter` on the field rather than validation
+on save, so the keystroke is refused instead of the text being accepted and complained about
+later. Counted in **code points, not chars** — an emoji outside the BMP is a surrogate pair, so a
+char-based cap would charge 😀 twice and a truncation could cut between the halves and leave a
+lone surrogate. Emoji are admitted by `Character.getType` (OTHER_SYMBOL plus the modifier /
+non-spacing / enclosing / format types that carry ZWJ sequences, skin tones, variation selectors
+and keycaps) rather than by a range list that would rot. Covered by `DisplayNameTest` — 11 JVM
+tests, which is also the only practical way to test the emoji cases, since injected key events
+can't produce them. **Note: spaces are excluded**, per the literal list given; worth confirming.
+
+**Crypto design.** One AES-256-GCM key per collection in the Android Keystore
+(`quill.collection.<id>`), `setUserAuthenticationRequired(true)` with a **5-minute validity
+window** rather than a per-use `CryptoObject` — the per-use form means a fingerprint per cipher
+operation, i.e. per note, for someone reading through a collection. The key material never leaves
+the TEE, which is the property that makes this encryption rather than a second lock screen: a copy
+of `quill.db` is undecryptable anywhere else, even with the user's PIN.
+
+**No per-row "encrypted" flag.** Whether a row is ciphertext is decided solely by its collection's
+`biometric_locked` column, which the migrations flip *inside the same transaction* that rewrites
+the rows. A second source of truth could disagree with the first, and a flag an attacker can clear
+is worse than none.
+
+**The leak surfaces were most of the work.** Encrypting the notes is not the same as hiding them:
+`getAllNotesSync` had no collection filter, so a shut collection's previews — the first line of
+each note — would still be on Home, including pinned ones that never go through a collection
+screen. Also closed: search (which filters the same list), the flashcard decks list, the quiz
+list. Two stores had to be emptied rather than filtered, because they hold *plaintext copies*:
+`notes_fts` (the body as searchable text) and `flashcards` (`front`/`back` copied from Q&A
+blocks). Deleting the cards costs the SM-2 schedule, so the confirmation dialog says so.
+
+**A hole worth remembering:** `assignCollection` set `collection_id` and nothing else. Moving a
+plaintext note *into* a locked collection would leave bytes and format disagreeing — read as
+ciphertext, fails to decrypt. It now converts in both directions, or abandons the move.
+
+**Mid-edit re-lock is handled, not ignored.** If the key's window closes while a note is open,
+`saveNote` writes nothing and reports `onNeedsUnlock`; the editor offers a Snackbar action to
+re-authenticate and retry. Nothing is lost — the editor still holds the text — which is why it's
+an offer rather than a warning.
+
+**Verified end-to-end on emulator-5554**, with the DB pulled and inspected at each step: locking
+produced Base64/binary ciphertext with **no plaintext anywhere in the .db file** (`strings | grep`
+found nothing); backgrounding re-locked and the notes vanished from Home; re-opening prompted and
+decrypted; editing while open re-encrypted on save; removing the lock decrypted everything back and
+cleared the flag. Test data was seeded by pushing a modified DB and removed afterwards by restoring
+a `run-as tar` backup.
+
+**Not done, stated rather than hidden:** media files (`note_segments.file_path`) are still
+plaintext on disk. They're unreachable through the UI while a collection is shut, but a filesystem
+copy gets the images and recordings. See the deferral note in requirements.md — it needs a
+decrypt-on-demand path through four decode sites, and audio needs a real seekable file.
+
+## 2026-08-13 (later still) — Study reminders for flashcards
+
+**Asked:** make the Profile screen's placeholder "Study reminders" switch real.
+
+**One-time work that re-arms itself, not `PeriodicWorkRequest`.** This is the decision the whole
+feature turns on. A periodic request measures its period from whenever it was enqueued and the
+system may slide each run within a flex window, so "remind me at 20:00" drifts into the afternoon
+inside a week — there is no way to pin periodic work to a wall clock. Instead each run is a
+`OneTimeWorkRequest` whose initial delay is computed to the next occurrence of the chosen time,
+and the worker queues tomorrow's before it finishes. Recomputing from the calendar every run is
+also what absorbs a DST change, a timezone move, or the device being off over the scheduled
+moment — none of which a fixed 24-hour period survives.
+
+**WorkManager over AlarmManager** for the persistence: it re-registers its queue after a reboot by
+itself, where AlarmManager would need a `BOOT_COMPLETED` receiver, its permission, and the
+discipline to re-arm from it.
+
+**The re-arm is in a `finally`.** A reminder that stopped scheduling itself because one run threw
+would be a feature that silently died months later. `MainActivity.onCreate` also calls
+`StudyReminders.sync()` on every launch as the recovery path — some OEM builds drop WorkManager's
+pending jobs on force-stop, and without that the switch would keep claiming to be on.
+
+**Nothing is sent when nothing is due.** A daily "0 cards due" is how a reminder trains someone to
+ignore it, and then to switch it off.
+
+**Locked collections are excluded**, and in a background worker that is total — nothing is
+unlocked there, so every locked collection is hidden by the same `NoteCrypto.hiddenCollectionIds`
+the UI uses. That's intended, not a limitation: a lock-screen line reading "3 cards due" for a
+collection the user deliberately encrypted would announce both that it exists and that they've
+been neglecting it. The Profile screen says so under the switch, or the absence looks like a bug.
+
+**Permission at the moment it means something:** POST_NOTIFICATIONS is requested when the switch
+is first turned on, not at launch, and a refusal leaves the switch *off* rather than on-and-mute.
+
+**Verified on emulator-5554, end to end:** job scheduled at `+3h41m47s` from 16:18 for a 20:00
+reminder (exact); notification posted with the right plurals ("3 flashcards are due" / "In 1
+deck."), on the right channel, `VISIBILITY_PRIVATE`; tapping landed on the Flashcards tab with the
+tab selected; the time picker came up in the device's 12-hour format pre-set to the stored value;
+and a run with nothing due posted nothing while still re-arming for tomorrow. Turning the switch
+off cancelled the job (confirmed via `dumpsys jobscheduler`).
+
+**Gotcha worth recording for future emulator testing:** the emulator's clock was four days *behind*
+the host's. The first attempt seeded `next_review` from `date +%s` on the Mac, so the cards weren't
+due by the device's reckoning and the worker correctly did nothing — which looked like a bug for
+about ten minutes. Seed time-sensitive rows from `adb shell date`, not the host clock.
+
+**`StudyRemindersTest`** covers the delay arithmetic on the JVM: time later today, time already
+passed, time exactly now (must be tomorrow — a zero delay would re-fire the worker in a loop), the
+midnight boundary, and the invariant that the delay is always in (0, 24h].
+
+## 2026-08-13 (later still) — Two leaks in the collection lock: ciphertext titles, visible whiteboards
+
+Both reported as bugs against the lock shipped earlier today, and both the same mistake in two
+places: **hiding a shut collection is only half of what a read path owes the lock.** The other half
+is that a collection which *is* open is still encrypted at rest, so its titles come back from SQL
+as Base64 and have to be decrypted on the way out.
+
+**Encrypted titles on the Flashcards and Quizzes tabs.** `FlashcardRepository.loadDecks` and
+`QuizRepository`'s summary query both filtered on `NoteCrypto.hiddenCollectionIds` and then rendered
+`n.title` straight from the cursor. Unlock the collection and its decks reappear — titled in
+ciphertext. Both queries now also select `n.collection_id` and run the title through
+`NoteCrypto.titleForDisplay(lockedIds, …)`, which passes plaintext through, decrypts what's locked,
+and returns null when the key has gone (`decryptTitleOrNull` re-locks the collection on the way
+out) — in which case the row is dropped rather than shown unnamed. Two new helpers carry this:
+`hiddenOf(lockedIds)`, so a caller that needs *both* sets doesn't derive one twice, and
+`titleForDisplay`. `NoteRepository.getAllNotesSync` lost its duplicated copy of the derivation.
+
+`loadQuiz` — the single-quiz path behind the detail and session screens — had no lock filter at all
+and now has one. Returning null there is already the "deleted from underneath you" case both
+callers handle by leaving the screen.
+
+**Whiteboards were never gated at all.** `loadWhiteboards` had no notion of the lock, so a board
+attached to a note in a locked collection sat on Home with its *thumbnail rendered* — the drawing
+itself, not just a title. The lock migration converts note text and nothing else, so strokes are
+plaintext rows regardless; this filter is the whole of what keeps a locked note's drawing off the
+screen. `getByIdSync`/`getByNoteIdSync` refuse a hidden board too — holding an id is not permission
+to read it, and the note embed, the thumbnailer and the share bundle writer all reach boards that
+way. A standalone board (no `note_id`) is in no collection and is never hidden; the `LEFT JOIN`
+gives it a null `collection_id`, which `hiddenClause` already passes.
+
+`WhiteboardFragment` also re-checks on resume and leaves if the board no longer resolves. That's
+for the case the list filter can't reach: leaving the app re-locks every open collection
+(`MainActivity.onStop`), so a board opened through a locked note would otherwise still be sitting
+there, fully drawn, on return.
+
+**Verified on emulator-5554** with a fixture DB pushed via `run-as` (a locked collection and an
+open one, each with a note, a board with strokes, a deck and a quiz; plus standalone boards). The
+pre-fix build put "Private sketch" on Home with a visible stroke while correctly hiding its note;
+the fixed build drops it and keeps the open collection's board and both standalone boards. The
+Flashcards and Quizzes tabs list only the open collection's note, titled normally.
+
+**Emulator gotcha:** `screencap` returns an all-black PNG while `BiometricPrompt` is up, and the
+emulator has no fingerprint enrolled, so `adb emu finger touch 1` does nothing. Testing anything
+behind the app-lock gate means flipping `app_lock_enabled` to false in `shared_prefs/
+security_prefs.xml` (back up the original and put it back afterwards).
+
+**Still plaintext at rest, and knowingly so:** whiteboard strokes, board titles, and the `w.title`
+column are not encrypted by the lock — only note titles and bodies are. Everything above is
+display-level gating over unencrypted rows. Encrypting strokes would need a stroke-blob migration
+and a decision about what live collaboration does with a locked board; not attempted here.
+
+## 2026-08-13 (same session) — "Import whiteboard" left the board visible after locking
+
+Follow-up to the whiteboard gating above: creating a board *from* a note hid it correctly, importing
+an existing board into a note didn't. The cause is a real gap in the model, not an oversight in the
+filter. `whiteboards.note_id` records the note a board was **created from**; "Import whiteboard"
+attaches an existing board by writing an embed line into the note's Markdown and never touches that
+column. So the board stayed unowned as far as SQL was concerned, and the gate had nothing to test.
+
+**Why the Markdown can't be the answer.** The obvious fix — ask which notes reference this board —
+fails exactly where it matters: a locked note's body is ciphertext. The reference is unreadable
+precisely when we need to know it's there.
+
+**So there is now a `note_whiteboards` table** (`note_id`, `whiteboard_id`, many-to-many, DB
+version 9), and it is emphatically *an index, not a source of truth*: rewritten from the document on
+every save, on both directions of the lock migration, and on bundle import. Nothing reads it to
+decide what a note contains. Many-to-many because embedding is — the same board can be imported into
+a second note without leaving the first, so a board is hidden if **any** note holding it is hidden.
+That means a board embedded in both a locked and an unlocked note disappears from the unlocked one
+too; the safe direction, and the alternative is a board the lock doesn't cover.
+
+`NoteDocument.whiteboardIdsIn(markdown)` reads the embed lines, so the link rows and
+`toMarkdown` can't drift apart the way a private regex would.
+
+**Backfill, in three places, because one isn't enough.** The migration seeds the table from every
+note it can read — which is every note *not* in a collection that was already locked when the
+upgrade ran. Those it skips get their rows the next time `CollectionLockRepository` holds their
+plaintext, which is either direction of lock/unlock, or on the next save. The residual gap is a
+collection locked before the upgrade and never touched again; it closes the moment it's opened and
+anything is saved.
+
+**Found while in there:** `ensureAdditiveSchema` never added `collections.biometric_locked`. It
+shipped in `onCreate` only, so any database created before yesterday would upgrade into a build that
+queries a column it doesn't have — "no such column" on every read that consults the lock, on exactly
+the devices with notes worth locking. Fresh installs and the wiped emulator hid it. Added as an
+`addColumnIfMissing` step.
+
+**Verified on emulator-5554, through the real UI:** upgraded a v8 database (user_version went to 9,
+and the backfill correctly picked up a pre-existing embed nobody remembered — the untitled note
+holds `seed-wb`); imported "Scratch pad" into a note via Import whiteboard, which wrote the embed
+line and the link row; flipped that collection's `biometric_locked` and restarted — the imported
+board disappeared from Home along with the board owned by the same note, while unembedded standalone
+boards stayed. Flipping the flag back brought both back. The picker itself already excluded the
+locked collection's board, since it reads `loadWhiteboards`.
+
+## 2026-08-13 (same session) — Untitled notes had no name on the study tabs; the lock gate showed behind the share sheet
+
+**Two more, both older than the lock work.** Neither was a regression from the encryption fixes,
+which is worth recording because the first one arrived as "I don't see the titles *now*".
+
+**Unnamed notes lost their name on Flashcards and Quizzes.** An untitled note stores an empty title
+on purpose — the editor offers "Untitled Note - <date>" as the field's *hint*, one keystroke from
+being replaced, and every list resolves it at display time through `NoteDisplayUtils`. Home does
+that; the two study tabs never did, so a deck or quiz made from an unnamed note arrived with a blank
+title line. `git show HEAD` confirms the same `""` before any of this session's changes.
+
+Fixed at the display end, where the fallback already lives, rather than by writing the generated
+name into the column — persisting it would turn a placeholder into a real title the user then has to
+delete before typing their own, which is exactly what the hint exists to avoid. `resolveTitle` gained
+an overload taking `(title, createdAt)` for callers holding a deck or a quiz rather than a `Note`,
+and both queries now carry `n.created_at` so the fallback can be dated from the note rather than
+from the quiz row. The delete confirmations name the deck properly now too.
+
+**The lock gate painted behind every share sheet.** `onPause` raised the gate whenever the app lock
+was on. The comment explained why — keeping the open note out of the recents thumbnail — but it
+treated every pause as a departure, and most pauses aren't: a share chooser is translucent and pauses
+without stopping, so "Quill is locked" sat behind it while the user was in the middle of sharing from
+Quill. File pickers and permission dialogs did the same.
+
+Now `onPause` adds `FLAG_SECURE` instead and `onResume` clears it. Invisible from the front, and it
+applies to the task snapshot — which is the only thing that ever needed covering. Coming back is
+still gated, because `onStart` raises the gate before anything is drawn if a prompt is due.
+
+**Not verified end to end, and worth knowing why:** demonstrating the share case needs the app lock
+*on*, and getting past the gate to reach a note needs the emulator's device credential, which I
+don't have (no fingerprint is enrolled, so `adb emu finger touch` is inert, and enabling the lock
+from Profile authenticates first). The untitled-title fix *was* verified — both tabs now read
+"Untitled Note - Aug 7, 2026" and "Untitled Note - Aug 13, 2026", dated per note.
+
+**Also worth knowing:** with the grace period set to "Immediately" (the emulator's setting; the
+default is one minute), returning from a share still costs a prompt. That is the grace period doing
+what it says, not the gate bug coming back.

@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.RelativeTime;
 import mse.quill.data.model.Quiz;
 
@@ -75,7 +76,8 @@ public class QuizzesAdapter extends RecyclerView.Adapter<QuizzesAdapter.QuizHold
             views.badge.setTextColor(ContextCompat.getColor(
                     context, scored ? R.color.text_on_brand : R.color.text_secondary));
 
-            views.title.setText(quiz.noteTitle);
+            views.title.setText(NoteDisplayUtils.resolveTitle(
+                    context, quiz.noteTitle, quiz.noteCreatedAt));
             views.detail.setText(detailLine(context, quiz));
 
             // Nothing to date a quiz by until it has been opened once, and an empty line still

@@ -54,6 +54,12 @@
     <color name="answer_incorrect">#C0392F</color>
     <color name="answer_incorrect_container">#FBE7E5</color>
 
+    <!-- Destructive actions (Profile's Danger Zone). Aliases rather than a second red: Quill has
+         one, and a delete-everything button that didn't match the app's own "wrong" colour would
+         be reading as a different kind of warning than it is. -->
+    <color name="danger">@color/answer_incorrect</color>
+    <color name="danger_container">@color/answer_incorrect_container</color>
+
     <!-- Misc -->
     <color name="uncategorized_gray">#9E9E9E</color>
     <color name="divider">#EBE9F2</color>

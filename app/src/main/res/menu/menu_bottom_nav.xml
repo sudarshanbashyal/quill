@@ -19,4 +19,12 @@
         android:icon="@drawable/ic_stopwatch"
         android:title="@string/nav_quizzes" />
 
+    <!-- Last, and deliberately so: settings are where you go occasionally, not what you reach for
+         first. Four items still sit comfortably inside M3's five-item guidance for a bar with
+         always-visible labels. -->
+    <item
+        android:id="@+id/profileFragment"
+        android:icon="@drawable/ic_user"
+        android:title="@string/nav_profile" />
+
 </menu>

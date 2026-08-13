@@ -11,7 +11,12 @@ public class Quiz {
 
     public String id;
     public String noteId;
+    /** Empty for a note the user never named — resolve it for display with
+     *  {@code NoteDisplayUtils.resolveTitle(context, noteTitle, noteCreatedAt)}. */
     public String noteTitle;
+    /** The note's creation date, carried only so the untitled fallback can be dated. Not to be
+     *  confused with {@link #createdAt}, which is when the quiz was made. */
+    public long noteCreatedAt;
     public long createdAt;
 
     /** Completed attempts. In-progress and abandoned ones are history, not results. */

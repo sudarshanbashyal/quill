@@ -10,8 +10,12 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.OnBackPressedCallback;
+import androidx.biometric.BiometricPrompt;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.ContextCompat;
@@ -29,6 +33,9 @@ import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 
+import mse.quill.reminders.StudyReminders;
+import mse.quill.security.AppLock;
+import mse.quill.security.CollectionLock;
 import mse.quill.ui.audio.MiniPlayerView;
 import mse.quill.util.WindowInsetsUtils;
 
@@ -71,8 +78,35 @@ public class MainActivity extends AppCompatActivity {
         applyTopInsetToEveryScreen();
         setupNowPlayingBar();
         setupBottomNavigation();
+        setupAppLock();
         deliverSharedFileWhenHomeIsReady();
         handleViewIntent(getIntent());
+        handleReminderIntent(getIntent());
+
+        // Re-arms the daily reminder if it's on. Cheap, idempotent, and the recovery path for a
+        // WorkManager queue that a force stop or a "clear data" wiped out — see StudyReminders.
+        StudyReminders.sync(this);
+    }
+
+    /** Extra on the reminder notification's intent: land on the Flashcards tab. */
+    public static final String EXTRA_OPEN_FLASHCARDS = "open_flashcards";
+
+    /**
+     * Sends the user to the decks when they tap the study reminder.
+     *
+     * <p>Goes through the bottom bar's own destination rather than a bare {@code navigate}, so the
+     * tab comes up selected and the back stack looks the way it would if they had tapped it
+     * themselves — arriving on Flashcards with Home highlighted is the sort of thing that makes an
+     * app feel like it was assembled from two halves.
+     */
+    private void handleReminderIntent(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(EXTRA_OPEN_FLASHCARDS, false)) return;
+        // Consumed, or a configuration change would re-deliver the same intent and yank the user
+        // back to Flashcards from wherever they had since navigated.
+        intent.removeExtra(EXTRA_OPEN_FLASHCARDS);
+
+        BottomNavigationView bottomNav = findViewById(R.id.bottom_nav);
+        bottomNav.setSelectedItemId(R.id.flashcardDecksFragment);
     }
 
     /**
@@ -88,6 +122,7 @@ public class MainActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleViewIntent(intent);
+        handleReminderIntent(intent);
     }
 
     /** Set once a VIEW intent names a file, and cleared once {@code HomeFragment} has it — Home may
@@ -244,6 +279,141 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ---------- App lock ----------
+
+    /** The gate over this window's content, and the prompt that opens it. See {@link AppLock}. */
+    private View lockGate;
+    private TextView lockMessage;
+    /** Swallows back while the gate is up; disabled the rest of the time so navigation is normal. */
+    private OnBackPressedCallback lockBackCallback;
+
+    /** What the gate does with an answer. A field because it is handed to {@link AppLock} afresh
+     *  every time a prompt is raised — see {@link AppLock#createPrompt} for why it can't be bound
+     *  once and left. */
+    private final AppLock.Listener lockListener = new AppLock.Listener() {
+        @Override public void onUnlocked() {
+            hideLockGate();
+        }
+
+        @Override public void onFailed(int errorCode, CharSequence message) {
+            // The gate stays up either way. A cancel just leaves the Unlock button waiting;
+            // anything else needs to say why, or the screen looks broken rather than shut.
+            if (AppLock.isUserCancellation(errorCode)) {
+                lockMessage.setVisibility(View.GONE);
+            } else {
+                lockMessage.setText(errorCode == BiometricPrompt.ERROR_LOCKOUT
+                        || errorCode == BiometricPrompt.ERROR_LOCKOUT_PERMANENT
+                        ? getString(R.string.app_lock_gate_locked_out)
+                        : message);
+                lockMessage.setVisibility(View.VISIBLE);
+            }
+        }
+    };
+
+    /**
+     * Prepares the gate. Found in {@code onCreate} whether or not the lock is on, because the
+     * decision to show it is made in {@code onStart} and there must be nothing left to inflate by
+     * then — a gate assembled after the content was already on screen would be a gate the user had
+     * a frame to read past.
+     */
+    private void setupAppLock() {
+        lockGate = findViewById(R.id.app_lock_gate);
+        lockMessage = findViewById(R.id.app_lock_message);
+
+        // Reclaims delivery after a rotation that happened with the gate's own prompt up.
+        // Conditional, and the condition matters: if the gate is not due then any live prompt
+        // belongs to the Profile screen's toggle, and claiming it here would swallow that answer.
+        if (AppLock.shouldPrompt(this)) AppLock.createPrompt(this, lockListener);
+
+        findViewById(R.id.app_lock_unlock).setOnClickListener(v -> {
+            if (!AppLock.isPromptInFlight()) AppLock.authenticate(this, lockListener);
+        });
+
+        // While the gate is up, back leaves the app rather than navigating behind it. Popping the
+        // nav stack under a locked screen would change what the user finds on unlocking, and
+        // finish() would be worse — the task would be gone and with it the back stack, so a
+        // ten-second glance at another app would cost the note they had open.
+        lockBackCallback = new OnBackPressedCallback(false) {
+            @Override public void handleOnBackPressed() {
+                moveTaskToBack(true);
+            }
+        };
+        getOnBackPressedDispatcher().addCallback(this, lockBackCallback);
+    }
+
+    private void setLockBackCallbackEnabled(boolean enabled) {
+        if (lockBackCallback != null) lockBackCallback.setEnabled(enabled);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (AppLock.shouldPrompt(this)) {
+            showLockGate();
+            // Not if one is already up: a device-credential fallback runs in its own Activity on
+            // older platforms, which stops this one and brings it back — without the guard, coming
+            // back would stack a second prompt on the first.
+            if (!AppLock.isPromptInFlight()) AppLock.authenticate(this, lockListener);
+        } else {
+            hideLockGate();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        if (!AppLock.shouldPrompt(this)) hideLockGate();
+    }
+
+    /**
+     * Keeps the open note out of the thumbnail the system shows in the recents list — otherwise the
+     * lock is bypassed by a gesture, the task switcher still displaying whatever was on screen for
+     * as long as the app stays in the list.
+     *
+     * <p>A flag rather than the lock gate, which is what used to cover this. Painting the gate
+     * treats every pause as a departure, and most pauses aren't: a share sheet, a file picker, a
+     * permission dialog and the app's own biometric prompt all sit in front of a still-running
+     * Quill, and each one put "Quill is locked" behind it while the user was in the middle of using
+     * Quill. The flag is invisible from the front and applies to the snapshot, which is the only
+     * thing that ever needed covering. Coming back is still gated: {@link #onStart} raises the gate
+     * before anything is drawn if a prompt is due.
+     */
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (AppLock.isEnabled(this)) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Starts the grace period. In onStop rather than onPause because a dialog or the system's
+        // own biometric sheet pauses nothing, but they do sit in front of the app, and treating
+        // those as "the user left" would re-lock the screen they are standing in front of.
+        AppLock.onEnteredBackground();
+
+        // Locked collections get no grace period at all, unlike the app lock above. They hold the
+        // material the user went out of their way to encrypt, so leaving the app is enough to shut
+        // them — coming back to one always costs a prompt.
+        CollectionLock.relockAll();
+    }
+
+    private void showLockGate() {
+        if (lockGate == null || lockGate.getVisibility() == View.VISIBLE) return;
+        lockMessage.setVisibility(View.GONE);
+        lockGate.setVisibility(View.VISIBLE);
+        setLockBackCallbackEnabled(true);
+    }
+
+    private void hideLockGate() {
+        if (lockGate == null || lockGate.getVisibility() == View.GONE) return;
+        lockGate.setVisibility(View.GONE);
+        setLockBackCallbackEnabled(false);
+    }
+
     /**
      * Wires the top-level destinations to the bottom bar.
      *
@@ -265,7 +435,8 @@ public class MainActivity extends AppCompatActivity {
         navController.addOnDestinationChangedListener((controller, destination, arguments) -> {
             boolean topLevel = destination.getId() == R.id.homeFragment
                     || destination.getId() == R.id.flashcardDecksFragment
-                    || destination.getId() == R.id.quizzesFragment;
+                    || destination.getId() == R.id.quizzesFragment
+                    || destination.getId() == R.id.profileFragment;
             bottomNav.setVisibility(topLevel ? View.VISIBLE : View.GONE);
             applyBottomInset();
         });

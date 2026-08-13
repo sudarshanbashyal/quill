@@ -5,6 +5,9 @@
     <string name="action_back">Back</string>
 
     <string name="home_greeting">Welcome back</string>
+    <!-- %1$s is the display name set on the Profile screen. Used only once there is one — the
+         plain greeting above is what an unnamed user gets, rather than a trailing comma. -->
+    <string name="home_greeting_named">Welcome back, %1$s</string>
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
     <!-- Whiteboards joined the searchable set on master, so the hint names them too. -->
     <string name="search_hint">Search notes, whiteboards or collections…</string>
@@ -370,4 +373,124 @@
     <string name="whiteboard_name_hint">Whiteboard name</string>
     <string name="delete_whiteboard_title_format">Delete \"%s\"?</string>
     <string name="delete_whiteboard_message">This whiteboard and everything drawn on it will be deleted.</string>
+
+    <!-- ==================== Profile ==================== -->
+
+    <string name="nav_profile">Profile</string>
+    <string name="profile_title">Profile</string>
+    <string name="profile_subtitle">Your name, reminders and how Quill is locked.</string>
+    <!-- Shown in the avatar circle when no display name is set: the app's own initial, so the
+         circle is never empty and never a stranger's placeholder face. -->
+    <string name="profile_avatar_fallback">Q</string>
+
+    <string name="profile_section_you">You</string>
+    <string name="profile_display_name">Display name</string>
+    <string name="profile_display_name_empty">Not set</string>
+    <string name="profile_display_name_hint">Your name</string>
+    <string name="profile_display_name_dialog_title">What should Quill call you?</string>
+    <string name="profile_display_name_dialog_message">Used to greet you on the home screen. It stays on this device.</string>
+
+    <string name="profile_section_notifications">Notifications</string>
+    <string name="profile_study_reminders">Study reminders</string>
+
+    <string name="profile_section_security">Security</string>
+    <string name="profile_app_lock">App lock</string>
+    <string name="profile_app_lock_summary_on">Quill asks for your fingerprint or screen lock before opening.</string>
+    <string name="profile_app_lock_summary_off">Anyone holding your unlocked phone can open Quill.</string>
+    <!-- Shown instead of the summary when the device has neither a biometric enrolled nor a
+         screen lock, which leaves nothing for the prompt to check against. -->
+    <string name="profile_app_lock_unavailable">Set a screen lock or fingerprint in system settings to use this.</string>
+    <string name="profile_app_lock_timeout">Ask again after</string>
+    <string name="profile_timeout_immediately">Immediately</string>
+    <string name="profile_timeout_one_minute">1 minute</string>
+    <string name="profile_timeout_five_minutes">5 minutes</string>
+    <string name="profile_timeout_dialog_title">Ask again after</string>
+    <!-- Said plainly, because the honest version is what makes the toggle worth trusting: this is
+         a door, not a safe. Per-collection locking is what encrypts. -->
+    <string name="profile_app_lock_note">The app lock keeps Quill closed on an unlocked phone. It doesn\'t encrypt your notes — lock a collection for that.</string>
+    <string name="profile_app_lock_failed">Couldn\'t verify it\'s you. App lock is still off.</string>
+
+    <string name="profile_section_danger">Danger zone</string>
+    <string name="profile_delete_all">Delete all data</string>
+    <string name="profile_delete_all_summary">Every note, collection, whiteboard, recording and flashcard on this device.</string>
+    <string name="profile_delete_all_dialog_title">Delete everything?</string>
+    <string name="profile_delete_all_dialog_message">This erases every note, collection, whiteboard, recording, flashcard and quiz stored on this device.\n\nQuill has no backup and no server copy. There is no way to get any of it back.</string>
+    <string name="profile_delete_all_confirm">Delete everything</string>
+    <!-- Second step. Typed confirmation rather than a second "are you sure", so the tap that ends
+         the notebook can't be the same reflex that dismissed the first dialog. -->
+    <string name="profile_delete_all_final_title">Last chance</string>
+    <string name="profile_delete_all_final_message">Type DELETE to confirm. This cannot be undone.</string>
+    <string name="profile_delete_all_keyword">DELETE</string>
+    <string name="profile_delete_all_hint">Type DELETE</string>
+    <string name="profile_delete_all_done">All data deleted.</string>
+
+    <!-- ==================== App lock gate ==================== -->
+
+    <string name="app_lock_prompt_title">Unlock Quill</string>
+    <string name="app_lock_prompt_subtitle">Use your fingerprint or screen lock to continue.</string>
+    <string name="app_lock_gate_title">Quill is locked</string>
+    <string name="app_lock_gate_action">Unlock</string>
+    <string name="app_lock_gate_locked_out">Too many attempts. Try again in a moment.</string>
+
+    <!-- ==================== Collection lock ==================== -->
+
+    <string name="action_lock_collection">Lock collection</string>
+    <string name="action_remove_lock">Remove lock</string>
+
+    <string name="collection_lock_title_format">Lock \"%s\"?</string>
+    <!-- Says what it does and what it costs, in that order. The flashcard sentence is here because
+         losing a review schedule is the one consequence a user would not otherwise predict. -->
+    <string name="collection_lock_message">Notes in this collection will be encrypted with a key held by this device and unlocked with your fingerprint or screen lock.\n\nThey\'ll stop appearing on Home, in search, and in flashcards and quizzes until you unlock the collection.\n\nFlashcards made from these notes are removed — they store the question and answer in plain text. Re-open a note after unlocking to build its deck again.</string>
+    <string name="collection_lock_confirm">Lock</string>
+    <string name="collection_locking">Encrypting…</string>
+    <string name="collection_locked">Collection locked</string>
+    <string name="collection_lock_failed">Couldn\'t lock the collection. Nothing was changed.</string>
+    <string name="collection_lock_unavailable">Set a screen lock or fingerprint in system settings first.</string>
+
+    <string name="collection_unlock_title_format">Remove the lock on \"%s\"?</string>
+    <string name="collection_unlock_message">The notes will be decrypted and stored in plain text again, and will reappear on Home, in search and in flashcards.</string>
+    <string name="collection_unlock_confirm">Remove lock</string>
+    <string name="collection_unlocked">Lock removed</string>
+    <string name="collection_unlock_failed">Couldn\'t verify it\'s you. The collection stays locked.</string>
+    <string name="collection_unlock_key_gone">This collection\'s key is gone, so its notes can\'t be decrypted.</string>
+
+    <!-- Shown when the Keystore key has been destroyed — almost always because the device's screen
+         lock was removed, which invalidates every key bound to it. -->
+    <string name="collection_key_gone_title">This collection can\'t be opened</string>
+    <string name="collection_key_gone_message">Its encryption key is gone. That usually happens when the screen lock is removed from a device, which destroys the keys tied to it.\n\nThe notes are still on this device, but nothing can decrypt them — not Quill, and not your PIN. You can leave them alone or delete them.</string>
+    <string name="collection_key_gone_keep">Leave them</string>
+    <string name="collection_key_gone_discard">Delete notes</string>
+    <string name="collection_key_gone_confirm_title">Delete unreadable notes?</string>
+    <string name="collection_key_gone_confirm_message">This permanently removes every note in the collection. They cannot be recovered.</string>
+    <string name="collection_key_gone_discarded">Unreadable notes deleted</string>
+
+    <!-- The editor, when a note\'s collection re-locked itself while the note was open. -->
+    <string name="note_save_needs_unlock">Collection locked. Unlock to save your changes.</string>
+    <string name="note_save_unlock_action">Unlock</string>
+
+    <!-- ==================== Study reminders ==================== -->
+
+    <string name="reminder_channel_name">Study reminders</string>
+    <string name="reminder_channel_description">A daily nudge when you have flashcards due.</string>
+
+    <plurals name="reminder_cards_due">
+        <item quantity="one">%d flashcard is due</item>
+        <item quantity="other">%d flashcards are due</item>
+    </plurals>
+    <!-- Second line of the reminder: how many notes the due cards are spread across. -->
+    <plurals name="reminder_across_decks">
+        <item quantity="one">In %d deck. Tap to review.</item>
+        <item quantity="other">Across %d decks. Tap to review.</item>
+    </plurals>
+
+    <string name="profile_reminder_time">Remind me at</string>
+    <string name="profile_reminder_time_dialog_title">Daily reminder time</string>
+    <!-- Replaces the "Coming soon" copy now that the switch does something. -->
+    <string name="profile_study_reminders_summary_on">A daily nudge when flashcards are due. Nothing is sent when you\'re up to date.</string>
+    <string name="profile_study_reminders_summary_off">Get a daily nudge when flashcards are due.</string>
+    <!-- Notifications refused at the OS level: the switch can\'t do anything until that changes. -->
+    <string name="profile_reminders_blocked">Notifications are turned off for Quill. Turn them on in system settings to use reminders.</string>
+    <!-- Said plainly, because a locked collection silently not being counted would otherwise look
+         like the reminder is broken. -->
+    <string name="profile_reminders_locked_note">Locked collections aren\'t counted — their cards stay out of reminders until you unlock them.</string>
 </resources>

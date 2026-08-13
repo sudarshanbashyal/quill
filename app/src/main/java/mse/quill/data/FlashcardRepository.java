@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import mse.quill.data.model.Flashcard;
@@ -123,29 +124,54 @@ public class FlashcardRepository {
             long now = System.currentTimeMillis();
             List<FlashcardDeck> decks = new ArrayList<>();
 
+            // A deck is titled with its note's title, so a shut collection's decks would put those
+            // titles on the Flashcards tab regardless of the lock. Locking also deletes the cards
+            // themselves (see CollectionLockRepository.lock) — this covers the window where a
+            // collection is locked but open in another sense, and any card that outlives it.
+            // An open collection is still encrypted at rest, so its titles come back as ciphertext
+            // and are decrypted below — hiding the shut ones is only half the job.
+            Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
+            Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
+            List<String> args = new ArrayList<>();
+            args.add(String.valueOf(now));
+            args.addAll(hidden);
+            args.add(String.valueOf(now));
+
             Cursor c = db.rawQuery(
                     "SELECT n.id, n.title, COUNT(f.id), " +
                             "SUM(CASE WHEN f.next_review <= ? THEN 1 ELSE 0 END), " +
                             "SUM(CASE WHEN f.last_reviewed_at IS NULL THEN 1 ELSE 0 END), " +
-                            "MIN(f.next_review), MAX(f.last_reviewed_at) " +
+                            "MIN(f.next_review), MAX(f.last_reviewed_at), n.collection_id, " +
+                            // Only so an unnamed note's deck can be titled with the same dated
+                            // fallback the rest of the app shows it under.
+                            "n.created_at " +
                             "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
                             "WHERE n.deleted_at IS NULL " +
-                            "GROUP BY n.id, n.title " +
+                            NoteCrypto.hiddenClause(hidden) +
+                            "GROUP BY n.id, n.title, n.collection_id, n.created_at " +
                             // Decks with something to do come first; among the rest, whichever comes
                             // back soonest.
                             "ORDER BY (CASE WHEN SUM(CASE WHEN f.next_review <= ? THEN 1 ELSE 0 END) > 0 " +
                             "THEN 0 ELSE 1 END), MIN(f.next_review) ASC",
-                    new String[]{String.valueOf(now), String.valueOf(now)});
+                    args.toArray(new String[0]));
             try {
                 while (c.moveToNext()) {
+                    String collectionId = c.isNull(7) ? null : c.getString(7);
+                    String title = c.isNull(1)
+                            ? "" : NoteCrypto.titleForDisplay(lockedIds, collectionId, c.getString(1));
+                    // Decryption failed and the collection has been shut again; a deck the app can
+                    // no longer name belongs out of the list, not in it under a blank title.
+                    if (title == null) continue;
+
                     FlashcardDeck deck = new FlashcardDeck();
                     deck.noteId = c.getString(0);
-                    deck.noteTitle = c.isNull(1) ? "" : c.getString(1);
+                    deck.noteTitle = title;
                     deck.total = c.getInt(2);
                     deck.due = c.getInt(3);
                     deck.unseen = c.getInt(4);
                     deck.nextReview = c.getLong(5);
                     deck.lastReviewedAt = c.isNull(6) ? null : c.getLong(6);
+                    deck.noteCreatedAt = c.getLong(8);
                     decks.add(deck);
                 }
             } finally {
@@ -171,6 +197,53 @@ public class FlashcardRepository {
             int result = count;
             if (cb != null) executors.mainThread(() -> cb.onCounted(result));
         });
+    }
+
+    /** What's waiting to be reviewed: how many cards, across how many notes. */
+    public static final class DueSummary {
+        public final int cards;
+        public final int decks;
+
+        DueSummary(int cards, int decks) {
+            this.cards = cards;
+            this.decks = decks;
+        }
+
+        public boolean isEmpty() {
+            return cards == 0;
+        }
+    }
+
+    /**
+     * Counts everything due at {@code now}, for the study reminder.
+     *
+     * <p>Synchronous, because its one caller is already on a background thread — a
+     * {@code androidx.work.Worker} — and going through {@link AppExecutors} there would mean
+     * handing the answer to the main thread only to hand it straight back.
+     *
+     * <p>Locked collections are excluded, and in the reminder's case that exclusion is total:
+     * nothing is unlocked in a background worker, so every locked collection is hidden. That is
+     * the intended behaviour rather than a limitation — a notification reading "3 cards due" for a
+     * collection the user deliberately encrypted would announce, on the lock screen, both that the
+     * collection exists and that they have been neglecting it.
+     */
+    public DueSummary countDueSync(long now) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
+
+        List<String> args = new ArrayList<>();
+        args.add(String.valueOf(now));
+        args.addAll(hidden);
+
+        try (Cursor c = db.rawQuery(
+                "SELECT COUNT(*), COUNT(DISTINCT f.note_id) " +
+                        "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
+                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
+                        NoteCrypto.hiddenClause(hidden),
+                args.toArray(new String[0]))) {
+            if (!c.moveToFirst()) return new DueSummary(0, 0);
+            return new DueSummary(c.getInt(0), c.getInt(1));
+        }
     }
 
     /**

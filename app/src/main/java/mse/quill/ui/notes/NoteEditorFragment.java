@@ -44,6 +44,7 @@ import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.NoteRepository;
+import mse.quill.security.CollectionLock;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
@@ -1156,7 +1157,49 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
             return;
         }
 
-        noteRepository.saveNote(noteId, title, segments, onSaved);
+        noteRepository.saveNote(noteId, title, segments, new NoteRepository.OnNoteSaved() {
+            @Override public void onSaved() {
+                if (onSaved != null) onSaved.run();
+            }
+
+            @Override public void onNeedsUnlock() {
+                // The collection re-locked while this note was open — its key's authentication
+                // window closed. Nothing was written and the editor still holds every character,
+                // so this is an offer to retry, not a warning about lost work. onSaved is
+                // deliberately not run: callers use it to hand the note off to another screen,
+                // which would read a stale copy off disk.
+                if (isAdded()) promptUnlockAndRetry(onSaved);
+            }
+        });
+    }
+
+    /**
+     * Re-authenticates and saves again.
+     *
+     * <p>Offered as a Snackbar action rather than an immediate prompt: an auto-save firing on a
+     * 500ms debounce must not throw a system dialog over someone who is still typing. If they
+     * ignore it, the next save attempt offers it again, and leaving the screen without unlocking
+     * costs the edits made since the collection re-locked — which is why the action is there.
+     */
+    private void promptUnlockAndRetry(Runnable onSaved) {
+        // Set from the note itself once it loads, and from the arguments before that — either way
+        // it is the collection this note belongs to, which is the one holding the key.
+        String collectionId = pendingCollectionId;
+        if (collectionId == null) return;
+
+        Snackbar.make(requireView(), R.string.note_save_needs_unlock, Snackbar.LENGTH_LONG)
+                .setAction(R.string.note_save_unlock_action, v ->
+                        CollectionLock.unlock(requireActivity(), collectionId,
+                                new CollectionLock.Listener() {
+                                    @Override public void onUnlocked() {
+                                        if (isAdded()) autoSave(onSaved);
+                                    }
+
+                                    @Override public void onFailed(boolean cancelled, CharSequence m) {}
+
+                                    @Override public void onKeyGone() {}
+                                }))
+                .show();
     }
 
     private boolean hasRealContent(List<NoteSegment> segments) {

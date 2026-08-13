@@ -324,6 +324,16 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         void bindCollection(Collection collection, Listener listener) {
             nameView.setText(collection.name);
+            // A padlock ahead of the name, rather than a badge elsewhere on the card: it has to
+            // read as a property of this collection at a glance, and the card is already carrying
+            // a two-line contents summary and a timestamp. Cleared explicitly on the other branch
+            // because view holders are recycled — without it, scrolling would smear the lock onto
+            // whichever unlocked collection landed in this slot next.
+            nameView.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                    collection.biometricLocked ? R.drawable.ic_lock_small : 0, 0, 0, 0);
+            nameView.setCompoundDrawablePadding(
+                    NoteRowView.dimen(itemView.getContext(), R.dimen.spacing_sm));
+
             countView.setText(formatContents(itemView.getContext(), collection));
             updatedView.setText(itemView.getContext().getString(
                     R.string.updated_relative_format,
