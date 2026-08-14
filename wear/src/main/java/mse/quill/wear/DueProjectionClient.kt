@@ -67,6 +67,12 @@ class DueProjectionClient(private val context: Context) {
         // where the failure would surface as a tile that silently refuses to load.
         val count = minOf(ids.size, fronts.size, backs.size, dueAt.size)
 
+        // Deliberately *not* in the minOf above. These arrived after the first projection shipped,
+        // so a phone that predates them publishes an item without them — and letting a missing
+        // optional array shorten the card list would turn "no deck names" into "no cards".
+        val noteIds = map.getStringArray(DueProjectionKeys.KEY_CARD_NOTE_IDS)
+        val noteTitles = map.getStringArray(DueProjectionKeys.KEY_CARD_NOTE_TITLES)
+
         val cards = ArrayList<DueCard>(count)
         for (i in 0 until count) {
             cards += DueCard().apply {
@@ -74,6 +80,8 @@ class DueProjectionClient(private val context: Context) {
                 front = fronts[i]
                 back = backs[i]
                 this.dueAt = dueAt[i]
+                noteId = noteIds?.getOrNull(i).orEmpty()
+                noteTitle = noteTitles?.getOrNull(i).orEmpty()
             }
         }
 
@@ -100,4 +108,56 @@ data class DueSnapshot(
      * all morning.
      */
     fun dueAt(now: Long): List<DueCard> = cards.filter { it.dueAt <= now }
+
+    /**
+     * The cards due now, grouped into decks — one per note, in the order the projection listed
+     * them.
+     *
+     * <p>Grouped by note id and *labelled* by title, not grouped by title: two notes can carry the
+     * same name, and an untitled one resolves to a dated fallback that could collide outright.
+     * Merging those would show one deck whose count is right and whose cards come from two places.
+     *
+     * <p>Ordered by first appearance rather than by count or name. The phone already ordered the
+     * projection, and re-sorting on the wrist would mean the same cards sit in a different order
+     * on the two devices for no reason anyone asked for.
+     */
+    fun decks(now: Long): List<DueDeck> =
+        dueAt(now)
+            .groupBy { it.noteId }
+            .map { (noteId, cards) -> DueDeck(noteId, cards.first().noteTitle, cards) }
+
+    /**
+     * Decks with nothing due yet, and when their first card comes up.
+     *
+     * <p>These already travel: the phone ships everything due before midnight so that a card coming
+     * due at 17:00 is on the wrist before it is needed, and [dueAt] then holds it back until the
+     * hour arrives. That means the watch has always known when the next card was coming and simply
+     * had no way to say so — the picker showed nothing and "All caught up" read as "come back
+     * tomorrow" even when the answer was twenty minutes.
+     *
+     * <p>A deck appears here only if <em>none</em> of its cards is due yet. One with two due and
+     * five later is a deck you can review now, and listing it twice would be describing the
+     * scheduler rather than the choice in front of you.
+     */
+    fun upcoming(now: Long): List<DueDeck> =
+        cards.groupBy { it.noteId }
+            .filterValues { deck -> deck.none { it.dueAt <= now } }
+            .map { (noteId, cards) ->
+                DueDeck(noteId, cards.first().noteTitle, cards, cards.minOf { it.dueAt })
+            }
+            // Soonest first: the only question this list answers is "how long until something".
+            .sortedBy { it.nextDueAt }
 }
+
+/** One note's worth of cards, as the picker lists it. */
+data class DueDeck(
+    val noteId: String,
+    val title: String,
+    val cards: List<DueCard>,
+    /**
+     * When this deck's first card comes up, or null when its cards are due already.
+     *
+     * <p>Null is what tells the picker whether a row is a session to start or a time to read.
+     */
+    val nextDueAt: Long? = null,
+)

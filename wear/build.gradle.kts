@@ -12,6 +12,10 @@ plugins {
     // the classpath with an unknown version", then "extension with name 'kotlin' already
     // registered" — which is a confusing pair of errors to meet if you expect the AGP 8 setup.
     alias(libs.plugins.android.application)
+    // The Compose compiler, required from Kotlin 2.0 once `buildFeatures.compose` is on. This one
+    // *does* belong here, unlike `kotlin.android` above — AGP 9 registers the Kotlin extension but
+    // not the Compose compiler, so without this line configuration fails outright.
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -29,6 +33,13 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+    }
+
+    buildFeatures {
+        // The review screen. Nothing else in the module is Compose — the tile and the complication
+        // are ProtoLayout, which is a description of a layout rendered in another process, not a
+        // view hierarchy this app ever holds.
+        compose = true
     }
 
     buildTypes {
@@ -65,4 +76,15 @@ dependencies {
     implementation(libs.protolayout.material3)
     implementation(libs.watchface.complications.data.source.ktx)
     implementation(libs.wear.remote.interactions)
+
+    // The review screen. The BOM governs the androidx.compose.* artifacts only; the two
+    // wear.compose lines are versioned independently and are deliberately outside it.
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.wear.compose.material3)
+    implementation(libs.wear.compose.foundation)
+    implementation(libs.activity.compose)
+    implementation(libs.compose.material.icons.core)
 }

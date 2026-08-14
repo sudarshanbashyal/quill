@@ -51,9 +51,12 @@ public class NoteRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
+    /** Held only so a save can re-publish the watch's note list; see {@link #saveNote}. */
+    private final Context appContext;
 
     public NoteRepository(Context context) {
-        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
+        this.appContext = context.getApplicationContext();
+        this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
     }
 
@@ -85,6 +88,58 @@ public class NoteRepository {
     /** Mints an id for a note that is about to be created. */
     public static String newNoteId() {
         return UUID.randomUUID().toString();
+    }
+
+    /**
+     * Whether a note still exists and is not in the trash. <b>Blocking — call from a background
+     * thread.</b>
+     *
+     * <p>For the watch, which picks from a list that may be minutes old. Deliberately does not
+     * check the collection's lock state: a locked note fails later at the save, with the proper
+     * {@code onNeedsUnlock}, and answering "no such note" here would send the capture to the inbox
+     * instead — silently, and to a place the user did not choose.
+     */
+    public boolean noteExistsSync(String noteId) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        try (Cursor c = db.rawQuery(
+                "SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL",
+                new String[]{noteId})) {
+            return c.moveToFirst();
+        }
+    }
+
+    /**
+     * The id of the note captures land in, creating it the first time. <b>Blocking — call from a
+     * background thread.</b>
+     *
+     * <p>Matched by title among notes in <em>no</em> collection, which is also where it is created.
+     * Deliberately never inside one: a collection can be locked, and a capture arriving from the
+     * watch while its destination is encrypted would either fail or sit in a note the user cannot
+     * read. The inbox is the one place a thought can always land.
+     *
+     * <p>Title-matching is a weaker key than an id, and the alternative — a preference holding the
+     * inbox's id — was not obviously better: it goes stale if the note is deleted, and then the
+     * next capture writes to nothing at all. Matching by title recreates the note instead, which
+     * is the failure everyone would rather have.
+     */
+    public String inboxNoteIdSync(String inboxTitle) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        try (Cursor c = db.rawQuery(
+                "SELECT id FROM notes WHERE collection_id IS NULL AND title = ? "
+                        + "AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1",
+                new String[]{inboxTitle})) {
+            if (c.moveToFirst()) return c.getString(0);
+        }
+
+        String noteId = newNoteId();
+        long now = System.currentTimeMillis();
+        ContentValues cv = new ContentValues();
+        cv.put("id", noteId);
+        cv.put("title", inboxTitle);
+        cv.put("created_at", now);
+        cv.put("updated_at", now);
+        db.insert("notes", null, cv);
+        return noteId;
     }
 
     public void loadNote(String noteId, OnNoteLoaded cb) {
@@ -179,6 +234,12 @@ public class NoteRepository {
             }
 
             if (cb != null) executors.mainThread(cb::onSaved);
+
+            // After the callback, matching recordReview and syncFromNote: the editor returns at
+            // the speed of the database write, not of a Data Layer round trip. A title can change
+            // on any save, and the watch's pickers are the only thing that reads this — without
+            // it they would show yesterday's names until the app was next launched cold.
+            WearNoteListPublisher.publishSync(appContext);
         });
     }
 

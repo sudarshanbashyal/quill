@@ -493,4 +493,14 @@
     <!-- Said plainly, because a locked collection silently not being counted would otherwise look
          like the reminder is broken. -->
     <string name="profile_reminders_locked_note">Locked collections aren\'t counted — their cards stay out of reminders until you unlock them.</string>
+
+    <!-- The note dictated captures from the watch land in. Also the key it is found by, so
+         renaming it starts a second inbox rather than renaming the first — see
+         NoteRepository.inboxNoteIdSync. -->
+    <string name="wear_inbox_note_title">Inbox</string>
+
+    <!-- Stands in for the title of a note in an encrypted collection when the watch is told what
+         is being read. Names nothing, on purpose: the DataItem outlives the unlock that let the
+         reading start, so a real title would sit on the wrist long after the collection shut. -->
+    <string name="wear_read_private_title">A private note</string>
 </resources>

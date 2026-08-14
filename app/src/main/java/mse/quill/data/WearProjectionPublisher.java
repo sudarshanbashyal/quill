@@ -55,17 +55,25 @@ public final class WearProjectionPublisher {
         String[] fronts = new String[count];
         String[] backs = new String[count];
         long[] dueAt = new long[count];
+        String[] noteIds = new String[count];
+        String[] noteTitles = new String[count];
         for (int i = 0; i < count; i++) {
             DueCard card = cards.get(i);
             ids[i] = card.id;
             fronts[i] = card.front;
             backs[i] = card.back;
             dueAt[i] = card.dueAt;
+            // Never null on the wire: DataMap round-trips a null element fine, but the watch would
+            // then have to decide what an unnamed deck is called, which is the phone's job.
+            noteIds[i] = card.noteId == null ? "" : card.noteId;
+            noteTitles[i] = card.noteTitle == null ? "" : card.noteTitle;
         }
         request.getDataMap().putStringArray(DueProjectionKeys.KEY_CARD_IDS, ids);
         request.getDataMap().putStringArray(DueProjectionKeys.KEY_CARD_FRONTS, fronts);
         request.getDataMap().putStringArray(DueProjectionKeys.KEY_CARD_BACKS, backs);
         request.getDataMap().putLongArray(DueProjectionKeys.KEY_CARD_DUE_AT, dueAt);
+        request.getDataMap().putStringArray(DueProjectionKeys.KEY_CARD_NOTE_IDS, noteIds);
+        request.getDataMap().putStringArray(DueProjectionKeys.KEY_CARD_NOTE_TITLES, noteTitles);
 
         // setUrgent: the tile and the complication are showing the previous number until this
         // lands, and the Data Layer's unhurried default can sit on a change for minutes.

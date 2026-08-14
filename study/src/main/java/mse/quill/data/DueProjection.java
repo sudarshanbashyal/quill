@@ -88,13 +88,25 @@ public final class DueProjection {
         return midnight.getTimeInMillis();
     }
 
-    /** A copy with both sides cut to {@link #MAX_TEXT_CHARS}; the original is left alone. */
+    /**
+     * A copy with both sides cut to {@link #MAX_TEXT_CHARS}; the original is left alone.
+     *
+     * <p><b>Every field of {@link DueCard} has to be copied here.</b> This is a hand-written copy
+     * and the compiler will not notice a new field being left out — it just arrives on the watch
+     * empty, which reads as a data problem rather than as this method. {@code noteId} and
+     * {@code noteTitle} were missed exactly that way, and the symptom was every deck merging into
+     * one nameless group. {@code DueProjectionTest} now pins it.
+     */
     private static DueCard trimmed(DueCard card) {
         DueCard copy = new DueCard();
         copy.id = card.id;
         copy.front = truncate(card.front);
         copy.back = truncate(card.back);
         copy.dueAt = card.dueAt;
+        copy.noteId = card.noteId;
+        // Not truncated: a deck name is short by construction, and cutting it would make two decks
+        // with a long shared prefix look like the same deck in the picker.
+        copy.noteTitle = card.noteTitle;
         return copy;
     }
 

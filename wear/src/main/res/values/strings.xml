@@ -3,17 +3,95 @@
     <string name="app_name">Quill</string>
 
     <!-- Tile -->
-    <string name="tile_label">Quill review</string>
+    <string name="tile_label">Quill Flashcards</string>
     <string name="tile_description">Cards due today</string>
-    <string name="tile_caught_up">All caught up</string>
-    <!-- Kept short on purpose: the main slot's display type truncates past roughly twenty
-         characters at 384px, and "Open Quill on your p…" is worse than saying less. -->
-    <string name="tile_no_phone">Open on phone</string>
+    <!-- Longer than the count it replaces, and drawn at body size with room to wrap — see
+         DueTileService. "All caught up" alone read as a fragment with no subject. -->
+    <string name="tile_caught_up">All caught up. No pending flashcards for now</string>
+    <!-- The other sentence the main slot has to hold; same treatment, so no truncation. -->
+    <string name="tile_no_phone">Open Quill on your phone to sync</string>
     <plurals name="tile_cards_due">
         <item quantity="one">%d card due</item>
         <item quantity="other">%d cards due</item>
     </plurals>
     <string name="tile_review_action">Review</string>
+
+    <!-- Review screen -->
+    <string name="review_tap_to_flip">Tap to flip</string>
+    <!-- Short enough to sit side by side on a small round screen; "Got it" and "Missed" are the
+         same two answers the phone's review offers, named the same way. -->
+    <string name="review_got_it">Got it</string>
+    <string name="review_missed">Missed</string>
+    <!-- Two different pieces of news that used to share one line. "All caught up" is right after
+         a session and wrong on arrival, where it reads as praise for having done nothing. -->
+    <string name="review_all_done">All caught up — that\'s every card done</string>
+    <string name="review_nothing_due">No flashcards to review right now. Cards appear here when they come due.</string>
+    <string name="review_no_phone">Open Quill on your phone to sync</string>
+    <string name="review_position">%1$d of %2$d</string>
+    <!-- Headers over the deck picker. They say what a tap does, which a list of bare titles does
+         not — the second one also explains why every row below it is greyed out. -->
+    <string name="review_pick_deck">Select a deck to review</string>
+    <string name="review_pick_none_yet">Nothing due yet — here\'s what\'s next</string>
+    <!-- Sits under a deck's title in the picker, so it says only the number — the title above it
+         already supplies the noun. -->
+    <plurals name="review_deck_due">
+        <item quantity="one">%d due</item>
+        <item quantity="other">%d due</item>
+    </plurals>
+    <!-- Under a deck with nothing due yet: when it opens. -->
+    <string name="review_deck_next">Due in %1$s</string>
+    <plurals name="review_in_minutes">
+        <item quantity="one">%d min</item>
+        <item quantity="other">%d min</item>
+    </plurals>
+    <plurals name="review_in_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+
+    <!-- Audio tile. Two full-width rows rather than two columns, so each label has room for a
+         verb and its object — "Record" alone leaves the tile saying what it does twice and what
+         it does it to never. -->
+    <string name="tile_audio_label">Quill audio</string>
+    <string name="tile_audio_description">Record a voice note, or have one read aloud</string>
+    <string name="tile_audio_headline">Quill audio</string>
+    <string name="tile_audio_record">Record a note</string>
+    <string name="tile_audio_read">Read a note</string>
+    <string name="tile_read_label">Quill read</string>
+
+    <!-- Voice capture -->
+    <string name="capture_label">Quill capture</string>
+    <!-- Names the consequence, not the widget: recording starts on the tap, and a list of note
+         titles on its own gives no hint of that. -->
+    <string name="capture_pick_note">Select a note to record into</string>
+    <!-- The one action in a list of destinations. The phone names the note it creates — see
+         AudioCaptureKeys.KEY_NEW_NOTE — so this says nothing about what it will be called. -->
+    <string name="capture_new_note">New note</string>
+    <string name="capture_stop">Stop</string>
+    <string name="capture_sending">Sending…</string>
+    <!-- "Saved", not "Sent": the memo is queued in the Data Layer, which will deliver it whether
+         or not the phone is in range right now. Promising it arrived would be a promise the watch
+         cannot check. -->
+    <string name="capture_sent">Saved</string>
+    <!-- A tap that started and stopped the recorder in the same breath. Says what happened rather
+         than calling it an error, because nothing went wrong. -->
+    <string name="capture_empty">Nothing recorded</string>
+    <string name="capture_failed">Couldn\'t save the recording</string>
+    <string name="capture_no_mic">Quill needs the microphone to record</string>
+
+    <!-- Read aloud. The reading happens on the phone, but it is controlled from here — so unlike
+         the old wording, none of these send the user to go and find their phone. -->
+    <string name="read_pick_note">Select a note to read aloud</string>
+    <string name="read_playing">Reading on your phone</string>
+    <string name="read_paused">Paused</string>
+    <string name="read_pause">Pause</string>
+    <string name="read_resume">Resume</string>
+    <string name="read_stop">Stop</string>
+    <string name="read_finished">Finished</string>
+    <string name="read_untitled">Untitled note</string>
+    <string name="read_failed">Couldn\'t reach your phone</string>
+    <string name="read_no_phone">Open Quill on your phone to sync</string>
+    <string name="read_no_notes">No notes yet</string>
 
     <!-- Complication -->
     <string name="complication_label">Cards due</string>

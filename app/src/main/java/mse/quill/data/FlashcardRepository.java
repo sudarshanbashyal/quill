@@ -20,6 +20,7 @@ import mse.quill.data.serialization.MarkdownSerializer;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
+import mse.quill.util.NoteDisplayUtils;
 
 /**
  * The flashcards generated from a note's Q&amp;A blocks, and their review schedule.
@@ -79,6 +80,9 @@ public class FlashcardRepository {
             long now = System.currentTimeMillis();
 
             List<Flashcard> deck = new ArrayList<>();
+            // Whether the watch's copy is now wrong. Tracked rather than assumed, because this
+            // method runs on every note save and most saves touch no Q&A block at all.
+            boolean projectionChanged = false;
             db.beginTransaction();
             try {
                 for (QaSegment qa : reviewable) {
@@ -95,7 +99,11 @@ public class FlashcardRepository {
                         card.back = back;
                         FlashcardScheduler.initialise(card, now);
                         db.insert("flashcards", null, toValues(card));
+                        // initialise sets nextReview = now, so a new card is due the moment it
+                        // exists — which is exactly why this has to reach the watch.
+                        projectionChanged = true;
                     } else if (!front.equals(card.front) || !back.equals(card.back)) {
+                        projectionChanged = true;
                         // Text only. Rewriting the schedule here would mean fixing a typo in a
                         // question silently threw away everything known about how well it's known.
                         card.front = front;
@@ -113,6 +121,17 @@ public class FlashcardRepository {
             }
 
             if (cb != null) executors.mainThread(() -> cb.onLoaded(deck));
+
+            // After the callback and outside the transaction, matching recordReview: the editor
+            // should return at the speed of the database write, not of a Data Layer round trip.
+            //
+            // Without this the watch only learned about new cards on the next cold start of
+            // MainActivity, the next answered card, or the next daily worker run — so making a
+            // deck on the phone and looking at the wrist showed "all caught up", which is the one
+            // answer that is definitely wrong.
+            if (projectionChanged) {
+                WearProjectionPublisher.publishAfterScheduleChange(appContext);
+            }
         });
     }
 
@@ -283,7 +302,7 @@ public class FlashcardRepository {
 
         List<DueCard> candidates = new ArrayList<>();
         try (Cursor c = db.rawQuery(
-                "SELECT f.id, f.front, f.back, f.next_review " +
+                "SELECT f.id, f.front, f.back, f.next_review, n.id, n.title, n.created_at " +
                         "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
                         "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
                         NoteCrypto.excludeCollectionsClause(locked),
@@ -297,6 +316,12 @@ public class FlashcardRepository {
                 card.front = NoteDocument.toPlainText(c.getString(1));
                 card.back = NoteDocument.toPlainText(c.getString(2));
                 card.dueAt = c.getLong(3);
+                card.noteId = c.getString(4);
+                // Resolved here, not on the watch: an untitled note stores an empty title, and the
+                // fallback is a localised date string that needs a Context to build. No decryption
+                // step — see this method's note on why nothing here can hold ciphertext.
+                card.noteTitle = NoteDisplayUtils.resolveTitle(
+                        appContext, c.isNull(5) ? null : c.getString(5), c.getLong(6));
                 candidates.add(card);
             }
         }
@@ -318,14 +343,33 @@ public class FlashcardRepository {
     public void deleteForNote(String noteId, Runnable onDeleted) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
-            db.delete("flashcards", "note_id = ?", new String[]{noteId});
+            int deleted = db.delete("flashcards", "note_id = ?", new String[]{noteId});
             if (onDeleted != null) executors.mainThread(onDeleted);
+
+            // The mirror of the publish in syncFromNote, and the more visible of the two if it is
+            // missing: a watch still holding a deleted deck offers cards to review, and answering
+            // one sends the phone an id it can no longer find.
+            if (deleted > 0) WearProjectionPublisher.publishAfterScheduleChange(appContext);
         });
     }
 
-    /** Persists the card's advanced schedule after an answer. */
+    /** Persists the card's advanced schedule after an answer given now, on this device. */
     public void recordReview(Flashcard card, boolean correct, Runnable onDone) {
-        FlashcardScheduler.applyReview(card, correct, System.currentTimeMillis());
+        recordReview(card, correct, System.currentTimeMillis(), onDone);
+    }
+
+    /**
+     * Persists the card's advanced schedule after an answer given at {@code answeredAt}.
+     *
+     * <p>The timestamp is a parameter rather than a {@code System.currentTimeMillis()} inside,
+     * because an answer from the watch arrives some time after it was given — immediately when
+     * tethered, and much later when it wasn't. Anchoring the interval to arrival would push a
+     * card answered at 08:00 and delivered at 22:00 fourteen hours further out than the schedule
+     * intends, and it would do it silently: every field still looks plausible afterwards, which
+     * is what makes this worth a separate overload rather than a caller's discipline.
+     */
+    public void recordReview(Flashcard card, boolean correct, long answeredAt, Runnable onDone) {
+        FlashcardScheduler.applyReview(card, correct, answeredAt);
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             ContentValues cv = new ContentValues();
@@ -345,6 +389,37 @@ public class FlashcardRepository {
     }
 
     // ── Sync helpers (must run on the diskIO executor) ──────────────────────
+
+    /**
+     * One card by id, or null if it no longer exists. <b>Blocking — call from a background
+     * thread.</b>
+     *
+     * <p>Null is a normal answer, not an error: an answer can arrive from the watch for a card the
+     * phone deleted while the two were apart, and the projection the watch answered from is by
+     * then simply out of date. The caller drops it.
+     */
+    public Flashcard loadByIdSync(String cardId) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        try (Cursor c = db.rawQuery(
+                "SELECT id, note_id, source_segment_id, front, back, interval, repetitions, " +
+                        "easiness, next_review, last_reviewed_at " +
+                        "FROM flashcards WHERE id = ?",
+                new String[]{cardId})) {
+            if (!c.moveToFirst()) return null;
+            Flashcard card = new Flashcard();
+            card.id = c.getString(0);
+            card.noteId = c.getString(1);
+            card.sourceSegmentId = c.getString(2);
+            card.front = c.isNull(3) ? "" : c.getString(3);
+            card.back = c.isNull(4) ? "" : c.getString(4);
+            card.interval = c.getInt(5);
+            card.repetitions = c.getInt(6);
+            card.easiness = c.getDouble(7);
+            card.nextReview = c.getLong(8);
+            card.lastReviewedAt = c.isNull(9) ? null : c.getLong(9);
+            return card;
+        }
+    }
 
     private Map<String, Flashcard> loadBySegmentIdSync(SQLiteDatabase db, String noteId) {
         Map<String, Flashcard> cards = new HashMap<>();

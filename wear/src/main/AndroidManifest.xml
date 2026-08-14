@@ -3,6 +3,11 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
+    <!-- Voice memos are recorded here rather than transcribed by the system recogniser, so the
+         microphone is ours to ask for. Requested at the moment a destination is picked, not on
+         launch — see CaptureActivity. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -21,6 +26,44 @@
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="false" />
+
+        <!-- Voice capture, and the only launcher entry. Capture is the one screen worth opening
+             cold: a review session with nothing due is a dead end, but a thought can arrive at any
+             time. This is also why the app appears in the watch's app list at all.
+
+             keepScreenOn, because the screen going dark mid-memo is the screen going away, and
+             onStop throws an in-progress recording out. A watch dims after a few seconds of not
+             being looked at, which is most of a recording. -->
+        <activity
+            android:name=".CaptureActivity"
+            android:exported="true"
+            android:label="@string/capture_label"
+            android:keepScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Opened from the audio tile. Not a launcher entry: unlike capture, picking a note to be
+             read is not something you reach for without a tile in front of you. -->
+        <activity
+            android:name=".ReadAloudActivity"
+            android:exported="true"
+            android:label="@string/tile_read_label"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <!-- The review session. Exported because the tile launches it, and a tile's click is
+             dispatched by the system's tile renderer rather than by this app — an unexported
+             activity is simply not startable from there. No launcher category: Quill on the watch
+             is reached from the tile or the complication, not from the app list, because a
+             session with nothing due is not a screen worth opening cold. -->
+        <activity
+            android:name=".ReviewActivity"
+            android:exported="true"
+            android:label="@string/tile_label"
+            android:theme="@android:style/Theme.DeviceDefault" />
 
         <!-- Wakes on a new projection and asks the two surfaces to redraw. It holds no state of
              its own: the DataItem the phone published *is* the store, so there is nothing here to
@@ -46,9 +89,34 @@
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
             </intent-filter>
 
+            <!-- What the tile picker shows before the tile has been added. It used to be
+                 @mipmap/ic_launcher, which answered "whose tile is this" and not "what is on it" —
+                 in a carousel where every other entry previews its own contents, an app icon is the
+                 one card that tells you nothing. These are renders of the real thing, so the
+                 picture and the tile cannot disagree. In drawable-nodpi because a preview is one
+                 fixed image, not an asset to be scaled per density. -->
             <meta-data
                 android:name="androidx.wear.tiles.PREVIEW"
-                android:resource="@mipmap/ic_launcher" />
+                android:resource="@drawable/tile_preview_flashcards" />
+        </service>
+
+        <!-- One more tile, so recording and listening are each one tap from the carousel rather
+             than a trip through the app list. Kept off the due tile: that one is a glance at a
+             number, and hanging two unrelated actions off it would make it a menu. It was two
+             tiles until the two turned out to be the same tile with different words on it — see
+             AudioTileService. -->
+        <service
+            android:name=".AudioTileService"
+            android:exported="true"
+            android:label="@string/tile_audio_label"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/tile_preview_audio" />
         </service>
 
         <service

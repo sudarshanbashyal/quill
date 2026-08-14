@@ -181,4 +181,43 @@ public class DueProjectionTest {
         assertTrue(DueProjection.select(null, 0).isEmpty());
         assertTrue(DueProjection.select(new ArrayList<>(), 0).isEmpty());
     }
+
+    /**
+     * {@code select} copies each card by hand, so a field added to {@link DueCard} and forgotten
+     * there reaches the watch empty with nothing failing. That happened to the deck fields: every
+     * deck collapsed into one nameless group on the wrist because the copy dropped them.
+     */
+    @Test
+    public void selectCarriesTheDeckFieldsThrough() {
+        long horizon = at(BERLIN, 2026, 8, 14, 23, 59);
+        DueCard card = card("a", horizon - 1000);
+        card.noteId = "note-1";
+        card.noteTitle = "Geography";
+        List<DueCard> candidates = new ArrayList<>();
+        candidates.add(card);
+
+        List<DueCard> selected = DueProjection.select(candidates, horizon);
+
+        assertEquals(1, selected.size());
+        assertEquals("note-1", selected.get(0).noteId);
+        assertEquals("Geography", selected.get(0).noteTitle);
+    }
+
+    /** A deck name is short by construction, and cutting it would merge two decks in the picker. */
+    @Test
+    public void deckTitleIsNotTruncatedTheWayCardTextIs() {
+        long horizon = at(BERLIN, 2026, 8, 14, 23, 59);
+        StringBuilder longTitle = new StringBuilder();
+        for (int i = 0; i < DueProjection.MAX_TEXT_CHARS + 50; i++) longTitle.append('x');
+
+        DueCard card = card("a", horizon - 1000);
+        card.noteTitle = longTitle.toString();
+        List<DueCard> candidates = new ArrayList<>();
+        candidates.add(card);
+
+        List<DueCard> selected = DueProjection.select(candidates, horizon);
+
+        assertEquals(longTitle.toString(), selected.get(0).noteTitle);
+        assertFalse(selected.get(0).noteTitle.endsWith(DueProjection.ELLIPSIS));
+    }
 }

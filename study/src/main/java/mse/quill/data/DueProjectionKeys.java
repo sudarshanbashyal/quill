@@ -36,4 +36,20 @@ public final class DueProjectionKeys {
     public static final String KEY_CARD_FRONTS = "card_fronts";
     public static final String KEY_CARD_BACKS = "card_backs";
     public static final String KEY_CARD_DUE_AT = "card_due_at";
+
+    /**
+     * The note each card belongs to, and that note's resolved title — the watch groups its review
+     * list by deck, and a deck is a note.
+     *
+     * <p>Two more parallel arrays rather than a separate deck list keyed by note id: the decode
+     * already takes the shortest of the card arrays as its length, so adding to that set is a
+     * change the existing "four chances to disagree" guard already covers. A second list would be
+     * a second thing that can disagree with the first.
+     *
+     * <p>Added after the first release of the projection. An older watch reading a newer phone's
+     * item simply ignores them; a newer watch reading an older item gets null and falls back —
+     * which is why the decode treats them as optional rather than required.
+     */
+    public static final String KEY_CARD_NOTE_IDS = "card_note_ids";
+    public static final String KEY_CARD_NOTE_TITLES = "card_note_titles";
 }

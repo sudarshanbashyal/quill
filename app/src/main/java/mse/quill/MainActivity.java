@@ -34,7 +34,9 @@ import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 
 import mse.quill.data.AppExecutors;
+import mse.quill.data.WearNoteListPublisher;
 import mse.quill.data.WearProjectionPublisher;
+import mse.quill.data.WearReadStatePublisher;
 import mse.quill.reminders.StudyReminders;
 import mse.quill.security.AppLock;
 import mse.quill.security.CollectionLock;
@@ -93,6 +95,13 @@ public class MainActivity extends AppCompatActivity {
         // the one that covers a watch paired since the last of those: without it, a freshly paired
         // watch would show nothing until tomorrow morning or the next review, whichever came first.
         AppExecutors.getInstance().diskIO(() -> WearProjectionPublisher.publishSync(this));
+        // The watch's note pickers read this. Same reasoning as the line above: a watch paired
+        // since the last save would otherwise have nothing to offer until the next one.
+        AppExecutors.getInstance().diskIO(() -> WearNoteListPublisher.publishSync(this));
+        // What the watch's transport controls are drawn from. Attached here as well as when the
+        // watch asks for a reading, so a reading started on the phone — from a note's own menu —
+        // is one the wrist can also pause.
+        WearReadStatePublisher.ensureAttached(this);
     }
 
     /** Extra on the reminder notification's intent: land on the Flashcards tab. */
