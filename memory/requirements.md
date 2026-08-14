@@ -369,9 +369,10 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
     deliberately encrypted would leak both its existence and their neglect of it.
   - **Reusable beyond flashcards, as the epic asks**: `StudyReminders.sync()` is the whole
     scheduling contract, so a second reminder type needs a worker and a preference, not new
-    infrastructure. Epic J's watch tile and Epic I's home-screen widget can read
+    infrastructure. Epic J's watch tile and the home-screen widgets (Epic K below) can read
     `FlashcardRepository.countDueSync` directly — that's the "projected count" they were
-    blocked on.
+    blocked on. (This paragraph used to say "Epic I's home-screen widget" — Epic I below is
+    unrelated whiteboard work; the widget itself didn't have an epic slot until it was built.)
 
 ---
 
@@ -640,6 +641,27 @@ worse than no tile, so D's unbuilt reminders infrastructure is a real prerequisi
 - **Sensor gimmicks.** A watch makes Epic G tempting, but heart-rate-during-review is a demo, not
   a feature. The honest version, if Epic G is to be retired here, is using on-body/idle state to
   *time* the review nudge.
+
+---
+
+## Epic K — Home-Screen App Widgets (built opportunistically, not originally scoped)
+
+**Why here**: not part of the original one-pager scoping; built 2026-08-14 in response to a
+direct ask, reusing infrastructure Epics D/I already put in place (`NoteRepository`'s pinned
+notes, `CollectionRepository`, `WhiteboardRepository` + `WhiteboardThumbnails`). Full design,
+the three RemoteViews gotchas hit, and what's reused vs. new live in
+[note.md](note.md)'s "Home-screen App Widgets" section.
+
+- [x] **Collections widget** — stacked pinned-notes + collections lists, locked collections
+      excluded, tap deep-links to the note/collection
+- [x] **Whiteboards widget** — thumbnail grid of recent boards (thumbnails via a new disk
+      cache, `WidgetThumbnailCache`, mirroring what `WhiteboardThumbnails` already renders
+      in-app), tap deep-links to the board
+- [x] Live updates on data change (`WidgetUpdater`), not polling
+- [x] Verified working end-to-end by the user on-device (2026-08-14) — this environment has no
+      `adb`, so every fix landed via code review + a clean build, confirmed afterward by the user
+- [ ] Not done: a due-count flashcard widget (the "projected count" the reminders section above
+      anticipated) — this pass only covered notes/collections/whiteboards
 
 ---
 

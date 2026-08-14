@@ -2305,3 +2305,43 @@ from Profile authenticates first). The untitled-title fix *was* verified — bot
 **Also worth knowing:** with the grace period set to "Immediately" (the emulator's setting; the
 default is one minute), returning from a share still costs a prompt. That is the grace period doing
 what it says, not the gate bug coming back.
+
+## 2026-08-14 — Feature implementation: home-screen App Widgets
+
+**Asked:** widget ideas, narrowed to two — a widget for collections/important notes, and one for
+whiteboards — then clarified as genuine Android launcher widgets ("like a weather widget"), not
+new in-app screens.
+
+**Built:** `CollectionsWidgetProvider` (stacked pinned-notes + collections lists) and
+`WhiteboardsWidgetProvider` (thumbnail grid of recent boards), both under `mse.quill.widget`.
+Full design and the reasoning behind each piece — the two-`RemoteViewsService` requirement, the
+new `WidgetThumbnailCache` bridging `WhiteboardThumbnails`' async-only rendering, the
+`WidgetUpdater` push-refresh hooks — now live in [note.md](note.md)'s "Home-screen App Widgets"
+section; the checklist is Epic K in [requirements.md](requirements.md) (not originally scoped in
+the one-pager, built opportunistically).
+
+**No `adb` in this environment.** Every bug in this feature was reported by the user from a real
+device, by symptom only ("doesn't load", "just opens the app"), and diagnosed from code review
+rather than logcat. Three real bugs, each confirmed by the user after a code-review fix:
+
+1. **"Problem loading widget"** on the collections widget — a plain `<View>` divider isn't in
+   RemoteViews' inflatable-class allowlist. Swapped for a 1dp `TextView`.
+2. **Tapping a whiteboard/note/collection opened the app but landed on whatever screen was last
+   open**, not the tapped item. Two stacked causes, found one after the other: first,
+   `runWhenNavHostReady` waited for `HomeFragment` to resume but nothing was driving the nav host
+   back to Home (fixed by forcing `popBackStack(R.id.homeFragment, false)`, matching
+   `handleViewIntent`'s existing pattern) — this alone didn't fix it. Second (found after the user
+   reported the bug *persisted*): the collection-widget `PendingIntent` templates were
+   `FLAG_IMMUTABLE`, which silently blocks the template+`fillInIntent` merge that hands each row's
+   tapped-item extras to `MainActivity` — needed `FLAG_MUTABLE` instead.
+3. Also fixed on request, unrelated to the widgets: the in-app pinned-notes strip
+   (`PinnedNoteCardView`) felt oversized — shrunk `pinned_card_width`/`_height` (164×148dp →
+   140×108dp), tighter padding, 1-line title.
+
+**Process note worth keeping**: when the user reports "issue 1 solved, issue 2 still persists"
+after a fix was applied, that's a signal there may be a *second*, independent cause behind the
+same symptom — don't assume the first fix was wrong, look for what else could produce the same
+observed behavior. That's exactly what happened with bug 2 above.
+
+**Verified working end-to-end by the user on-device**, including the pinned-card resize. Not
+committed as of end of session — check `git status` before assuming this has landed.

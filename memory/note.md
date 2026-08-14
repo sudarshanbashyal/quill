@@ -1493,3 +1493,68 @@ invocations are 200-400ms apart, slower than a person).
   directly.
 - `aapt` strips leading/trailing whitespace from a string resource unless the value is quoted —
   `<string name="count_separator">" · "</string>`.
+
+## Home-screen App Widgets
+
+**Status: built 2026-08-14.** Two Android launcher widgets, `mse.quill.widget` package —
+Quill's first use of `AppWidgetProvider`/`RemoteViews` (the "Epic I home-screen widget"
+mentioned in [requirements.md](requirements.md)'s flashcard-reminders section was a forward
+reference to this; Epic I itself is unrelated whiteboard work — see that file for the
+correction).
+
+- **Collections widget** (`CollectionsWidgetProvider`) — pinned notes (fixed-height block,
+  since `NoteRepository.MAX_PINNED_NOTES` caps it at 3) stacked above a scrollable collections
+  list. Two `ListView`s, each needing its **own** `RemoteViewsService`
+  (`PinnedNotesRemoteViewsService`, `CollectionsRemoteViewsService`) — one service can only
+  feed one collection view. Locked collections (`Collection.biometricLocked`) are filtered out
+  before rendering: a widget has no way to gate behind `BiometricPrompt`, so a locked
+  collection's name/count would otherwise leak onto the home screen unlocked.
+- **Whiteboards widget** (`WhiteboardsWidgetProvider` / `WhiteboardsRemoteViewsService`) — a
+  `GridView` of recent boards with thumbnails.
+
+**Reused rather than rebuilt**: each repository already had (or gained) a synchronous
+`load*Sync()` twin of its async method — `NoteRepository.loadPinnedNotesSync`,
+`CollectionRepository.loadCollectionsSync`, `WhiteboardRepository.loadWhiteboardsSync` — safe
+to call from a `RemoteViewsFactory`, since Android already runs those calls off the main
+thread. `WidgetUpdater.notifyCollectionsChanged`/`notifyWhiteboardsChanged` are called from the
+existing pin/unpin and collection/whiteboard CRUD methods to push live refreshes
+(`AppWidgetManager.notifyAppWidgetViewDataChanged`) rather than polling on a timer.
+
+**Thumbnails needed a second cache.** `WhiteboardThumbnails` renders asynchronously through a
+live `WhiteboardView` on the main thread and only ever hands the bitmap back via callback —
+there is no synchronous path, but `RemoteViewsFactory.getViewAt()` must return synchronously
+from a background binder thread with no view hierarchy to render through. `WidgetThumbnailCache`
+mirrors every render `WhiteboardThumbnails` produces to a PNG under
+`getCacheDir()/widget_thumbs/`, and the widget factory reads that file synchronously
+(`BitmapFactory.decodeFile`), falling back to a placeholder for a board that's never been opened
+in-app since install.
+
+**Deep-linking a tap.** `MainActivity` gained the `EXTRA_OPEN_NOTE_ID`/`_COLLECTION_ID`/
+`_WHITEBOARD_ID` extras (same shape as the existing `EXTRA_OPEN_FLASHCARDS` reminder-tap
+pattern) and a `handleWidgetIntent`/`runWhenNavHostReady` pair. Each row's `RemoteViews` carries
+a `fillInIntent` with the relevant extra; the provider sets one `PendingIntent` **template**
+per collection view (`setPendingIntentTemplate`) rather than one per row.
+
+**Three non-obvious bugs found the hard way, worth not rediscovering:**
+1. **A plain `<View>` isn't in RemoteViews' inflatable-class allowlist.** Only specific widget
+   classes (`TextView`, `ListView`, `FrameLayout`, `LinearLayout`, …) are inflatable inside a
+   home-screen widget; a bare `android.view.View` (used as a divider) throws at inflation and
+   the whole widget falls back to Android's "Problem loading widget" placeholder. Fixed by
+   using a 1dp-tall `TextView` with a background color instead.
+2. **The `PendingIntent` template needs `FLAG_MUTABLE`, not `FLAG_IMMUTABLE`.** The
+   template + per-row `fillInIntent` mechanism requires the system to merge each row's extras
+   into the template at click time; an immutable template silently refuses that merge, so every
+   row still fires the same bare intent with none of its extras — the app opens, but always
+   lands wherever `MainActivity` was left, never on the tapped item.
+3. **Waiting for `HomeFragment` to resume isn't enough on its own** — nothing was actually
+   driving the nav host back to Home if the user was already elsewhere in the app, so the wait
+   callback registered and then hung forever. `runWhenNavHostReady` now forces
+   `popBackStack(R.id.homeFragment, false)` first, the same call `handleViewIntent` already
+   used for the identical reason on a shared-file import.
+
+**No on-device testing tooling in this environment** — `adb` isn't on PATH here, so every fix
+in this feature was verified by code review + a clean `assembleDebug`/`compileDebugJavaWithJavac`
+build, then confirmed against real device behavior by the user afterward. If `adb` becomes
+available, prefer it for anything widget-related; RemoteViews failures in particular
+(the allowlist crash above) are much faster to diagnose from `logcat` than from symptom
+descriptions alone.
