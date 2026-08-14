@@ -24,3 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Quill"
 include(":app")
+include(":study")
+include(":wear")

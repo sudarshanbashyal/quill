@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Quill</string>
+
+    <!-- Tile -->
+    <string name="tile_label">Quill review</string>
+    <string name="tile_description">Cards due today</string>
+    <string name="tile_caught_up">All caught up</string>
+    <!-- Kept short on purpose: the main slot's display type truncates past roughly twenty
+         characters at 384px, and "Open Quill on your p…" is worse than saying less. -->
+    <string name="tile_no_phone">Open on phone</string>
+    <plurals name="tile_cards_due">
+        <item quantity="one">%d card due</item>
+        <item quantity="other">%d cards due</item>
+    </plurals>
+    <string name="tile_review_action">Review</string>
+
+    <!-- Complication -->
+    <string name="complication_label">Cards due</string>
+    <string name="complication_description">How many Quill cards are due today</string>
+</resources>

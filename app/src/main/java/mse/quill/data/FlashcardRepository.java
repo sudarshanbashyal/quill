@@ -10,11 +10,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.UUID;
 
+import mse.quill.data.model.DueCard;
 import mse.quill.data.model.Flashcard;
 import mse.quill.data.model.FlashcardDeck;
 import mse.quill.data.serialization.MarkdownSerializer;
+import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
 
@@ -34,9 +37,12 @@ public class FlashcardRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
+    /** Held only so a review can re-publish the Wear projection; see {@link #recordReview}. */
+    private final Context appContext;
 
     public FlashcardRepository(Context context) {
-        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
+        this.appContext = context.getApplicationContext();
+        this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
     }
 
@@ -247,6 +253,60 @@ public class FlashcardRepository {
     }
 
     /**
+     * Today's due cards as the watch is allowed to see them — the Wear projection's database half.
+     *
+     * <p>Synchronous for the same reason as {@link #countDueSync}: it is called from the reminder
+     * worker and from {@link AppExecutors#diskIO}, both already off the main thread.
+     *
+     * <p><b>Every locked collection is excluded, open or not</b>, which is deliberately stricter
+     * than the rest of the app. Elsewhere the question is "should this appear on screen", and an
+     * unlocked collection's notes should; here the question is "should this leave the device", and
+     * the answer for anything the user chose to encrypt is no. A watch has no biometric gate, no
+     * {@code FLAG_SECURE}, and a Data Layer store that outlives the session that filled it — a
+     * projection that shipped while the collection happened to be open would still be sitting there
+     * an hour after it was shut again.
+     *
+     * <p>A useful side effect: because locked collections drop out by collection id rather than by
+     * lock state, nothing here can ever hold ciphertext, so unlike {@link #loadDecks} there is no
+     * decryption step to forget.
+     *
+     * <p>The horizon is end-of-day rather than {@code now} — see {@link DueProjection#select}.
+     */
+    public List<DueCard> dueProjectionSync(long now, TimeZone zone) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        Set<String> locked = NoteCrypto.lockedCollectionIds(db);
+        long horizon = DueProjection.endOfDayExclusive(now, zone);
+
+        List<String> args = new ArrayList<>();
+        args.add(String.valueOf(horizon));
+        args.addAll(locked);
+
+        List<DueCard> candidates = new ArrayList<>();
+        try (Cursor c = db.rawQuery(
+                "SELECT f.id, f.front, f.back, f.next_review " +
+                        "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
+                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
+                        NoteCrypto.excludeCollectionsClause(locked),
+                args.toArray(new String[0]))) {
+            while (c.moveToNext()) {
+                DueCard card = new DueCard();
+                card.id = c.getString(0);
+                // Markdown on disk, plain text on the wrist. Done here rather than on the watch
+                // because this is where the renderer that understands the format lives, and the
+                // watch has nothing to draw a bullet with anyway.
+                card.front = NoteDocument.toPlainText(c.getString(1));
+                card.back = NoteDocument.toPlainText(c.getString(2));
+                card.dueAt = c.getLong(3);
+                candidates.add(card);
+            }
+        }
+
+        // Ordering, the cap and the trim are all in :study, where they can be tested without a
+        // database — this method's job is the query and the lock rule, and nothing else.
+        return DueProjection.select(candidates, horizon);
+    }
+
+    /**
      * Deletes a note's whole deck.
      *
      * <p>A hard delete, against the app's soft-delete convention, and deliberately: a card is
@@ -276,6 +336,11 @@ public class FlashcardRepository {
             cv.put("last_reviewed_at", card.lastReviewedAt);
             db.update("flashcards", cv, "id = ?", new String[]{card.id});
             if (onDone != null) executors.mainThread(onDone);
+
+            // After the callback, not before: the review screen should advance at the speed of the
+            // database write, not at the speed of a Data Layer round trip. Still on the diskIO
+            // thread, which is where publishSync has to be.
+            WearProjectionPublisher.publishAfterScheduleChange(appContext);
         });
     }
 

@@ -18,6 +18,7 @@ import androidx.work.WorkerParameters;
 import mse.quill.MainActivity;
 import mse.quill.R;
 import mse.quill.data.FlashcardRepository;
+import mse.quill.data.WearProjectionPublisher;
 import mse.quill.ui.profile.ProfilePreferences;
 
 /**
@@ -43,6 +44,12 @@ public class StudyReminderWorker extends Worker {
     public Result doWork() {
         Context context = getApplicationContext();
         try {
+            // First, and deliberately ahead of the notification preference: the watch is refreshed
+            // on this daily wake-up — it is the reason Epic J's tile was blocked on this worker
+            // existing — and someone who has turned the daily nudge off has not thereby asked for
+            // a tile that stops counting. The two surfaces are separate promises.
+            WearProjectionPublisher.publishSync(context);
+
             // Checked again here, not just when the work was scheduled: the switch may have been
             // turned off while this run was pending, and a cancelled job is not guaranteed to
             // vanish before it fires.

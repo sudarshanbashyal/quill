@@ -16,6 +16,14 @@ playServicesNearby = "19.3.0"
 playServicesCodeScanner = "16.1.0"
 zxingCore = "3.5.3"
 barcodeScanningCommon = "17.0.0"
+# Wear OS companion (:wear only). Kotlin is confined to that module — see note.md for why the
+# tile libraries force it. Tiles 1.6.2 declares protolayout 1.4.2, so the two lines move together.
+kotlin = "2.4.10"
+playServicesWearable = "20.0.1"
+wearTiles = "1.6.2"
+protolayout = "1.4.2"
+watchfaceComplications = "1.3.0"
+wearRemoteInteractions = "1.2.0"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -49,6 +57,29 @@ play-services-code-scanner = { group = "com.google.android.gms", name = "play-se
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 barcode-scanning-common = { group = "com.google.mlkit", name = "barcode-scanning-common", version.ref = "barcodeScanningCommon" }
 
+# ── Wear OS ───────────────────────────────────────────────────────────────────────────────────
+# The Data Layer, on both sides of the pair: the phone publishes the due-card projection as a
+# DataItem and the watch listens for it. Same library, opposite ends — so this one is a dependency
+# of :app as well as :wear, unlike everything below it.
+play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
+# The tile surface. `tiles` is the service and the timeline; the layout itself is ProtoLayout,
+# which is a description of a layout rather than a view hierarchy — the tile is rendered by the
+# system in another process, so there is nothing to hold a reference to and no draw call to make.
+wear-tiles = { group = "androidx.wear.tiles", name = "tiles", version.ref = "wearTiles" }
+protolayout = { group = "androidx.wear.protolayout", name = "protolayout", version.ref = "protolayout" }
+protolayout-expression = { group = "androidx.wear.protolayout", name = "protolayout-expression", version.ref = "protolayout" }
+# Material 3 Expressive components for the tile. Kotlin-only — no Java builders exist — which is
+# the concrete reason :wear is a Kotlin module. The Java-friendly alternative is the Material 2.5
+# `protolayout-material`, which would put the watch surface off the app's own design system.
+protolayout-material3 = { group = "androidx.wear.protolayout", name = "protolayout-material3", version.ref = "protolayout" }
+# The watch-face complication: the due count alone, on whatever face the user is wearing.
+watchface-complications-data-source-ktx = { group = "androidx.wear.watchface", name = "watchface-complications-data-source-ktx", version.ref = "watchfaceComplications" }
+# Opening the phone app from the watch. Phase 1's tile has nowhere on-watch to send a tap yet, and
+# "open Quill on your phone" is a real answer rather than a placeholder — RemoteActivityHelper is
+# what turns an Intent into one that starts on the paired handset.
+wear-remote-interactions = { group = "androidx.wear", name = "wear-remote-interactions", version.ref = "wearRemoteInteractions" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 

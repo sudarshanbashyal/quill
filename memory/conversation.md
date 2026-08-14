@@ -2305,3 +2305,42 @@ from Profile authenticates first). The untitled-title fix *was* verified — bot
 **Also worth knowing:** with the grace period set to "Immediately" (the emulator's setting; the
 default is one minute), returning from a share still costs a prompt. That is the grace period doing
 what it says, not the gate bug coming back.
+
+## 2026-08-13 (later) — Wear OS: the `:study` extraction, and phase 1 of the companion
+
+"watchOS" here meant **Wear OS** — Epic J. Started as a design discussion and ended with three
+modules and a tile rendering on an emulator.
+
+**What had gone stale in Epic J**, scoped 08-08 and read again today: the tile's "blocked on Epic D"
+was no longer true (`fbc25a2` shipped the reminder worker, which is exactly the scheduled refresh it
+wanted), and the epic had no answer for the app lock, which landed after it was written.
+
+**Two things the code said that the plan didn't.** `recordReview` stamps `System.currentTimeMillis()`
+rather than the answer's own time, so replaying a queued offline watch review would anchor every
+interval to drain time — silent interval corruption, not a visible failure. And "today's due cards"
+needs an end-of-day horizon, or the watch says "all caught up" at 09:00 for a card due at 09:05.
+Both are now written into the epic; the horizon is built, the `recordReview` overload is not.
+
+**The stack decision flipped mid-discussion, and the reason is worth keeping.** The plan was
+Java-first — tile in Java, Compose later for the review screen — until a search showed
+`protolayout-material3` is Kotlin-only with no Java builders, so a Java tile is a *Material 2.5*
+tile, off the design system the app was migrated onto. Also corrected a claim in the epic: the
+view-based Wear widgets are **not** deprecated. `:wear` is Kotlin; `:app` and `:study` stay Java.
+
+**`:study` extracted first** — seven classes, not the six the plan listed (`QuizQuestion` had to come
+too; its constructor is package-private and only `QuizGenerator` calls it). Packages deliberately
+unchanged, so **zero imports in `:app` changed** and the diff is eleven renames plus build files.
+32 tests pass, and the module's whole point was verified rather than assumed: adding
+`import android.content.Context` to `QuizRules` now fails `:study:compileJava`.
+
+**Phase 1 built and partly verified.** Emulator toolchain came first — no `cmdline-tools` were
+installed, so `sdkmanager`/`avdmanager` had to be downloaded (SHA-1 checked against Google's
+repository XML) before a Wear OS 6 arm64 AVD could exist. The tile renders its correct never-synced
+state on `emulator-5556`. The phone's publish path runs to the GMS boundary and stops at
+`Wearable.API is not available on this device` — the emulators aren't paired, which needs the
+companion app and a Google sign-in. Everything downstream of that (the decode, every non-empty tile
+state) is written but unexercised, and `note.md` says so.
+
+**One bug introduced and caught in the same session**: the publish was first wired *after* the
+reminder worker's notifications-enabled early return, which would have frozen the watch's count for
+anyone who turned the daily nudge off. Moved ahead of it — the two surfaces are separate promises.
