@@ -33,10 +33,13 @@ public class CollectionsWidgetProvider extends AppWidgetProvider {
 
             // A template rather than one PendingIntent per row: each row's fillInIntent (set in
             // the factories below) supplies the extra that tells MainActivity which item this
-            // particular tap was.
+            // particular tap was. FLAG_MUTABLE, not FLAG_IMMUTABLE: the system has to merge each
+            // row's fillInIntent into this template at click time, which an immutable
+            // PendingIntent refuses — the click would still fire, but with none of the row's
+            // extras, landing on Home instead of the item that was tapped.
             PendingIntent template = PendingIntent.getActivity(
                     context, 0, new Intent(context, MainActivity.class),
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
             views.setPendingIntentTemplate(R.id.widget_pinned_notes_list, template);
             views.setPendingIntentTemplate(R.id.widget_collections_list, template);
 
