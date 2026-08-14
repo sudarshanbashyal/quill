@@ -18,9 +18,11 @@ public class CollectionRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
+    private final Context appContext;
 
     public CollectionRepository(Context context) {
-        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
+        this.appContext = context.getApplicationContext();
+        this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
     }
 
@@ -36,6 +38,7 @@ public class CollectionRepository {
             cv.put("created_at", System.currentTimeMillis());
             cv.put("biometric_locked", 0);
             db.insert("collections", null, cv);
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
 
             if (cb != null) executors.mainThread(() -> cb.onCreated(id));
         });
@@ -75,6 +78,7 @@ public class CollectionRepository {
             ContentValues cv = new ContentValues();
             cv.put("name", newName);
             db.update("collections", cv, "id = ?", new String[]{id});
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -95,47 +99,55 @@ public class CollectionRepository {
             } finally {
                 db.endTransaction();
             }
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
 
     public void loadCollections(OnCollectionsLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
-            // Flashcards and quizzes hang off notes, not collections, so both counts reach the
-            // collection through the note that owns them — and skip deleted notes for the same
-            // reason note_count does, or a collection emptied into the trash would still claim
-            // to hold cards.
-            Cursor c = db.rawQuery(
-                    "SELECT c.id, c.name, c.color, c.created_at, c.biometric_locked, " +
-                            "(SELECT COUNT(*) FROM notes n WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS note_count, " +
-                            "(SELECT MAX(n.updated_at) FROM notes n WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS last_activity, " +
-                            "(SELECT COUNT(*) FROM flashcards f JOIN notes n ON f.note_id = n.id " +
-                            "   WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS flashcard_count, " +
-                            "(SELECT COUNT(*) FROM quizzes q JOIN notes n ON q.note_id = n.id " +
-                            "   WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS quiz_count " +
-                            "FROM collections c ORDER BY c.created_at ASC",
-                    null);
-            List<Collection> collections = new ArrayList<>();
-            try {
-                while (c.moveToNext()) {
-                    Collection collection = new Collection();
-                    collection.id = c.getString(0);
-                    collection.name = c.getString(1);
-                    collection.color = c.getInt(2);
-                    collection.createdAt = c.getLong(3);
-                    collection.biometricLocked = c.getInt(4) != 0;
-                    collection.noteCount = c.getInt(5);
-                    collection.lastActivityAt = c.isNull(6) ? collection.createdAt : c.getLong(6);
-                    collection.flashcardCount = c.getInt(7);
-                    collection.quizCount = c.getInt(8);
-                    collections.add(collection);
-                }
-            } finally {
-                c.close();
-            }
+            List<Collection> collections = loadCollectionsSync();
             if (cb != null) executors.mainThread(() -> cb.onLoaded(collections));
         });
+    }
+
+    /** Synchronous form of {@link #loadCollections}, for the collections widget's
+     *  RemoteViewsFactory, which Android already runs off the main thread. */
+    public List<Collection> loadCollectionsSync() {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        // Flashcards and quizzes hang off notes, not collections, so both counts reach the
+        // collection through the note that owns them — and skip deleted notes for the same
+        // reason note_count does, or a collection emptied into the trash would still claim
+        // to hold cards.
+        Cursor c = db.rawQuery(
+                "SELECT c.id, c.name, c.color, c.created_at, c.biometric_locked, " +
+                        "(SELECT COUNT(*) FROM notes n WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS note_count, " +
+                        "(SELECT MAX(n.updated_at) FROM notes n WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS last_activity, " +
+                        "(SELECT COUNT(*) FROM flashcards f JOIN notes n ON f.note_id = n.id " +
+                        "   WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS flashcard_count, " +
+                        "(SELECT COUNT(*) FROM quizzes q JOIN notes n ON q.note_id = n.id " +
+                        "   WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS quiz_count " +
+                        "FROM collections c ORDER BY c.created_at ASC",
+                null);
+        List<Collection> collections = new ArrayList<>();
+        try {
+            while (c.moveToNext()) {
+                Collection collection = new Collection();
+                collection.id = c.getString(0);
+                collection.name = c.getString(1);
+                collection.color = c.getInt(2);
+                collection.createdAt = c.getLong(3);
+                collection.biometricLocked = c.getInt(4) != 0;
+                collection.noteCount = c.getInt(5);
+                collection.lastActivityAt = c.isNull(6) ? collection.createdAt : c.getLong(6);
+                collection.flashcardCount = c.getInt(7);
+                collection.quizCount = c.getInt(8);
+                collections.add(collection);
+            }
+        } finally {
+            c.close();
+        }
+        return collections;
     }
 
 }

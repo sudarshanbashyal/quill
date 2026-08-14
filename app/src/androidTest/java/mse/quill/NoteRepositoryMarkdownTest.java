@@ -66,7 +66,7 @@ public class NoteRepositoryMarkdownTest {
     private void saveNote(String noteId, String title, List<NoteSegment> segments)
             throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
-        repository.saveNote(noteId, title, segments, latch::countDown);
+        repository.saveNote(noteId, title, segments, (Runnable) latch::countDown);
         assertTrue("saveNote timed out", latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 

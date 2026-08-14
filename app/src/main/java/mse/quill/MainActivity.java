@@ -82,6 +82,7 @@ public class MainActivity extends AppCompatActivity {
         deliverSharedFileWhenHomeIsReady();
         handleViewIntent(getIntent());
         handleReminderIntent(getIntent());
+        handleWidgetIntent(getIntent());
 
         // Re-arms the daily reminder if it's on. Cheap, idempotent, and the recovery path for a
         // WorkManager queue that a force stop or a "clear data" wiped out — see StudyReminders.
@@ -123,6 +124,85 @@ public class MainActivity extends AppCompatActivity {
         setIntent(intent);
         handleViewIntent(intent);
         handleReminderIntent(intent);
+        handleWidgetIntent(intent);
+    }
+
+    /** Extras a home-screen widget tap arrives with — see {@code mse.quill.widget}. Exactly one is
+     *  ever set on a given intent. */
+    public static final String EXTRA_OPEN_NOTE_ID = "widget_open_note_id";
+    public static final String EXTRA_OPEN_COLLECTION_ID = "widget_open_collection_id";
+    public static final String EXTRA_OPEN_COLLECTION_NAME = "widget_open_collection_name";
+    public static final String EXTRA_OPEN_WHITEBOARD_ID = "widget_open_whiteboard_id";
+
+    /**
+     * Sends the user straight to whatever they tapped in a widget — a pinned note, a collection,
+     * or a whiteboard — rather than dropping them on Home to find it themselves.
+     *
+     * <p>Follows {@link #deliverSharedFileWhenHomeIsReady}'s shape: a cold start may not have
+     * inflated the nav host yet, so this waits for Home to be resumed before navigating, the same
+     * way a shared file's import waits.
+     */
+    private void handleWidgetIntent(Intent intent) {
+        if (intent == null) return;
+        String noteId = intent.getStringExtra(EXTRA_OPEN_NOTE_ID);
+        String collectionId = intent.getStringExtra(EXTRA_OPEN_COLLECTION_ID);
+        String whiteboardId = intent.getStringExtra(EXTRA_OPEN_WHITEBOARD_ID);
+        if (noteId == null && collectionId == null && whiteboardId == null) return;
+
+        intent.removeExtra(EXTRA_OPEN_NOTE_ID);
+        intent.removeExtra(EXTRA_OPEN_COLLECTION_ID);
+        intent.removeExtra(EXTRA_OPEN_COLLECTION_NAME);
+        intent.removeExtra(EXTRA_OPEN_WHITEBOARD_ID);
+        String collectionName = intent.getStringExtra(EXTRA_OPEN_COLLECTION_NAME);
+
+        runWhenNavHostReady(host -> {
+            NavController nav = host.getNavController();
+            Bundle args = new Bundle();
+            if (noteId != null) {
+                args.putString("note_id", noteId);
+                nav.navigate(R.id.noteEditorFragment, args);
+            } else if (collectionId != null) {
+                args.putString("collection_id", collectionId);
+                args.putString("collection_name", collectionName == null ? "" : collectionName);
+                nav.navigate(R.id.collectionDetailFragment, args);
+            } else {
+                args.putString("whiteboard_id", whiteboardId);
+                nav.navigate(R.id.whiteboardFragment, args);
+            }
+        });
+    }
+
+    /** Runs {@code action} once the nav host exists and Home is its resumed fragment — the point
+     *  {@link #deliverPendingImportIfReady} already waits for, reused here so a widget tap arriving
+     *  before Home has inflated still lands correctly instead of silently doing nothing. */
+    private void runWhenNavHostReady(java.util.function.Consumer<NavHostFragment> action) {
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+
+        // A widget tap has to land on the item it named regardless of where the user left the
+        // app — mid-note, on a quiz, anywhere. Without this, waiting below for Home to become the
+        // resumed fragment would wait forever: nothing else drives the back stack there. Mirrors
+        // handleViewIntent's own popBackStack call for the same reason.
+        if (host != null) host.getNavController().popBackStack(R.id.homeFragment, false);
+
+        Fragment current = host == null ? null
+                : host.getChildFragmentManager().getPrimaryNavigationFragment();
+        if (host != null && current instanceof mse.quill.ui.home.HomeFragment
+                && current.isResumed()) {
+            action.accept(host);
+            return;
+        }
+        getSupportFragmentManager().registerFragmentLifecycleCallbacks(
+                new FragmentManager.FragmentLifecycleCallbacks() {
+                    @Override
+                    public void onFragmentResumed(@NonNull FragmentManager fm, @NonNull Fragment fragment) {
+                        if (!(fragment instanceof mse.quill.ui.home.HomeFragment)) return;
+                        fm.unregisterFragmentLifecycleCallbacks(this);
+                        NavHostFragment readyHost = (NavHostFragment) getSupportFragmentManager()
+                                .findFragmentById(R.id.nav_host_fragment);
+                        if (readyHost != null) action.accept(readyHost);
+                    }
+                }, true);
     }
 
     /** Set once a VIEW intent names a file, and cleared once {@code HomeFragment} has it — Home may

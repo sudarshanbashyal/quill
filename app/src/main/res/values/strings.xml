@@ -1,6 +1,16 @@
 <resources>
     <string name="app_name">Quill</string>
 
+    <!-- Home-screen widgets -->
+    <string name="widget_pinned_notes_header">Pinned Notes</string>
+    <string name="widget_pinned_notes_empty">No pinned notes yet</string>
+    <string name="widget_collections_header">Collections</string>
+    <string name="widget_collections_empty">No collections yet</string>
+    <string name="widget_collections_description">Pinned notes and collections</string>
+    <string name="widget_whiteboards_header">Whiteboards</string>
+    <string name="widget_whiteboards_empty">No whiteboards yet</string>
+    <string name="widget_whiteboards_description">Recent whiteboards</string>
+
     <!-- Spoken by TalkBack for every header's back arrow (see Widget.Quill.Button.Back). -->
     <string name="action_back">Back</string>
 
