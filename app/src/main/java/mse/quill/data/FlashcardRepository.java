@@ -34,9 +34,11 @@ public class FlashcardRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
+    private final Context appContext;
 
     public FlashcardRepository(Context context) {
-        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
+        this.appContext = context.getApplicationContext();
+        this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
     }
 
@@ -105,6 +107,7 @@ public class FlashcardRepository {
             } finally {
                 db.endTransaction();
             }
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
 
             if (cb != null) executors.mainThread(() -> cb.onLoaded(deck));
         });
@@ -120,6 +123,14 @@ public class FlashcardRepository {
      */
     public void loadDecks(OnDecksLoaded cb) {
         executors.diskIO(() -> {
+            List<FlashcardDeck> decks = loadDecksSync();
+            if (cb != null) executors.mainThread(() -> cb.onLoaded(decks));
+        });
+    }
+
+    /** Synchronous form of {@link #loadDecks}, for the flashcards widget's RemoteViewsFactory,
+     *  which Android already runs off the main thread. */
+    public List<FlashcardDeck> loadDecksSync() {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             long now = System.currentTimeMillis();
             List<FlashcardDeck> decks = new ArrayList<>();
@@ -178,8 +189,7 @@ public class FlashcardRepository {
                 c.close();
             }
 
-            if (cb != null) executors.mainThread(() -> cb.onLoaded(decks));
-        });
+            return decks;
     }
 
     /** How many cards a note has — what decides whether it offers "turn into" or "review". */
@@ -246,6 +256,52 @@ public class FlashcardRepository {
         }
     }
 
+    /** A due card's front, for the flashcards widget's due-now list — just enough to render a
+     *  row and navigate to its note's deck on tap. Markdown, same as {@link Flashcard#front};
+     *  the widget converts it to plain text at render time. */
+    public static final class DueCardPreview {
+        public final String id;
+        public final String noteId;
+        public final String front;
+
+        DueCardPreview(String id, String noteId, String front) {
+            this.id = id;
+            this.noteId = noteId;
+            this.front = front;
+        }
+    }
+
+    /**
+     * The next {@code limit} cards due at {@code now}, soonest first — for the flashcards
+     * widget's due-now list, which (like {@link #countDueSync}) has to run synchronously from a
+     * {@code RemoteViewsFactory} rather than through {@link AppExecutors}. Locked collections are
+     * excluded the same way {@link #countDueSync} excludes them.
+     */
+    public List<DueCardPreview> loadDueCardsSync(long now, int limit) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
+
+        List<String> args = new ArrayList<>();
+        args.add(String.valueOf(now));
+        args.addAll(hidden);
+        args.add(String.valueOf(limit));
+
+        List<DueCardPreview> cards = new ArrayList<>();
+        try (Cursor c = db.rawQuery(
+                "SELECT f.id, f.note_id, f.front " +
+                        "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
+                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
+                        NoteCrypto.hiddenClause(hidden) +
+                        "ORDER BY f.next_review ASC LIMIT ?",
+                args.toArray(new String[0]))) {
+            while (c.moveToNext()) {
+                cards.add(new DueCardPreview(c.getString(0), c.getString(1),
+                        c.isNull(2) ? "" : c.getString(2)));
+            }
+        }
+        return cards;
+    }
+
     /**
      * Deletes a note's whole deck.
      *
@@ -259,6 +315,7 @@ public class FlashcardRepository {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             db.delete("flashcards", "note_id = ?", new String[]{noteId});
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
             if (onDeleted != null) executors.mainThread(onDeleted);
         });
     }
@@ -275,6 +332,7 @@ public class FlashcardRepository {
             cv.put("next_review", card.nextReview);
             cv.put("last_reviewed_at", card.lastReviewedAt);
             db.update("flashcards", cv, "id = ?", new String[]{card.id});
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
             if (onDone != null) executors.mainThread(onDone);
         });
     }

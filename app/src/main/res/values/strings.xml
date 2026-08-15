@@ -10,6 +10,11 @@
     <string name="widget_whiteboards_header">Whiteboards</string>
     <string name="widget_whiteboards_empty">No whiteboards yet</string>
     <string name="widget_whiteboards_description">Recent whiteboards</string>
+    <string name="widget_due_cards_header">Due Now</string>
+    <string name="widget_due_cards_empty">Nothing due</string>
+    <string name="widget_flashcard_decks_header">Decks</string>
+    <string name="widget_flashcard_decks_empty">No flashcards yet</string>
+    <string name="widget_flashcards_description">Due flashcards and decks</string>
 
     <!-- Spoken by TalkBack for every header's back arrow (see Widget.Quill.Button.Back). -->
     <string name="action_back">Back</string>

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:minWidth="180dp"
     android:minHeight="180dp"
     android:targetCellWidth="3"
@@ -7,6 +8,8 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_collections"
     android:previewImage="@mipmap/ic_launcher"
+    android:previewLayout="@layout/widget_collections"
+    tools:targetApi="s"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/widget_collections_description" />

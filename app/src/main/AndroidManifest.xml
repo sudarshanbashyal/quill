@@ -147,6 +147,17 @@
                 android:resource="@xml/widget_whiteboards_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.FlashcardsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_flashcards_info" />
+        </receiver>
+
         <!-- Not exported beyond BIND_REMOTEVIEWS: only the widget host (the launcher, holding
              that permission) is allowed to bind these to fetch each row's RemoteViews. -->
         <service
@@ -159,6 +170,14 @@
             android:permission="android.permission.BIND_REMOTEVIEWS" />
         <service
             android:name=".widget.WhiteboardsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.DueCardsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.FlashcardDecksRemoteViewsService"
             android:exported="true"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
 

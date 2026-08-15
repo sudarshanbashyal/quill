@@ -1496,11 +1496,11 @@ invocations are 200-400ms apart, slower than a person).
 
 ## Home-screen App Widgets
 
-**Status: built 2026-08-14.** Two Android launcher widgets, `mse.quill.widget` package —
-Quill's first use of `AppWidgetProvider`/`RemoteViews` (the "Epic I home-screen widget"
-mentioned in [requirements.md](requirements.md)'s flashcard-reminders section was a forward
-reference to this; Epic I itself is unrelated whiteboard work — see that file for the
-correction).
+**Status: built 2026-08-14, extended 2026-08-15.** Three Android launcher widgets,
+`mse.quill.widget` package — Quill's first use of `AppWidgetProvider`/`RemoteViews` (the
+"Epic I home-screen widget" mentioned in [requirements.md](requirements.md)'s
+flashcard-reminders section was a forward reference to this; Epic I itself is unrelated
+whiteboard work — see that file for the correction).
 
 - **Collections widget** (`CollectionsWidgetProvider`) — pinned notes (fixed-height block,
   since `NoteRepository.MAX_PINNED_NOTES` caps it at 3) stacked above a scrollable collections
@@ -1511,13 +1511,30 @@ correction).
   collection's name/count would otherwise leak onto the home screen unlocked.
 - **Whiteboards widget** (`WhiteboardsWidgetProvider` / `WhiteboardsRemoteViewsService`) — a
   `GridView` of recent boards with thumbnails.
+- **Flashcards widget** (`FlashcardsWidgetProvider`, added 2026-08-15) — due-now cards (front
+  text only, `DueCardsRemoteViewsService`) stacked above a deck list
+  (`FlashcardDecksRemoteViewsService`), weighted **3:2 (60/40)** rather than the Collections
+  widget's fixed-height-for-the-short-section approach — due cards are the reason to open this
+  widget, so they get the larger, still-proportional share. `FlashcardRepository` gained
+  `loadDecksSync()` (sync twin of the existing `loadDecks`) and a new
+  `loadDueCardsSync(now, limit)` — no prior query returned individual due cards, only
+  `countDueSync`'s counts. Tapping either section opens the tapped note's flashcard review
+  screen via a new `EXTRA_OPEN_FLASHCARD_NOTE_ID` — deliberately separate from
+  `EXTRA_OPEN_NOTE_ID`, which opens the note *editor*, not the review screen.
+
+**All three widgets carry `android:previewLayout`** (added 2026-08-15, API 31+) pointing at
+their own root layout, so the widget picker renders the real layout instead of a generic icon.
+`android:previewImage="@mipmap/ic_launcher"` stays as the fallback below API 31 — there's no
+screenshot asset in the repo to use instead.
 
 **Reused rather than rebuilt**: each repository already had (or gained) a synchronous
 `load*Sync()` twin of its async method — `NoteRepository.loadPinnedNotesSync`,
-`CollectionRepository.loadCollectionsSync`, `WhiteboardRepository.loadWhiteboardsSync` — safe
-to call from a `RemoteViewsFactory`, since Android already runs those calls off the main
-thread. `WidgetUpdater.notifyCollectionsChanged`/`notifyWhiteboardsChanged` are called from the
-existing pin/unpin and collection/whiteboard CRUD methods to push live refreshes
+`CollectionRepository.loadCollectionsSync`, `WhiteboardRepository.loadWhiteboardsSync`,
+`FlashcardRepository.loadDecksSync`/`loadDueCardsSync` — safe to call from a
+`RemoteViewsFactory`, since Android already runs those calls off the main thread.
+`WidgetUpdater.notifyCollectionsChanged`/`notifyWhiteboardsChanged`/`notifyFlashcardsChanged`
+are called from the existing pin/unpin, collection/whiteboard CRUD, and
+`recordReview`/`syncFromNote`/`deleteForNote` methods to push live refreshes
 (`AppWidgetManager.notifyAppWidgetViewDataChanged`) rather than polling on a timer.
 
 **Thumbnails needed a second cache.** `WhiteboardThumbnails` renders asynchronously through a

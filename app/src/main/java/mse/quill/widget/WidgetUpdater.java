@@ -38,4 +38,14 @@ public final class WidgetUpdater {
         if (ids.length == 0) return;
         manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_whiteboards_grid);
     }
+
+    public static void notifyFlashcardsChanged(Context context) {
+        if (context == null) return;
+        AppWidgetManager manager = AppWidgetManager.getInstance(context);
+        int[] ids = manager.getAppWidgetIds(
+                new ComponentName(context, FlashcardsWidgetProvider.class));
+        if (ids.length == 0) return;
+        manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_due_cards_list);
+        manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_flashcard_decks_list);
+    }
 }

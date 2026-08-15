@@ -5,7 +5,8 @@
       "Bash(./gradlew.bat :app:compileDebugJavaWithJavac -q)",
       "Bash(./gradlew.bat :app:assembleDebug -q)",
       "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac -q)",
-      "PowerShell(adb devices)"
+      "PowerShell(adb devices)",
+      "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest -q)"
     ]
   }
 }

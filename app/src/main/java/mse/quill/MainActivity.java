@@ -133,6 +133,9 @@ public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_OPEN_COLLECTION_ID = "widget_open_collection_id";
     public static final String EXTRA_OPEN_COLLECTION_NAME = "widget_open_collection_name";
     public static final String EXTRA_OPEN_WHITEBOARD_ID = "widget_open_whiteboard_id";
+    /** Separate from {@link #EXTRA_OPEN_NOTE_ID}: that one opens the note editor, this one opens
+     *  the note's flashcard review screen — same note id, different destination. */
+    public static final String EXTRA_OPEN_FLASHCARD_NOTE_ID = "widget_open_flashcard_note_id";
 
     /**
      * Sends the user straight to whatever they tapped in a widget — a pinned note, a collection,
@@ -147,12 +150,15 @@ public class MainActivity extends AppCompatActivity {
         String noteId = intent.getStringExtra(EXTRA_OPEN_NOTE_ID);
         String collectionId = intent.getStringExtra(EXTRA_OPEN_COLLECTION_ID);
         String whiteboardId = intent.getStringExtra(EXTRA_OPEN_WHITEBOARD_ID);
-        if (noteId == null && collectionId == null && whiteboardId == null) return;
+        String flashcardNoteId = intent.getStringExtra(EXTRA_OPEN_FLASHCARD_NOTE_ID);
+        if (noteId == null && collectionId == null && whiteboardId == null
+                && flashcardNoteId == null) return;
 
         intent.removeExtra(EXTRA_OPEN_NOTE_ID);
         intent.removeExtra(EXTRA_OPEN_COLLECTION_ID);
         intent.removeExtra(EXTRA_OPEN_COLLECTION_NAME);
         intent.removeExtra(EXTRA_OPEN_WHITEBOARD_ID);
+        intent.removeExtra(EXTRA_OPEN_FLASHCARD_NOTE_ID);
         String collectionName = intent.getStringExtra(EXTRA_OPEN_COLLECTION_NAME);
 
         runWhenNavHostReady(host -> {
@@ -165,9 +171,12 @@ public class MainActivity extends AppCompatActivity {
                 args.putString("collection_id", collectionId);
                 args.putString("collection_name", collectionName == null ? "" : collectionName);
                 nav.navigate(R.id.collectionDetailFragment, args);
-            } else {
+            } else if (whiteboardId != null) {
                 args.putString("whiteboard_id", whiteboardId);
                 nav.navigate(R.id.whiteboardFragment, args);
+            } else {
+                args.putString("note_id", flashcardNoteId);
+                nav.navigate(R.id.flashcardsFragment, args);
             }
         });
     }

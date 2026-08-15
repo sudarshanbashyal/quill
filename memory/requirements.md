@@ -657,11 +657,16 @@ the three RemoteViews gotchas hit, and what's reused vs. new live in
 - [x] **Whiteboards widget** — thumbnail grid of recent boards (thumbnails via a new disk
       cache, `WidgetThumbnailCache`, mirroring what `WhiteboardThumbnails` already renders
       in-app), tap deep-links to the board
-- [x] Live updates on data change (`WidgetUpdater`), not polling
-- [x] Verified working end-to-end by the user on-device (2026-08-14) — this environment has no
-      `adb`, so every fix landed via code review + a clean build, confirmed afterward by the user
-- [ ] Not done: a due-count flashcard widget (the "projected count" the reminders section above
-      anticipated) — this pass only covered notes/collections/whiteboards
+- [x] **Flashcards widget** *(2026-08-15)* — due-now cards (front only) stacked 60/40 over a
+      deck list, closing the "projected count" gap the reminders section above anticipated for
+      a home-screen surface. Tap deep-links to that note's review screen
+      (`EXTRA_OPEN_FLASHCARD_NOTE_ID`, separate from the note-editor extra)
+- [x] Live updates on data change (`WidgetUpdater`), not polling — now covers all three widgets
+- [x] **Widget-picker previews** *(2026-08-15)* — `android:previewLayout` on all three
+      (API 31+, renders the real layout), `previewImage` (app icon) as the fallback below that
+- [x] Verified working end-to-end by the user on-device (2026-08-14/15) — this environment has
+      no `adb`, so every fix landed via code review + a clean build, confirmed afterward by the
+      user
 
 ---
 

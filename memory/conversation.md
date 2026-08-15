@@ -2345,3 +2345,43 @@ observed behavior. That's exactly what happened with bug 2 above.
 
 **Verified working end-to-end by the user on-device**, including the pinned-card resize. Not
 committed as of end of session — check `git status` before assuming this has landed.
+
+## 2026-08-15 — Feature implementation: widget previews, third widget for flashcards
+
+**Asked:** add real widget-picker previews to the two existing widgets, and build a third
+widget for flashcards "in a list way." Clarified before building: the flashcards widget should
+show **both** a due-now card list and a deck list stacked (mirroring how the Collections widget
+stacks pinned notes + collections), and due cards should show **front text only** — revealing
+the answer defeats active recall.
+
+**Previews:** `android:previewLayout` (API 31+, renders the actual widget layout in the picker)
+added to all three widgets' `res/xml/widget_*_info.xml`, `previewImage="@mipmap/ic_launcher"`
+kept as the fallback below 31 since there's no screenshot asset in the repo to use instead.
+
+**Built:** `FlashcardsWidgetProvider` + `DueCardsRemoteViewsService` +
+`FlashcardDecksRemoteViewsService`, following the Collections widget's established shape
+exactly (two `ListView`s, two services, one mutable `PendingIntent` template, a `TextView`
+divider not a `View`). `FlashcardRepository` gained `loadDecksSync()` (sync twin of the
+existing `loadDecks`) and a new `loadDueCardsSync(now, limit)` — there was no prior query
+returning individual due cards, only `countDueSync`'s counts, so this is genuinely new query
+logic, not an extraction. Both follow `countDueSync`'s locked-collection exclusion pattern.
+Tap deep-links via a new `EXTRA_OPEN_FLASHCARD_NOTE_ID`, kept deliberately separate from the
+existing `EXTRA_OPEN_NOTE_ID` (opens the note *editor*) since this one opens the flashcard
+*review* screen for the same note id — same key name would have collided semantically even
+though the extra names differ.
+
+**Follow-up tweak:** due-now vs. decks was initially a fixed-96dp block + weighted remainder
+(matching the Collections widget's pinned-notes reasoning — a short, capped list next to a
+scrollable one). Asked to change to a 60/40 proportional split instead; swapped both sections
+to `layout_weight` (3 and 2) rather than fixed-height + weight-1.
+
+Full design detail lives in [note.md](note.md)'s "Home-screen App Widgets" section (updated
+this session); checklist is Epic K in [requirements.md](requirements.md) (also updated).
+
+**Verified:** clean `assembleDebug`, `compileDebugAndroidTestJavaWithJavac`, and
+`testDebugUnitTest` all pass — same no-`adb`-in-this-environment constraint as the first two
+widgets, so on-device confirmation (previews rendering, due/deck taps landing on the review
+screen, the 60/40 split reading right) is the user's to do, not verified here.
+
+**Not committed as of end of session** — check `git status` before assuming any of the widget
+work (this session's or 2026-08-14's) has landed.
