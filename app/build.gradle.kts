@@ -36,6 +36,9 @@ android {
 }
 
 dependencies {
+    // SM-2, the review session and quiz generation, kept in a plain-JVM module so the Wear
+    // companion can reuse them and so nothing in there can reach for an Android API.
+    implementation(project(":study"))
     implementation(libs.activity.ktx)
     implementation(libs.appcompat)
     implementation(libs.barcode.scanning.common)
@@ -47,6 +50,8 @@ dependencies {
     implementation(libs.navigation.ui.ktx)
     implementation(libs.recyclerview)
     implementation(libs.play.services.nearby)
+    // The phone half of the Wear pair: publishes the due-card projection as a DataItem.
+    implementation(libs.play.services.wearable)
     implementation(libs.play.services.code.scanner)
     implementation(libs.zxing.core)
     testImplementation(libs.junit)

@@ -31,6 +31,25 @@ final class PinnedNoteCardView {
         void onLongPressed(Note note);
     }
 
+    /**
+     * An empty card of exactly the real one's size, for the moment before the notes have been read.
+     *
+     * <p>Its whole job is to be the right shape. It carries no text and no colour of its own —
+     * guessing at either would mean a card that changes twice, once into a placeholder and once
+     * into the note, where the point is for nothing to move at all.
+     */
+    static View buildPlaceholder(Context context) {
+        MaterialCardView card = new MaterialCardView(context);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                dimen(context, R.dimen.pinned_card_width),
+                dimen(context, R.dimen.pinned_card_height));
+        params.setMarginEnd(dimen(context, R.dimen.pinned_card_gap));
+        card.setLayoutParams(params);
+        NoteRowView.applyFlatCardStyle(card, R.dimen.card_corner_radius);
+        card.setCardBackgroundColor(context.getColor(R.color.surface_container));
+        return card;
+    }
+
     static View build(Context context, Note note, Listener listener) {
         int width = dimen(context, R.dimen.pinned_card_width);
         int height = dimen(context, R.dimen.pinned_card_height);

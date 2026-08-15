@@ -44,9 +44,12 @@ public class CollectionLockRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
+    /** Held for {@link WearNoteListPublisher}, which needs a Context to resolve untitled names. */
+    private final Context appContext;
 
     public CollectionLockRepository(Context context) {
-        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
+        this.appContext = context.getApplicationContext();
+        this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
     }
 
@@ -96,6 +99,13 @@ public class CollectionLockRepository {
                 // immediately asking again for something they are plainly in the middle of.
                 CollectionLock.markUnlocked(collectionId);
                 if (cb != null) executors.mainThread(cb::onDone);
+
+                // These titles are no longer allowed off the device — see WearNoteListPublisher,
+                // which excludes every encrypted collection whether it is open or shut. Without
+                // this the watch kept listing them until something else happened to republish,
+                // which is the encryption having been applied everywhere except the one surface
+                // that had already carried the names off the phone.
+                WearNoteListPublisher.publishSync(appContext);
             } catch (GeneralSecurityException e) {
                 Log.w(TAG, "could not lock collection " + collectionId, e);
                 // The key is useless without the rows it was made for; leaving it behind would
@@ -135,6 +145,11 @@ public class CollectionLockRepository {
                 deleteKeyQuietly(collectionId);
                 CollectionLock.relock(collectionId);
                 if (cb != null) executors.mainThread(cb::onDone);
+
+                // The other direction: these notes are ordinary again and may rejoin the watch's
+                // pickers. Unlike the lock, nothing is at stake in being late — but a list that is
+                // rebuilt on one edge and not the other is a list nobody can reason about.
+                WearNoteListPublisher.publishSync(appContext);
             } catch (GeneralSecurityException e) {
                 Log.w(TAG, "could not unlock collection " + collectionId, e);
                 boolean needsAuth = e instanceof CollectionCrypto.NeedsAuthException;
@@ -174,6 +189,10 @@ public class CollectionLockRepository {
             deleteKeyQuietly(collectionId);
             CollectionLock.relock(collectionId);
             if (onDone != null) executors.mainThread(onDone);
+
+            // These notes are gone for good, not soft-deleted, so the watch must stop offering
+            // them. Same rule as everywhere else that changes what belongs on the list.
+            WearNoteListPublisher.publishSync(appContext);
         });
     }
 

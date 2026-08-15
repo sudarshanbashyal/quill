@@ -95,9 +95,22 @@ final class NoteCrypto {
      * caller having to think about it.
      */
     static String hiddenClause(Set<String> hidden) {
-        if (hidden.isEmpty()) return "";
+        return excludeCollectionsClause(hidden);
+    }
+
+    /**
+     * The same fragment under the name that describes what it does rather than who asked for it.
+     *
+     * <p>{@link #hiddenClause} is the common case — leave out what the user believes is shut — but
+     * not the only one. The Wear projection excludes every <em>locked</em> collection rather than
+     * every hidden one, because a card leaving the phone is a different question from a card
+     * appearing in a list, and reading {@code hiddenClause(lockedIds)} at the call site would look
+     * like a bug rather than the stricter rule it is.
+     */
+    static String excludeCollectionsClause(Set<String> collectionIds) {
+        if (collectionIds.isEmpty()) return "";
         StringBuilder sql = new StringBuilder(" AND (n.collection_id IS NULL OR n.collection_id NOT IN (");
-        for (int i = 0; i < hidden.size(); i++) {
+        for (int i = 0; i < collectionIds.size(); i++) {
             if (i > 0) sql.append(',');
             sql.append('?');
         }

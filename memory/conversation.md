@@ -1,4 +1,4 @@
-# Quill — Conversation Log
+﻿# Quill — Conversation Log
 
 A running record of the sessions that shaped this project: what was asked, what options were
 weighed, and what got decided. Kept alongside [note.md](note.md) (how the code is built) and
@@ -2305,6 +2305,557 @@ from Profile authenticates first). The untitled-title fix *was* verified — bot
 **Also worth knowing:** with the grace period set to "Immediately" (the emulator's setting; the
 default is one minute), returning from a share still costs a prompt. That is the grace period doing
 what it says, not the gate bug coming back.
+
+## 2026-08-13 (later) — Wear OS: the `:study` extraction, and phase 1 of the companion
+
+"watchOS" here meant **Wear OS** — Epic J. Started as a design discussion and ended with three
+modules and a tile rendering on an emulator.
+
+**What had gone stale in Epic J**, scoped 08-08 and read again today: the tile's "blocked on Epic D"
+was no longer true (`fbc25a2` shipped the reminder worker, which is exactly the scheduled refresh it
+wanted), and the epic had no answer for the app lock, which landed after it was written.
+
+**Two things the code said that the plan didn't.** `recordReview` stamps `System.currentTimeMillis()`
+rather than the answer's own time, so replaying a queued offline watch review would anchor every
+interval to drain time — silent interval corruption, not a visible failure. And "today's due cards"
+needs an end-of-day horizon, or the watch says "all caught up" at 09:00 for a card due at 09:05.
+Both are now written into the epic; the horizon is built, the `recordReview` overload is not.
+
+**The stack decision flipped mid-discussion, and the reason is worth keeping.** The plan was
+Java-first — tile in Java, Compose later for the review screen — until a search showed
+`protolayout-material3` is Kotlin-only with no Java builders, so a Java tile is a *Material 2.5*
+tile, off the design system the app was migrated onto. Also corrected a claim in the epic: the
+view-based Wear widgets are **not** deprecated. `:wear` is Kotlin; `:app` and `:study` stay Java.
+
+**`:study` extracted first** — seven classes, not the six the plan listed (`QuizQuestion` had to come
+too; its constructor is package-private and only `QuizGenerator` calls it). Packages deliberately
+unchanged, so **zero imports in `:app` changed** and the diff is eleven renames plus build files.
+32 tests pass, and the module's whole point was verified rather than assumed: adding
+`import android.content.Context` to `QuizRules` now fails `:study:compileJava`.
+
+**Phase 1 built and partly verified.** Emulator toolchain came first — no `cmdline-tools` were
+installed, so `sdkmanager`/`avdmanager` had to be downloaded (SHA-1 checked against Google's
+repository XML) before a Wear OS 6 arm64 AVD could exist. The tile renders its correct never-synced
+state on `emulator-5556`. The phone's publish path runs to the GMS boundary and stops at
+`Wearable.API is not available on this device` — the emulators aren't paired, which needs the
+companion app and a Google sign-in. Everything downstream of that (the decode, every non-empty tile
+state) is written but unexercised, and `note.md` says so.
+
+**One bug introduced and caught in the same session**: the publish was first wired *after* the
+reminder worker's notifications-enabled early return, which would have frozen the watch's count for
+anyone who turned the daily nudge off. Moved ahead of it — the two surfaces are separate promises.
+
+## 2026-08-14 — Pairing the emulators, and Wear phase 2 (review screen + return path)
+
+Started as "the watch says check your connection when I import a Google account" and ended with the
+phase-2 round trip working. The pairing half took most of it, and **four separate causes** stacked
+up — worth recording, because each one alone produced the same useless error message.
+
+**1. Never paired at all.** `clockwork_paired` was null, the phone emulator had no companion app,
+and nothing was forwarded on 5601. The account import had no phone to talk to.
+
+**2. `adb forward` was pointed at the wrong device.** The forward makes the *host* listen and
+forward *into* the named device, so it belongs on the **phone** (which listens on 5601), not the
+watch (which dials `10.0.2.2:5601`). Had it backwards first; the giveaway is a `0x15E1` listener in
+`/proc/net/tcp` inside the phone.
+
+**3. A 4.6-day clock skew** on the phone emulator with `auto_time=0`. Google auth rejects that and
+surfaces it as a generic connection error. Nothing about the message suggests the clock.
+
+**4. The 16 KB page size, which was the real blocker.** The phone AVD was built on
+`google_apis_playstore_ps16k` (`getconf PAGESIZE` = 16384). The Wear OS companion app ships
+`libcronet.114.0.5735.84.so` with an unaligned LOAD segment, so it cannot load on a 16 KB device —
+and cronet is the companion's *network stack*, loaded lazily on the first request, which is exactly
+when "import account" fails. **You cannot fix this from the APK side**: realigning and re-signing
+breaks the Play signature that pairing requires. Fix is a 4 KB phone AVD
+(`system-images;android-36;google_apis_playstore;arm64-v8a`).
+
+**What actually paired them was Android Studio's Device Manager → Pair Wearable.** Manual pairing is
+a dead end on this image: it auto-provisions on boot (`device_provisioned=1` straight out of
+`-wipe-data`) and then disables the setup-wizard components, so `RegularPairActivityV2` reports
+"Activity class does not exist" and there is no OOBE to return to. Forcing the provisioning flags to
+0 and rebooting does not bring it back either. The Studio assistant does not use OOBE at all.
+
+**A non-bug worth remembering**: Play Store "opening and immediately closing" on a fresh Play image
+is `installPackageLI` — it is replacing its own APK, and Android kills the running app to do it.
+Same again for GMS right after (25.08.34 → 26.30.32). Wait, don't debug.
+
+**Phase 2 built**: the Compose review screen and the `MessageClient` return path, both of which the
+epic had specified and neither of which existed. `AnswerEventKeys` in `:study` (path + card id,
+correct, answered-at) mirrors `DueProjectionKeys`; a **message, not a `DataItem`**, because two
+answers to one card are two facts and an item keyed by card id would lose the first. The
+`recordReview(card, correct, answeredAt, onDone)` overload flagged back on 08-13 is now built and is
+what the listener calls. Tile taps now launch `ReviewActivity` — the click sits on a wrapping `Box`
+so it survives the layout changing.
+
+**Compose setup, since AGP 9 made it non-obvious.** `buildFeatures.compose = true` is not enough:
+Kotlin 2.0+ needs `org.jetbrains.kotlin.plugin.compose`, which *is* safe to apply here even though
+`kotlin.android` is not — AGP 9 registers the Kotlin extension but not the Compose compiler. Compose
+BOM is pinned to **2026.06.01, not the newest**: 2026.08.00 pins Compose 1.12, which demands
+compileSdk 37, and `:wear` compiles against 36 like everything else.
+
+**Verified on the emulators, not assumed** — seeded two cards (one due an hour ago, one due later
+today) and drove the whole loop by hand:
+- tile → review screen, "1 of 1" (the end-of-day horizon re-filter working: both cards ship, one
+  counts)
+- correct answer → repetitions 0→1, easiness 2.5→2.6, `next_review − last_reviewed_at` exactly
+  86400000
+- wrong answer → easiness 2.5→2.18 (the documented −0.32), repetitions reset, card returns to the
+  queue
+- **the repeat answer left the DB byte-identical** — `isFirstAnswer` is read before `answer()`
+  mutates the queue, so practice does not feed SM-2
+
+**Two bugs of my own, caught by looking rather than by the build.** The screen first collapsed
+`null` and empty into one "all caught up", erasing the distinction `DueProjectionClient` documents —
+it would have congratulated a watch that had never synced. And the answer buttons were sized in
+fixed dp, which clipped "Missed" twice at two different widths; they are icon-only now (✕ / ✓, core
+Material icons, label kept as the content description).
+
+**Still not built** from Epic J: `CapabilityClient` discovery and the offline queue-and-drain (the
+`recordReview` overload exists for exactly that case but nothing queues yet — an answer sent while
+untethered is logged and dropped), and the tile's "Review N" edge button.
+
+## 2026-08-14 (later) — Epic J: deck picker, the publish gap, and items 2/3/4
+
+**A deck picker on the watch**, because "10 cards due" across four notes is a count you cannot act
+on. Grouped by **`noteId` and labelled by title**, not grouped by title: two notes can share a name
+and an untitled one resolves to a dated fallback that could collide, so title-grouping would show
+one deck with a correct count and cards from two places. `DueCard` grew `noteId`/`noteTitle`,
+resolved on the phone via `NoteDisplayUtils.resolveTitle` (the fallback needs a Context).
+
+**The bug that cost the most to find**: `DueProjection.trimmed()` is a hand-written copy that
+rebuilds each `DueCard`, and it silently dropped the two new fields — every deck collapsed into one
+nameless group reading "6 due". Nothing failed to compile; the fields just arrived empty, which
+reads as a data problem rather than a copy problem. Two `:study` tests now pin it, which is exactly
+what that module is for. Note `noteTitle` is deliberately **not** truncated to `MAX_TEXT_CHARS`:
+cutting titles would make two decks with a long shared prefix look identical in the picker.
+
+**"Watch shows all caught up even with flashcards on the phone" was not a sync delay.**
+`syncFromNote` — the method that *creates* cards — never published. New cards get
+`initialise(card, now)` so they are due immediately, and the only publish triggers were
+MainActivity's cold start, `recordReview`, and the daily worker. Now publishes when something
+actually changed (tracked, because the method runs on every note save). `deleteForNote` had the
+same gap and is worse: a watch holding a deleted deck offers cards whose ids the phone cannot find.
+**Unverified on-device** — the seeded test notes have no `content_blob` and zero `note_segments`, so
+`reviewableQa()` returns empty for them and they cannot exercise the path at all.
+
+**Items done this round**:
+- **Tile edge button** — `textEdgeButton` in `primaryLayout`'s `bottomSlot`, one `Clickable` shared
+  with the whole-tile target so the two cannot drift. Only rendered when there is a session to
+  open: "Review" under "All caught up" leads to a screen saying the same thing. **Visually
+  unverified** — the tile is not in the wiped emulator's carousel and adding it needs the tile
+  editor UI, which resisted automation.
+- **Voice capture** — `CaptureEventKeys`, `CaptureActivity` (the only launcher entry, because a
+  capture is worth opening cold and a session with nothing due is not), `CaptureSender`, and
+  `WearCaptureListenerService` on the phone. It appends **through `NoteRepository`, not SQL**: the
+  body is one Markdown document that also drives the asset registry, whiteboard links and the
+  search index, so a service writing `content_blob` itself would get one right and three wrong.
+  The inbox lives outside any collection on purpose — a collection can be locked, and a capture
+  must always have somewhere to land.
+- **Media controls** — **no code needed.** `setActive(true)`, `MediaStyle.setMediaSession(token)`,
+  `PlaybackState` with PLAY/PAUSE/STOP/SEEK_TO, callbacks wired, and `setLocalOnly` appears nowhere
+  in the app. The epic's "don't mark it local-only" was already satisfied.
+
+**Two real bugs found by testing rather than by the compiler**: the review screen collapsed `null`
+and empty into one "all caught up" (congratulating a watch that had never synced), and
+`CaptureActivity` never finished after a successful send, leaving "Saved to Inbox" on the wrist
+until dismissed by hand.
+
+**Wear emulator gotchas worth not rediscovering**: the speech recogniser cannot work — Gboard
+returns "Oh no! There seems to be a connection issue", so `RecognizerIntent` end-to-end is
+untestable there and the phone half had to be proven with a temporary bypass (since removed).
+Reading the app DB by copying only `quill.db` gives **stale results**; the journal matters, and two
+"the capture did not land" conclusions were my own bad reads.
+
+**Still open in Epic J**: `CapabilityClient` discovery and the offline queue-and-drain — an answer
+or capture sent while untethered is still logged and dropped. `wear-remote-interactions` remains a
+declared-but-unused dependency now that phase 2 superseded the tap-through-to-phone plan.
+
+## 2026-08-14 (later still) — three tiles: due, dictate, read
+
+**"Quill only has one tile"** was correct and by design — one `TileService` was declared. Now three,
+because both new features were a trip through the app list otherwise. `ActionTileService` is the
+shared base: both new tiles are the same object with different words, and unlike `DueTileService`
+they read nothing from the Data Layer, so nothing on them can be out of date. Separate tiles rather
+than buttons on the due tile, which is a glance at a number and would become a menu.
+
+**Both flows needed a note list**, which the Data Layer did not carry. `NoteListKeys` +
+`WearNoteListPublisher`, inheriting the projection's rule verbatim: **every locked collection
+excluded, open or not** — a picker listing "Therapy notes" has disclosed the thing the encryption
+was for without ever opening it. Most-recently-updated first, capped at 25: a watch picker is for
+the note you were just working on, not a library. Published on cold start and after every save,
+which is the lesson from the flashcard publish gap earlier today.
+
+**Capture now chooses a destination.** `KEY_NOTE_ID` is optional on the wire — absent, or naming a
+note that no longer exists, means the inbox. Falling back rather than failing, because the watch
+picked from a list that may be minutes old and a thought in the wrong note is recoverable where one
+the phone refused to store is not. The inbox row is pinned first and carries no id: it is a
+destination, not a note the watch knows about. One consequence worth noting — `onNeedsUnlock` in
+the capture service went from unreachable to reachable, since a chosen note's collection can be
+locked in the gap between publish and capture.
+
+**`PickerList` extracted** once the third picker appeared. The part worth sharing is not the column
+but the two things easy to leave out of one: rotary focus, and enough vertical padding that the
+first and last rows are not where a round screen curves away.
+
+**A claim of mine that was wrong, and is now corrected in code**: I wrote that read-aloud controls
+would arrive on the watch's media card. They do not. `ReadAloud` is in-process TTS with **no
+notification and no `MediaSession`** — the bridged card belongs to `AudioPlaybackService`, which
+plays recorded audio and is a different feature. So a reading started from the wrist can only be
+stopped in the phone's now-playing bar. The class comment and the confirmation string now say so.
+Closing that gap means giving `ReadAloud` a media notification on the phone, which would also hand
+the watch transport controls for free.
+
+**Verified**: note list reaches the watch and both pickers render it; picking a note sends
+`/quill/read`, the phone's service receives it, and `TextToSpeech: Successfully bound to
+com.google.android.tts` — the reading actually starts. Needed a temporary diagnostic log to see it,
+since the service only logs failures; it has been removed.
+
+**Emulator trap that cost three false conclusions**: the Wear screen dims on its own and taps then
+only wake it. Twice I concluded "the message never arrived" when the pick had simply not
+registered. `svc power stayon true` plus `settings put global ambient_enabled 0` is what makes the
+screen stay bright enough to drive by adb.
+
+## 2026-08-14 (later still) — Audio, properly: recorded memos, watch transport, one tile
+
+Three complaints, all of them fair, and all of them about the pair of features the previous session
+shipped.
+
+**"It saves the transcript, not audio."** Capture used `ACTION_RECOGNIZE_SPEECH`, which was wrong
+twice over: what reached the phone was a transcriber's guess rather than the saying of it, and the
+recogniser ends the moment you stop making noise — so a pause to find the next word was read as
+being finished ("the moment i stop speaking it automatically says Done"). The watch now records
+with its own `MediaRecorder` (`MemoRecorder`) and the audio is what lands in the note. AAC/mono/
+22.05kHz/32kbps, because every recording crosses the Bluetooth link; five-minute ceiling, because
+what that catches is a screen left on in a sleeve.
+
+**The transport is a `DataItem` with an `Asset`, not a message** — the one deliberate reversal of
+the old capture's reasoning. A message is capped at 100KB and is *dropped* when no node is
+connected, which for a capture is the thought gone. An item sits in the store until the phone next
+appears. So "Saved" on the watch means stored, not delivered, and the string says so. Each memo
+takes a fresh path (`/quill/audio-capture/<uuid>`) so a second cannot overwrite a first; the phone
+deletes each once filed, and *only* once filed — a failure leaves it to be re-offered next sync.
+Batches are sorted by `KEY_CAPTURED_AT` before filing, which is the only case where the buffer's
+order means nothing and the order they were spoken in means everything.
+
+**"I should be able to pause from the watch."** The gap I documented last session — `ReadAloud` has
+no `MediaSession`, so a reading started from the wrist could only be stopped in the phone's
+now-playing bar — is closed, though not the way I predicted. Rather than giving `ReadAloud` a media
+notification, there are now two contracts: `ReadControlKeys` (a message: toggle, stop) and
+`ReadStateKeys` (a `DataItem`: active, playing, title, progress). A toggle rather than explicit
+pause/resume, because both ends can disagree about what is happening and a toggle lands correctly
+either way. `WearReadStatePublisher` rides `ReadAloud`'s own listener and is attached from
+`MainActivity` *and* from the two Wear services — the interesting case is precisely the one where
+the phone app was never opened. Progress-only changes are throttled to 5%; anything that changes
+what the buttons *say* publishes immediately.
+
+`ReadAloudActivity` now has two lives: a picker when nothing is being read, the controls when
+something is — including a reading started on the phone. The buttons act optimistically and are
+corrected by the next publish, because a Bluetooth round trip is a visible pause on a control that
+should feel instant. `awaitingStart` exists because without it the screen closed itself on open:
+the state item still held the *previous* reading's ending, which arrives long before the new one's
+beginning.
+
+**One tile, not two.** The old argument — a tile is a glance with one thing on it — was true of the
+due tile and not of these: neither had anything to show, both were a word and a door, and two doors
+is what a button group is for. `ActionTileService` and its two subclasses are gone;
+`AudioTileService` replaces them.
+
+**Mid-session feedback, applied**: the tile's two buttons are stacked, not side by side (a button
+group gives each half about a third of the screen, narrow enough that "Record" fills it and says
+nothing); the transport is icons — pause/play in primary, stop in `errorContainer`, because stop is
+the only control here that cannot be undone and it sits a thumb's width from the one you press
+repeatedly; and `PickerList` rows are `filledTonalButtonColors` surfaces instead of bare white text.
+That last one was a real bug rather than a preference — on a list of two-line titles the only thing
+separating rows was a gap the same size as the gap *inside* a wrapped title. Side margins went 8dp
+→ 20dp at the same time: text can run to the curve and stay readable, a filled row gets its corners
+sliced off by the bezel and looks like a rendering fault.
+
+**Icons are this module's own vectors** (`ic_play`, `ic_pause`, `ic_stop`, `ic_mic` under
+`wear/res/drawable`). `material-icons-core` has a play triangle and neither of the other two, and
+pulling the extended set onto a watch to draw a square and two bars is not a trade worth making.
+
+**Verified end to end on the emulators** (5554 phone, 5556 watch): recorded from the watch → 99KB
+`.m4a` in the phone's `files/audio` and an `![audio](quill://audio/…)` embed appended to the Inbox
+note; started a reading, force-stopped the watch app, reopened it and landed straight on the
+controls; pause, resume and stop all took effect on a phone whose app process had been force-stopped
+first — which is exactly the scenario the complaint was about. The tile renders and both rows launch.
+
+**Two things worth knowing for next time.** Driving the Wear *tile carousel* by adb is miserable:
+the tile editor auto-dismisses after a few seconds, so long-press → tap "+" → rotary-scroll → tap
+has to be one unbroken chain with no screenshots between, and `input swipe` inside the "Add new"
+list dismisses it rather than scrolling — only `input rotaryencoder scroll --axis SCROLL,-4` moves
+it. And the notes on this emulator are all a sentence long, so testing a *pausable* reading meant
+temporarily swapping a long body into `n-geo` via `run-as cp` and restoring it after; the
+`.db-journal` has to be removed alongside, and the app force-stopped first.
+
+## 2026-08-14 (same session) — Locked collections against the new Wear paths, and clearer pickers
+
+**The question that found two bugs**: what do the new audio features do about locked collections?
+The existing answer covers most of it — `WearNoteListPublisher` excludes every encrypted
+collection, open or shut, so neither picker ever offers one of its notes, and the projection's
+exclusion happens in SQL before a `DueCard` exists. But the two new paths had holes.
+
+**Mine, and the worse one: a memo aimed at a note that got locked in the gap.** The picker cannot
+offer such a note, but a memo now *waits in the Data Layer for a phone to appear*, so the gap that
+used to be minutes can be hours. `saveNote` refuses with `onNeedsUnlock`; my code counted that as a
+failure, which kept the `DataItem` and re-offered the recording on every sync forever — while a
+comment two lines above claimed the opposite. It now falls back to the inbox, which is outside every
+collection and is the reason `inboxNoteIdSync` refuses to live in one. Retrying is pointless (the
+lock will not lift because we asked again) and dropping is worse (no other copy exists), so a third
+`Outcome` — `LOCKED`, distinct from `FAILED` — is what carries the decision back.
+
+**A leak I introduced with the read state.** `WearReadStatePublisher` published
+`ReadAloud.title()`, and a reading of a private note can be started from the phone's own editor
+while the collection is open. The `DataItem` outlives the unlock, so "Therapy notes" would have sat
+on the wrist long after the collection shut — a straight violation of the rule
+`WearNoteListPublisher` states: the question is not "should this appear on screen" but "should this
+leave the device". The publisher now resolves the title on `AppExecutors.diskIO` (single-threaded,
+so ordering survives), checks the note's collection with `NoteCrypto.isLocked`, and substitutes
+"A private note". Only the *name* is withheld — the controls still work, because a reading the user
+deliberately started must be stoppable from the wrist. `ReadAloud.noteId()` was added for this.
+
+**Still true and still out of scope**: media files themselves are plaintext on disk regardless of
+the collection's lock — `note_segments.file_path` is unencrypted and always was. A memo recorded on
+the watch inherits that, it does not worsen it.
+
+**Pickers now say what a tap does.** `PickerList` grew a `header` (inside the scroll, not pinned —
+a watch has no room for permanent furniture) and an `enabled` predicate. "Select a note to record
+into", "Select a note to read aloud", "Select a deck to review".
+
+**And the review screen stopped being a dead end.** "All caught up" was doing two jobs and getting
+one wrong: on arrival it reads as praise for having done nothing. Now `review_all_done` after a
+session, `review_nothing_due` on arrival, and — the useful part — decks with nothing due *yet* are
+listed greyed with "Due in 40 min". That data was always on the watch: the projection ships
+everything due before local midnight so a card coming due at 17:00 is on the wrist early, and
+`dueAt(now)` held it back with no way to say so. `DueSnapshot.upcoming(now)` exposes it; a deck
+qualifies only if *none* of its cards is due, since one with two due and five later is a deck you
+can review now. Disabled rather than omitted because there is still no "review anyway" on the wrist.
+
+**Verified**: due + upcoming mixed list, the all-upcoming header, and the genuinely-empty message,
+each by temporarily rewriting `flashcards.next_review` and re-launching the phone app to republish.
+Restored afterwards.
+
+**Emulator note**: the paired watch AVD is `Wear_OS_Large_Round` (454px), not `Quill_Wear` (384px).
+Starting the wrong one gives a watch with no `DataItem`s at all, which looks exactly like a sync
+failure.
+
+## 2026-08-14 (same session) — Wear sizing, and "New note" from the wrist
+
+**Everything on the watch got a size down.** Type a step (`bodySmall` for row labels, `labelSmall`
+for headers and secondary lines), row content padding to 2dp, 4dp between rows, outer padding
+40dp → 26dp, transport buttons 56dp → 48dp with 22dp glyphs.
+
+**What did not move, and why**: the row height. Wear's `Button` floors at 52dp and the rows were
+already sitting on it — the perceived bulk was type, padding and the 40dp band above the first row,
+not the button. The floor below 52 is 48 (`CompactButton`'s), at which point a note title has to
+give up its second line. On a device operated by a fingertip belonging to someone walking, that is
+the trade to make deliberately or not at all; the transport buttons went to 48 because they are
+single glyphs with nothing to wrap.
+
+**A round-screen gotcha**: at 16dp side padding the header clipped to "elect a note to record int".
+A filled row is a rounded rectangle whose corners the bezel may graze, but a line of text near the
+top of a circle has to fit inside a much shorter chord. The header now carries 22dp of its own
+horizontal inset on top of the list's.
+
+**"New note" on the capture picker.** `PickerList` grew a `leadingContent` slot — a slot rather
+than another item because the difference is the whole point: every row is a place to put something,
+this makes one. Filled primary with an `Icons.Filled.Add`, against tonal rows, so it does not read
+as a note somebody already called "New note".
+
+**The phone names it, not the watch.** `AudioCaptureKeys.KEY_NEW_NOTE` is a flag, not a sentinel id
+(a sentinel that ever collided with a real id would file a thought into a stranger's note), and the
+note is created with an **empty title** — the app's actual convention for untitled, with
+`NoteDisplayUtils.resolveTitle` producing "Untitled Note - Aug 14, 2026" in every list. Storing a
+literal name like "Voice note" would have made a note that renames itself the moment a title is
+typed, and one that sorts and searches unlike every other untitled note. `createNote` is async but
+ordered — it and the load inside `appendTo` share the repository's single disk thread — so no latch
+is needed around it.
+
+**Three destinations is a type now**, not a nullable id: `CaptureTarget.Inbox` / `NewNote` /
+`Existing`. Null used to mean the inbox on its own; with a new-note flag beside it, null would have
+meant one of two things depending on a neighbouring field.
+
+**Verified**: tapped New note on the watch, recorded, and the phone created an untitled note
+carrying the memo — "Untitled Note - Aug 14, 2026" in the notes list, opening to a 0:34 audio player
+with its waveform.
+
+**adb gotcha worth remembering**: `am start` on an activity of a package that already has a
+different activity on top prints "intent has been delivered to currently running top-most instance"
+and does nothing. Every scripted screen change needs a `force-stop` first, or the taps that follow
+land on the previous screen — which is how a capture test ended up part-way through a review session.
+
+## 2026-08-14 (same session) — The tile buttons were the actual problem
+
+**`weight(1f)` was the bug, not the padding.** The audio tile's two rows divided the entire main
+slot between them, so on a 454px watch each button was around 90dp tall — a third of the screen
+apiece. Fixed at 48dp with `Typography.LABEL_MEDIUM`, and the column no longer expands (an
+expanding column around fixed-height children only pushes them apart again). The empty band left
+underneath is quieter than two slabs; a tile is glanced at and tapped once.
+
+**The twenty-character ceiling turned out to be a type choice, not a limit.** The old comment said
+the main slot "truncates past roughly twenty characters at 384px", which is true of the *display*
+face it defaults to and had quietly capped what the tile was allowed to say — hence "Open on phone"
+and a bare "All caught up". Now the slot picks its type from its content: a count keeps the display
+face, a sentence drops to `BODY_MEDIUM` with `maxLines = 4`. So "All caught up. No pending
+flashcards for now" wraps to two lines with room to spare, and `tile_no_phone` got its full
+sentence back ("Open Quill on your phone to sync") in the same change.
+
+**Renamed**: `tile_label` "Quill review" → **"Quill Flashcards"**. It labels both the tile and
+`ReviewActivity`, so the name in the tile editor and the one in recents now agree.
+
+**Verified** on the watch: audio tile at the new size, the caught-up sentence wrapping without
+truncation and with no edge button under it, and "Quill Flashcards" across the top of the tile
+editor. Card schedules restored afterwards.
+
+## 2026-08-14 (same session) — The list was right and late, and the inbox stopped being a place
+
+**"The new note isn't there" was a sync latency, not an ordering bug.** `WearNoteListPublisher`
+already ordered `updated_at DESC`; the note was correct, published, and simply had not arrived.
+The put was deliberately **not** urgent, on a comment that read: "nobody is looking at a number
+that is currently wrong. The list only has to be right by the next time a picker opens." That was
+true when the only thing that changed a note was the phone. It stopped being true the moment the
+watch could create one — the user's next act after recording is to open the picker and look for
+what they just made. `setUrgent()`, and the Data Layer stops batching it for minutes.
+
+Measured after the change: recorded into "Geography", which was fifth in the list, and it was
+**first within 12 seconds** of the recording stopping. That round trip is four hops — watch puts the
+memo (urgent), phone pulls the asset, phone saves and republishes (now urgent), watch reads — so
+seconds is about the floor.
+
+**The inbox is no longer a destination the watch offers.** It was pinned to the top of the capture
+picker as a special row, which meant any watch that had ever used it listed "Inbox" twice: once as
+the sentinel and once as the ordinary note it actually is. The picker is now "New note" plus your
+notes, newest first.
+
+The inbox still exists on the phone, demoted from a choice to a **recovery**: it is where a memo
+lands when the note it named has been deleted, or locked, since the list was published. That is
+still the right answer — better than dropping the only copy — but it is the phone's business now,
+so `CaptureTarget` lost its `Inbox` case and the sentinel empty-string id is gone. Nothing on the
+wire changed: a memo with no `KEY_NOTE_ID` and no `KEY_NEW_NOTE` still means the inbox, that state
+just no longer originates from a tap.
+
+**Emulator state left behind** (all of it test output, all of it deletable in the app): three
+"Untitled Note - Aug 14, 2026" notes from the New-note tests, an audio memo appended to the real
+"Geography" note from the ordering test, and the older one in "Inbox". Five files in `files/audio`.
+Not unpicked by hand — reverting a note body by DB edit would strand its media row and file, which
+is a messier state than the clutter.
+
+## 2026-08-14 (same session) — Tile previews, and an emulator dead end
+
+**Both tiles previewed as `@mipmap/ic_launcher`.** In a picker where every other entry shows its own
+contents — Favorites shows faces, Contact shows a contact — an app icon is the one card that
+answers "whose tile is this" instead of "what is on it". The two tiles now preview as renders of
+themselves: screenshots of the live tiles, scaled to 320px, in `drawable-nodpi` (a preview is one
+fixed image, not an asset to scale per density). ~13KB and ~19KB.
+
+**Verified in the built APK rather than on screen**, and that was not the plan. `aapt2 dump
+resources` confirms both PNGs packaged at `res/drawable-nodpi-v4/`, and `aapt2 dump xmltree`
+confirms `DueTileService` → `tile_preview_flashcards` and `AudioTileService` → `tile_preview_audio`.
+
+**What went wrong**: Wear's "Add new" list hides tiles already in the carousel, so to see a preview
+I uninstalled the watch app — which emptied the carousel — and then could not re-add the tiles by
+scripted input. The carousel navigation on this emulator is not reliably drivable: the same
+`input swipe` reaches the tiles one minute and bounces off the watch face the next, the editor
+auto-dismisses within a few seconds, and `input rotaryencoder scroll` pulled down the notification
+shade instead of scrolling the picker. The phone-side route is closed too — the Wear OS companion
+app crashes on launch on this phone emulator ("Google Pixel Watch keeps stopping").
+
+**So the watch emulator's carousel is empty** and needs a few taps by hand: from the watch face,
+swipe left-to-right twice to "Add a widget", long-press, "+", then pick Quill Flashcards and Quill
+audio. That is also the screen where the new previews appear. The app itself is installed and fine —
+every activity still launches, and the real SM-R860 was never touched.
+
+**Worth remembering**: verifying anything that lives in the Wear system UI (tile picker, carousel,
+watch-face editor) by adb is a poor bet. Verify the *wiring* in the APK with aapt2 and leave the
+system UI to a human.
+
+## 2026-08-15 — A deleted note stayed on the wrist: the publish that was never there
+
+**`WearNoteListPublisher.publishSync` had exactly two callers**: `MainActivity.onCreate` and
+`NoteRepository.saveNote`. So the watch's list was rebuilt when a note was *written* and at no other
+time. Deleting one left it on the wrist — offered, tappable, and gone by the time a memo aimed at it
+reached the phone, which filed it in the inbox instead. That is what the user hit.
+
+Three more callers were missing for the same reason, and one of them is not cosmetic:
+
+- **`deleteNote`** — the reported bug.
+- **`assignCollection`** — a note moved into an encrypted collection has to leave the wrist; moved
+  out, it may return.
+- **`CollectionLockRepository.lock` / `unlock` / `discardUnreadable`** — **locking a collection did
+  not withdraw its titles from the watch.** The encryption was applied everywhere except the one
+  surface that had already carried the names off the phone, and they stayed there until something
+  unrelated happened to republish. Same rule as `WearNoteListPublisher` states: the question is not
+  "should this appear on screen" but "should this leave the device".
+
+**And the refresh the user asked for, as belt to those braces.** No push mechanism can promise
+delivery, and the watch cannot tell a current list from a stale one by looking — both are the same
+`DataItem` with a different number inside. So `NoteListKeys.REFRESH_PATH` is a message the watch
+sends as a picker opens, `WearNoteListRefreshListenerService` republishes, and the answer arrives on
+the ordinary path.
+
+**Draw first, ask second** (`rememberSyncedNoteList`). The cached list appears immediately, because
+it is nearly always right and a picker you watch load is a worse picker. Rows are replaced only if
+they genuinely differ — `WatchNoteList.generatedAt` plus a content comparison — since swapping
+identical rows under a thumb is a way to lose a tap, and the Data Layer redelivers on reconnect. The
+spinner sits in a **fixed-height slot** for the same reason: letting it appear and vanish would move
+every row while someone is reaching for one, which is the exact failure the mechanism exists to
+prevent. A six-second ceiling stops it spinning forever for a watch with no phone.
+
+**Verified, and partly by the user.** They deleted "Geography" on the phone mid-session to test it,
+and the watch's picker dropped it with nothing else touched. My own run deleted an untitled note and
+the watch matched the phone's live rows exactly eleven seconds later. What I could *not* catch on
+camera was the spinner itself — the round trip finishes faster than `screencap` can cycle. It is the
+same indicator already proven on the initial-load path.
+
+**A red herring worth writing down**: `W NoteRepository: notes_fts unavailable, skipping index
+update` with a full SQLite stack trace appears on every save and delete on this emulator. It is
+pre-existing and deliberate — the build has no FTS5 and both index helpers tolerate its absence —
+not a symptom of anything added here.
+
+## 2026-08-15 (later) — Six small fixes, one of which was a process death
+
+**Deleting a whiteboard killed the app, and the reported cause was the smaller half.** Three tables
+carry a foreign key onto `whiteboards.id` — `strokes`, `whiteboard_texts` and `note_whiteboards` —
+and `deleteWhiteboard` cleared only the first. So the crash fires for a board embedded in any note
+*and* for one that merely has a text box on it. `SQLiteConstraintException` on the disk thread is
+not a failed delete, it is a dead process: nothing catches it. Reproduced by seeding a board and an
+embed straight into the DB, which was far quicker than drawing one.
+
+**A second, latent one found while fixing it.** The embed line stays in the note after the board
+goes (deliberately — rewriting somebody's note because they deleted a drawing is a larger liberty
+than leaving a marker). But `WhiteboardLinks.replace` re-inserts a link row from that line on the
+next save, and **`ON CONFLICT` does not apply to foreign keys in SQLite**, so `CONFLICT_IGNORE` was
+never going to save it. The insert is now `INSERT OR IGNORE … SELECT … WHERE EXISTS`, which covers
+both the duplicate-embed case (a primary key, which the conflict clause does handle) and the dead
+board. Symptom would have been the app dying on saving a note you had only opened.
+
+**The other five**, all small:
+
+- **Collections rename from the top bar**, like notes: `toolbar_title` is an `EditText` now,
+  committed on IME Done, focus loss and `onPause`. Empty reverts rather than saving — a nameless
+  collection is unreachable in every list that shows one.
+- **"Nothing to undo" stacked** because Android *queues* toasts. Held in a field and cancelled
+  before each show, so repeating the tap restarts one message instead of lining up five.
+- **The gap above the search bar** was `content_sheet_min_height` at 56dp, twice the 28dp corner
+  radius it exists to keep visible. Now exactly the radius.
+- **Default whiteboard paper is dots.** Only the *fallback* moved — anyone who has picked a paper
+  keeps it, and existing boards keep theirs.
+- **Pinned-band jitter**: the band was built from a database read, so it appeared a frame or two
+  late and shoved the page down. Home now draws placeholder cards from a remembered count before
+  the read returns. Placeholders rather than a spinner precisely because a spinner is a different
+  height from what replaces it — it would jump too. The count only has to be close: every card is
+  a fixed height, so the band's height is right even when the number is briefly wrong.
+
+**One thing fixed in passing**: the "whiteboard was deleted" placeholder rendered its 24dp glyph at
+`CENTER_CROP`, blowing it up until it ran off both edges. `CENTER` while it is the fallback;
+`loadPreview` still switches to `CENTER_CROP` for a real thumbnail.
+
+**Verified on the emulator**: crash gone (delete completes, process alive, note opens and saves),
+the danger-coloured "embedded in 1 note" warning, rename round-tripping to Home and the DB, dots on
+a new board, the tighter sheet, and the pinned band already at full height on the first frame back
+from a note. Undo confirmed by the user. Test artifacts (seeded board, renamed collection, pinned
+note, scratch whiteboard) cleaned out of the emulator DB afterwards.
 
 ## 2026-08-14 — Feature implementation: home-screen App Widgets
 

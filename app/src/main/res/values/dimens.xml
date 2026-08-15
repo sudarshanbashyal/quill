@@ -26,7 +26,11 @@
     <dimen name="content_sheet_overlap">-56dp</dimen>
     <!-- Matches the overlap above: the sheet has to be at least this tall for its rounded top to
          cover the gradient's bottom edge even when nothing is pinned. -->
-    <dimen name="content_sheet_min_height">56dp</dimen>
+    <!-- Exactly the corner radius, and for that reason: this height exists only so the sheet's
+         rounded top is still drawn for someone who has pinned nothing. At 56dp it was twice what
+         the curve needed, which read as an empty band above the search bar rather than as an
+         edge. Kept in step with header_corner_radius by hand — a dimen cannot reference another. -->
+    <dimen name="content_sheet_min_height">28dp</dimen>
 
     <!-- Search field (fragment_home / fragment_collection_detail) -->
     <dimen name="search_corner_radius">12dp</dimen>

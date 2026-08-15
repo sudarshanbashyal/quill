@@ -6,7 +6,13 @@
       "Bash(./gradlew.bat :app:assembleDebug -q)",
       "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac -q)",
       "PowerShell(adb devices)",
-      "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest -q)"
+      "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest -q)",
+      "Bash(grep -n *)",
+      "Bash(python3 -)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(grep -rn *)",
+      "Bash(echo \"grep exit: $?\")",
+      "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :study:test -q)"
     ]
   }
 }

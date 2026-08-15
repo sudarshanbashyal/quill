@@ -577,34 +577,84 @@ and the "Out of scope" list below is as much a part of the design as the checkbo
 What makes it affordable is a side effect of Epic A: the study logic was kept Android-free so it
 could be JVM-tested, and the same property lets a watch module reuse SM-2 verbatim instead of
 reimplementing it. What makes it *sequenced after D* is that a tile showing a stale due count is
-worse than no tile, so D's unbuilt reminders infrastructure is a real prerequisite, not filler.
+worse than no tile, so D's reminders infrastructure is a real prerequisite, not filler — and as of
+`fbc25a2` it is built, which is what turned this epic from blocked into next.
 
-- [ ] **Extract the study logic into a shared module** — *do this first; everything else depends
-      on it.* `FlashcardScheduler`, `ReviewSession`, `QuizSession`, `QuizGenerator`, `QuizRules`
+**Build order, decided 2026-08-13** — phased by feature, not by language (see the stack decision
+below). **Phase 0**: the `:study` extraction, alone, proven by its own tests. **Phase 1**: the
+projection and the two native surfaces — publish the `DataItem` from the phone, receive and cache
+it on the watch, tile + complication, tap through to the phone. **Phase 2**: the Compose review
+screen and the `MessageClient` return path. Nothing in phase 1 is rewritten by phase 2: the Kotlin
+plugin is already there and adding Compose to a module that compiles Kotlin is purely additive.
+
+- [x] **Extract the study logic into a shared module** — **done 2026-08-13.** *Do this first;
+      everything else depends on it.* `FlashcardScheduler`, `ReviewSession`, `QuizSession`,
+      `QuizGenerator`, `QuizRules`
       and the `Flashcard` model import nothing but `java.util` today (verified 2026-08-08). Move
       them to a plain-JVM `:study` module that both `:app` and `:wear` depend on, so SM-2 cannot
       drift between the two. The existing JVM tests move with it and keep running without a device.
+  - [x] **The list above was one class short**: `QuizQuestion` moved too — `QuizGenerator` builds
+        them and `QuizSession` holds them, and its constructor is package-private, so leaving it
+        behind would have meant widening visibility for no reason. Seven classes, not six.
+  - [x] **The files move; the package names don't.** Re-verified 2026-08-13 — still Android-free.
+        `FlashcardScheduler` sits in `mse.quill.data` next to `AppDatabase` and `NoteCrypto`, and
+        `ReviewSession` under `ui.flashcards`, so both packages lie about what they hold and the
+        tidy fix is to rename them. Don't: split packages across Gradle modules are legal here (no
+        JPMS), so keeping the names makes the move import-invisible, and the diff reads "files
+        changed module, zero imports touched" — reviewable at a glance, which a sixty-file rename
+        carrying the same zero behaviour change is not. Rename later if it ever earns itself.
 
-- [ ] **Sync architecture — a projection, not a replica**
-  - [ ] The watch holds today's due cards and nothing else, pushed as a `DataItem` over the Wear
+- [ ] **Sync architecture — a projection, not a replica** — *built 2026-08-13, round trip unverified*
+  - [x] The watch holds today's due cards and nothing else, pushed as a `DataItem` over the Wear
         Data Layer. **No Room/SQLite copy of Quill on the watch.** `DataItem`s cap near 100 KB,
         which conveniently forbids the wrong design anyway — no media, no asset registry, no
         `content_blob`.
+  - [x] **A locked collection's cards never reach the watch — in either lock state.** Added
+        2026-08-13; the epic was scoped on 08-08, before the lock existed, and had no answer for
+        it. A `DataItem` carries note text out of the encrypted store onto a device with no
+        biometric gate, no `FLAG_SECURE` and a Data Layer store that persists until overwritten,
+        so the projection must exclude hidden collections *by construction* — built next to
+        `FlashcardRepository.countDueSync` and reusing the same `NoteCrypto.hiddenCollectionIds`
+        / `hiddenClause` path, not by a filter a later caller can forget. Unconditional rather
+        than lock-state-dependent for the same reason the reminder is: the publish runs in the
+        background where nothing is unlocked, so a state-dependent rule would only produce a
+        projection that flickers as the gate opens and closes.
+  - [x] **The horizon is end-of-day, not `isDue(now)`.** The watch holds a snapshot and cards come
+        due continuously, so a projection filtered at publish time says "all caught up" at 09:00
+        for a card that came due at 09:05. Ship everything due through end-of-day and let the
+        watch re-filter against its own clock.
   - [ ] Q&A halves reach the watch as `NoteDocument`'s **plain-text projection**. Rich text,
         bullets and `RichTextField` do not get ported.
   - [ ] Reviews travel back as append-only events (`card id, grade, timestamp`) via
         `MessageClient`, replayed through the *phone's* `FlashcardScheduler`. SM-2 state is never
         computed on the watch and copied over — same reasoning as Epic C's append-only strokes:
         it turns the merge into a dedupe.
+  - [ ] **`recordReview` has to learn to honour the event's timestamp.** It currently calls
+        `applyReview(card, correct, System.currentTimeMillis())`, which is right for a review
+        answered on the phone and wrong for one replayed off the queue: a session done on a plane
+        and drained at 22:00 would have every interval anchored to 22:00. Needs a
+        `recordReview(card, correct, long now)` overload — small, and the failure is silent
+        interval corruption rather than anything that announces itself.
   - [ ] `CapabilityClient` for phone discovery; queue events while untethered and drain on
         reconnect.
   - [ ] **Tethered, not standalone** — Quill is offline-first with no cloud, so a watch with no
         phone has no way to obtain content. Declare it as such rather than leaving it ambiguous.
-  - [ ] **Decision needed before building: Compose for Wear OS breaks the house style.** Wear's
-        view-based widgets are legacy and the supported path is Kotlin + Compose, with a Material
-        library that is *not* the MDC one Epic H standardized on. This is a defensible divergence
-        from "Material 3 via MDC widgets" — but record it deliberately, don't discover it
-        mid-module. The `:wear` module also needs its own `minSdk` (30+) against the app's 26.
+  - [x] **Decided 2026-08-13: `:wear` is Kotlin from the first commit.** The app is 145 Java files
+        and no Kotlin, so this is the project's first Kotlin, and the temptation was to defer it —
+        build the tile in Java, add Compose later only for the review screen. That plan does not
+        survive contact with the tile libraries, which split by language and not evenly:
+        `protolayout-material` (Material **2.5**) has Java builders, and `protolayout-material3`
+        (M3 Expressive, `MaterialScope`, `Material3TileService`) is **Kotlin-only, with no Java
+        builders at all**. A Java tile is therefore a Material 2.5 tile — a *second* divergence
+        from Epic H's Material 3 standard, bought to avoid a language boundary the review screen
+        forces anyway. So the boundary goes at the module edge instead: `:app` and `:study` stay
+        Java, `:wear` is Kotlin + Compose, and the phasing below is by feature, not by language.
+  - [x] **Correction to the note this replaces**: Wear's view-based widgets are *not* deprecated.
+        `androidx.wear:wear` ships; individual pieces are retired (`AmbientModeSupport` →
+        `AmbientLifecycleObserver`), and Compose is merely "the recommended approach". The reason
+        to skip the view path is the M2.5/M3 split above, not deprecation — worth keeping straight
+        so the decision isn't defended later on a claim that isn't true.
+  - [ ] The `:wear` module needs its own `minSdk` (30+) against the app's 26.
 
 - [ ] **Flashcard review on the wrist** — the feature that justifies the epic
   - [ ] Front → tap to flip → right/wrong. That is already `ReviewSession`'s whole API surface;
@@ -613,10 +663,23 @@ worse than no tile, so D's unbuilt reminders infrastructure is a real prerequisi
         "review anyway" (a wrist session is a queue, not a browser).
 
 - [ ] **Tile + complication** — the genuinely watch-native surfaces, and cheap
-  - [ ] Tile (`androidx.wear.tiles` / ProtoLayout): due count + "Review N" straight into a session
-  - [ ] Watch-face complication (`ComplicationDataSourceService`): the due count alone
-  - [ ] Both read the same projected count. **Blocked on Epic D's reminder infrastructure** —
-        without a scheduled refresh the count goes stale and the surface actively misleads
+  - [x] Tile (`androidx.wear.tiles` / ProtoLayout): due count. Built on `Material3TileService`,
+        whose `tileResponse` is an **extension function on `MaterialScope`**, not a method taking
+        one — worth knowing, since `this` inside it is the scope and not the service, and the
+        scope carries a `Context` of its own that an unqualified `getString` will silently pick
+  - [ ] "Review N" straight into a session — waiting on the phase-2 review screen to send it to
+  - [x] Watch-face complication (`ComplicationDataSourceService`): the due count alone
+  - [ ] Both read the same projected count. **No longer blocked** (2026-08-13): Epic D's reminder
+        infrastructure shipped in `fbc25a2`, and `StudyReminderWorker` is exactly the scheduled
+        refresh this was waiting for — it already runs daily and already computes the count, so a
+        `getUpdater().requestUpdate()` beside its `notify()` keeps the tile fresh for free
+  - [ ] **Phase 1's tile taps through to the phone**, via `RemoteActivityHelper`, before the
+        on-watch review screen exists. That is a real feature and not a placeholder — "12 due,
+        tap to open Quill" — and phase 2 re-points the click without touching anything else.
+        **Not built yet, and deliberately not stubbed**: `RemoteActivityHelper` needs an
+        `ACTION_VIEW` intent with a data URI, so it needs a deep link on `:app`'s `MainActivity`
+        first. The dependency is declared and the tile is shipping without an edge button rather
+        than with a dead one
 
 - [ ] **Voice capture → note** — the one authoring act a watch does better than a pocketed phone
   - [ ] `RecognizerIntent` on-watch → text appended to an "Inbox" note (or a new note)
@@ -692,7 +755,13 @@ the three RemoteViews gotchas hit, and what's reused vs. new live in
 - Epic J turns two "nice to have" items into dependencies: Epic D's **reminder
   infrastructure** (a tile with a stale due count misleads) and Epic E's **True/False
   fallback** (the only quiz shape that fits a watch). If Epic J is in the plan, promote
-  those two rather than treating them as leftovers.
+  those two rather than treating them as leftovers. The first is done as of `fbc25a2`;
+  the True/False fallback is still outstanding and is still the gate on quizzes reaching
+  the watch at all.
+- Epic J's projection inherits the app lock, which was built after the epic was scoped.
+  Any surface that leaves the phone — the watch today, Epic I's widget tomorrow — has to
+  go through `NoteCrypto.hiddenCollectionIds` the way `countDueSync` does. Worth stating
+  once here rather than rediscovering it per surface.
 - Epic J's `:study` module extraction is also the cheapest way to keep Epic A's promise
   that the study logic stays Android-free — today that's a convention nothing enforces,
   and a module boundary makes the compiler enforce it.

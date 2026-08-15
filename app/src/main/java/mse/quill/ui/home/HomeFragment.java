@@ -1,6 +1,7 @@
 package mse.quill.ui.home;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import android.content.Context;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -25,6 +26,7 @@ import java.util.UUID;
 import mse.quill.R;
 import com.google.android.material.snackbar.Snackbar;
 
+import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteImporter;
 import mse.quill.data.NoteRepository;
@@ -69,6 +71,11 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private HomeAdapter homeAdapter;
     private View pinnedSection;
     private LinearLayout pinnedCardsContainer;
+
+    /** How many pinned cards to reserve room for before the read comes back — see
+     *  {@link #showPinnedPlaceholders()}. */
+    private static final String HOME_PREFS = "home_prefs";
+    private static final String KEY_PINNED_COUNT = "pinned_count";
 
     private List<Collection> allCollections = new ArrayList<>();
     private List<Whiteboard> allWhiteboards = new ArrayList<>();
@@ -158,6 +165,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
         pinnedSection = view.findViewById(R.id.pinned_section);
         pinnedCardsContainer = view.findViewById(R.id.pinned_cards_container);
+        // Before the first read, so the band is already the right height when the page draws.
+        showPinnedPlaceholders();
 
         searchBar = view.findViewById(R.id.search_bar);
         searchBar.setListener(new SearchFilterBar.Listener() {
@@ -414,9 +423,18 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
             }
 
             @Override public void onDelete() {
-                WhiteboardDialogs.showDeleteConfirmation(requireContext(), whiteboard, () ->
-                        whiteboardRepository.deleteWhiteboard(
-                                whiteboard.id, HomeFragment.this::reloadWhiteboards));
+                // The count is a database read, so the dialog waits for it rather than opening
+                // with a warning it might have to add a moment later.
+                AppExecutors.getInstance().diskIO(() -> {
+                    int embedded = whiteboardRepository.embeddingNoteCountSync(whiteboard.id);
+                    AppExecutors.getInstance().mainThread(() -> {
+                        if (!isAdded()) return;
+                        WhiteboardDialogs.showDeleteConfirmation(
+                                requireContext(), whiteboard, embedded, () ->
+                                        whiteboardRepository.deleteWhiteboard(
+                                                whiteboard.id, HomeFragment.this::reloadWhiteboards));
+                    });
+                });
             }
         });
     }
@@ -495,7 +513,45 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         noteRepository.loadPinnedNotes(notes -> {
             if (!isAdded()) return;
             renderPinnedSection(notes);
+            rememberPinnedCount(notes.size());
         });
+    }
+
+    /**
+     * Fills the pinned band with grey cards before the real ones have been read.
+     *
+     * <p>The band is built from a database read, so on the way back from a note it appeared a
+     * frame or two after everything else and shoved the whole page down as it did — the jitter.
+     * Reserving the space first removes the movement rather than hiding it, which is why this
+     * draws placeholder cards and not a spinner: a spinner is a different height from what
+     * replaces it, so it would jump too.
+     *
+     * <p>Keyed on the count from last time. It only has to be <em>close</em> — every card is the
+     * same fixed height, so the band's height is right even when the number is not, and the number
+     * is only wrong for as long as the read takes. Zero means draw nothing, which is also correct:
+     * someone with no pinned notes should not see a band flash past on every visit.
+     */
+    private void showPinnedPlaceholders() {
+        int expected = rememberedPinnedCount();
+        if (expected <= 0) {
+            pinnedSection.setVisibility(View.GONE);
+            return;
+        }
+        pinnedCardsContainer.removeAllViews();
+        pinnedSection.setVisibility(View.VISIBLE);
+        for (int i = 0; i < expected; i++) {
+            pinnedCardsContainer.addView(PinnedNoteCardView.buildPlaceholder(requireContext()));
+        }
+    }
+
+    private int rememberedPinnedCount() {
+        return requireContext().getSharedPreferences(HOME_PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_PINNED_COUNT, 0);
+    }
+
+    private void rememberPinnedCount(int count) {
+        requireContext().getSharedPreferences(HOME_PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_PINNED_COUNT, count).apply();
     }
 
     private void renderPinnedSection(List<Note> pinnedNotes) {
