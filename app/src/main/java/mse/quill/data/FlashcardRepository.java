@@ -10,13 +10,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.UUID;
 
+import mse.quill.data.model.DueCard;
 import mse.quill.data.model.Flashcard;
 import mse.quill.data.model.FlashcardDeck;
 import mse.quill.data.serialization.MarkdownSerializer;
+import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
+import mse.quill.util.NoteDisplayUtils;
 
 /**
  * The flashcards generated from a note's Q&amp;A blocks, and their review schedule.
@@ -34,9 +38,12 @@ public class FlashcardRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
+    /** Held only so a review can re-publish the Wear projection; see {@link #recordReview}. */
+    private final Context appContext;
 
     public FlashcardRepository(Context context) {
-        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
+        this.appContext = context.getApplicationContext();
+        this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
     }
 
@@ -73,6 +80,9 @@ public class FlashcardRepository {
             long now = System.currentTimeMillis();
 
             List<Flashcard> deck = new ArrayList<>();
+            // Whether the watch's copy is now wrong. Tracked rather than assumed, because this
+            // method runs on every note save and most saves touch no Q&A block at all.
+            boolean projectionChanged = false;
             db.beginTransaction();
             try {
                 for (QaSegment qa : reviewable) {
@@ -89,7 +99,11 @@ public class FlashcardRepository {
                         card.back = back;
                         FlashcardScheduler.initialise(card, now);
                         db.insert("flashcards", null, toValues(card));
+                        // initialise sets nextReview = now, so a new card is due the moment it
+                        // exists — which is exactly why this has to reach the watch.
+                        projectionChanged = true;
                     } else if (!front.equals(card.front) || !back.equals(card.back)) {
+                        projectionChanged = true;
                         // Text only. Rewriting the schedule here would mean fixing a typo in a
                         // question silently threw away everything known about how well it's known.
                         card.front = front;
@@ -107,6 +121,17 @@ public class FlashcardRepository {
             }
 
             if (cb != null) executors.mainThread(() -> cb.onLoaded(deck));
+
+            // After the callback and outside the transaction, matching recordReview: the editor
+            // should return at the speed of the database write, not of a Data Layer round trip.
+            //
+            // Without this the watch only learned about new cards on the next cold start of
+            // MainActivity, the next answered card, or the next daily worker run — so making a
+            // deck on the phone and looking at the wrist showed "all caught up", which is the one
+            // answer that is definitely wrong.
+            if (projectionChanged) {
+                WearProjectionPublisher.publishAfterScheduleChange(appContext);
+            }
         });
     }
 
@@ -247,6 +272,66 @@ public class FlashcardRepository {
     }
 
     /**
+     * Today's due cards as the watch is allowed to see them — the Wear projection's database half.
+     *
+     * <p>Synchronous for the same reason as {@link #countDueSync}: it is called from the reminder
+     * worker and from {@link AppExecutors#diskIO}, both already off the main thread.
+     *
+     * <p><b>Every locked collection is excluded, open or not</b>, which is deliberately stricter
+     * than the rest of the app. Elsewhere the question is "should this appear on screen", and an
+     * unlocked collection's notes should; here the question is "should this leave the device", and
+     * the answer for anything the user chose to encrypt is no. A watch has no biometric gate, no
+     * {@code FLAG_SECURE}, and a Data Layer store that outlives the session that filled it — a
+     * projection that shipped while the collection happened to be open would still be sitting there
+     * an hour after it was shut again.
+     *
+     * <p>A useful side effect: because locked collections drop out by collection id rather than by
+     * lock state, nothing here can ever hold ciphertext, so unlike {@link #loadDecks} there is no
+     * decryption step to forget.
+     *
+     * <p>The horizon is end-of-day rather than {@code now} — see {@link DueProjection#select}.
+     */
+    public List<DueCard> dueProjectionSync(long now, TimeZone zone) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        Set<String> locked = NoteCrypto.lockedCollectionIds(db);
+        long horizon = DueProjection.endOfDayExclusive(now, zone);
+
+        List<String> args = new ArrayList<>();
+        args.add(String.valueOf(horizon));
+        args.addAll(locked);
+
+        List<DueCard> candidates = new ArrayList<>();
+        try (Cursor c = db.rawQuery(
+                "SELECT f.id, f.front, f.back, f.next_review, n.id, n.title, n.created_at " +
+                        "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
+                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
+                        NoteCrypto.excludeCollectionsClause(locked),
+                args.toArray(new String[0]))) {
+            while (c.moveToNext()) {
+                DueCard card = new DueCard();
+                card.id = c.getString(0);
+                // Markdown on disk, plain text on the wrist. Done here rather than on the watch
+                // because this is where the renderer that understands the format lives, and the
+                // watch has nothing to draw a bullet with anyway.
+                card.front = NoteDocument.toPlainText(c.getString(1));
+                card.back = NoteDocument.toPlainText(c.getString(2));
+                card.dueAt = c.getLong(3);
+                card.noteId = c.getString(4);
+                // Resolved here, not on the watch: an untitled note stores an empty title, and the
+                // fallback is a localised date string that needs a Context to build. No decryption
+                // step — see this method's note on why nothing here can hold ciphertext.
+                card.noteTitle = NoteDisplayUtils.resolveTitle(
+                        appContext, c.isNull(5) ? null : c.getString(5), c.getLong(6));
+                candidates.add(card);
+            }
+        }
+
+        // Ordering, the cap and the trim are all in :study, where they can be tested without a
+        // database — this method's job is the query and the lock rule, and nothing else.
+        return DueProjection.select(candidates, horizon);
+    }
+
+    /**
      * Deletes a note's whole deck.
      *
      * <p>A hard delete, against the app's soft-delete convention, and deliberately: a card is
@@ -258,14 +343,33 @@ public class FlashcardRepository {
     public void deleteForNote(String noteId, Runnable onDeleted) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
-            db.delete("flashcards", "note_id = ?", new String[]{noteId});
+            int deleted = db.delete("flashcards", "note_id = ?", new String[]{noteId});
             if (onDeleted != null) executors.mainThread(onDeleted);
+
+            // The mirror of the publish in syncFromNote, and the more visible of the two if it is
+            // missing: a watch still holding a deleted deck offers cards to review, and answering
+            // one sends the phone an id it can no longer find.
+            if (deleted > 0) WearProjectionPublisher.publishAfterScheduleChange(appContext);
         });
     }
 
-    /** Persists the card's advanced schedule after an answer. */
+    /** Persists the card's advanced schedule after an answer given now, on this device. */
     public void recordReview(Flashcard card, boolean correct, Runnable onDone) {
-        FlashcardScheduler.applyReview(card, correct, System.currentTimeMillis());
+        recordReview(card, correct, System.currentTimeMillis(), onDone);
+    }
+
+    /**
+     * Persists the card's advanced schedule after an answer given at {@code answeredAt}.
+     *
+     * <p>The timestamp is a parameter rather than a {@code System.currentTimeMillis()} inside,
+     * because an answer from the watch arrives some time after it was given — immediately when
+     * tethered, and much later when it wasn't. Anchoring the interval to arrival would push a
+     * card answered at 08:00 and delivered at 22:00 fourteen hours further out than the schedule
+     * intends, and it would do it silently: every field still looks plausible afterwards, which
+     * is what makes this worth a separate overload rather than a caller's discipline.
+     */
+    public void recordReview(Flashcard card, boolean correct, long answeredAt, Runnable onDone) {
+        FlashcardScheduler.applyReview(card, correct, answeredAt);
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             ContentValues cv = new ContentValues();
@@ -276,10 +380,46 @@ public class FlashcardRepository {
             cv.put("last_reviewed_at", card.lastReviewedAt);
             db.update("flashcards", cv, "id = ?", new String[]{card.id});
             if (onDone != null) executors.mainThread(onDone);
+
+            // After the callback, not before: the review screen should advance at the speed of the
+            // database write, not at the speed of a Data Layer round trip. Still on the diskIO
+            // thread, which is where publishSync has to be.
+            WearProjectionPublisher.publishAfterScheduleChange(appContext);
         });
     }
 
     // ── Sync helpers (must run on the diskIO executor) ──────────────────────
+
+    /**
+     * One card by id, or null if it no longer exists. <b>Blocking — call from a background
+     * thread.</b>
+     *
+     * <p>Null is a normal answer, not an error: an answer can arrive from the watch for a card the
+     * phone deleted while the two were apart, and the projection the watch answered from is by
+     * then simply out of date. The caller drops it.
+     */
+    public Flashcard loadByIdSync(String cardId) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        try (Cursor c = db.rawQuery(
+                "SELECT id, note_id, source_segment_id, front, back, interval, repetitions, " +
+                        "easiness, next_review, last_reviewed_at " +
+                        "FROM flashcards WHERE id = ?",
+                new String[]{cardId})) {
+            if (!c.moveToFirst()) return null;
+            Flashcard card = new Flashcard();
+            card.id = c.getString(0);
+            card.noteId = c.getString(1);
+            card.sourceSegmentId = c.getString(2);
+            card.front = c.isNull(3) ? "" : c.getString(3);
+            card.back = c.isNull(4) ? "" : c.getString(4);
+            card.interval = c.getInt(5);
+            card.repetitions = c.getInt(6);
+            card.easiness = c.getDouble(7);
+            card.nextReview = c.getLong(8);
+            card.lastReviewedAt = c.isNull(9) ? null : c.getLong(9);
+            return card;
+        }
+    }
 
     private Map<String, Flashcard> loadBySegmentIdSync(SQLiteDatabase db, String noteId) {
         Map<String, Flashcard> cards = new HashMap<>();

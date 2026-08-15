@@ -16,6 +16,22 @@ playServicesNearby = "19.3.0"
 playServicesCodeScanner = "16.1.0"
 zxingCore = "3.5.3"
 barcodeScanningCommon = "17.0.0"
+# Wear OS companion (:wear only). Kotlin is confined to that module — see note.md for why the
+# tile libraries force it. Tiles 1.6.2 declares protolayout 1.4.2, so the two lines move together.
+kotlin = "2.4.10"
+playServicesWearable = "20.0.1"
+wearTiles = "1.6.2"
+protolayout = "1.4.2"
+watchfaceComplications = "1.3.0"
+wearRemoteInteractions = "1.2.0"
+# The phase-2 review screen. Wear Compose is its own Material line — androidx.wear.compose, not
+# androidx.compose.material3 — because a watch's components differ in kind and not just in size
+# (TimeText, the round-screen-aware scaffold), so the phone's M3 artifact is the wrong one here.
+# Not the newest (2026.08.00): that pins Compose 1.12, which requires compileSdk 37, and :wear
+# compiles against 36 like the rest of the project. Held here until the whole project moves.
+composeBom = "2026.06.01"
+wearCompose = "1.6.2"
+activityCompose = "1.13.0"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -49,6 +65,51 @@ play-services-code-scanner = { group = "com.google.android.gms", name = "play-se
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 barcode-scanning-common = { group = "com.google.mlkit", name = "barcode-scanning-common", version.ref = "barcodeScanningCommon" }
 
+# ── Wear OS ───────────────────────────────────────────────────────────────────────────────────
+# The Data Layer, on both sides of the pair: the phone publishes the due-card projection as a
+# DataItem and the watch listens for it. Same library, opposite ends — so this one is a dependency
+# of :app as well as :wear, unlike everything below it.
+play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
+# The tile surface. `tiles` is the service and the timeline; the layout itself is ProtoLayout,
+# which is a description of a layout rather than a view hierarchy — the tile is rendered by the
+# system in another process, so there is nothing to hold a reference to and no draw call to make.
+wear-tiles = { group = "androidx.wear.tiles", name = "tiles", version.ref = "wearTiles" }
+protolayout = { group = "androidx.wear.protolayout", name = "protolayout", version.ref = "protolayout" }
+protolayout-expression = { group = "androidx.wear.protolayout", name = "protolayout-expression", version.ref = "protolayout" }
+# Material 3 Expressive components for the tile. Kotlin-only — no Java builders exist — which is
+# the concrete reason :wear is a Kotlin module. The Java-friendly alternative is the Material 2.5
+# `protolayout-material`, which would put the watch surface off the app's own design system.
+protolayout-material3 = { group = "androidx.wear.protolayout", name = "protolayout-material3", version.ref = "protolayout" }
+# The watch-face complication: the due count alone, on whatever face the user is wearing.
+watchface-complications-data-source-ktx = { group = "androidx.wear.watchface", name = "watchface-complications-data-source-ktx", version.ref = "watchfaceComplications" }
+# Opening the phone app from the watch. Phase 1's tile has nowhere on-watch to send a tap yet, and
+# "open Quill on your phone" is a real answer rather than a placeholder — RemoteActivityHelper is
+# what turns an Intent into one that starts on the paired handset.
+wear-remote-interactions = { group = "androidx.wear", name = "wear-remote-interactions", version.ref = "wearRemoteInteractions" }
+# ── The review screen (phase 2) ────────────────────────────────────────────────────────────────
+# The BOM pins the androidx.compose.* artifacts (ui, runtime, foundation) that Wear Compose builds
+# on; the wear-compose lines carry their own version because they ship on a separate cadence and
+# are deliberately not in the BOM.
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+# Wear's own Material 3, not the phone's. Ships TimeText and a scaffold that understands a round
+# screen — the components differ in kind from the handset set, not merely in size.
+wear-compose-material3 = { group = "androidx.wear.compose", name = "compose-material3", version.ref = "wearCompose" }
+wear-compose-foundation = { group = "androidx.wear.compose", name = "compose-foundation", version.ref = "wearCompose" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+# Check and Close for the review screen's two answers. The *core* set, not `-extended`: core is a
+# few dozen icons and these two are in it, while extended is a five-figure icon count and several
+# MB that R8 has to strip back out again. Versioned by the BOM.
+compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# Required from Kotlin 2.0 whenever `buildFeatures.compose` is on — the Compose compiler ships as a
+# Kotlin plugin rather than inside AGP. Note this is *not* the `kotlin.android` plugin, which AGP 9
+# already registers and which fails if applied a second time; the two are unrelated despite the
+# similar ids, and only this one belongs in :wear.
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 

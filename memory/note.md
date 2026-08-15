@@ -1459,6 +1459,133 @@ invocations are 200-400ms apart, slower than a person).
   usable immediately, and the insert and the first save queue in order on the one disk thread —
   a save arriving mid-creation used to be dropped.
 
+## Module layout — `:app` and `:study`
+
+Quill was one module until 2026-08-13. It is now two: `:app` (the Android application) and
+`:study` (a plain-JVM `java-library` holding `FlashcardScheduler`, `ReviewSession`, `QuizSession`,
+`QuizGenerator`, `QuizQuestion`, `QuizRules` and the `Flashcard` model).
+
+**Why split at all.** The study logic has been Android-free since Epic A, but only by convention —
+nothing stopped someone reaching for a `Context` in `QuizGenerator` except a code review that
+noticed. A module without the Android classpath turns that into a build failure, which is the only
+version of the promise that holds up. Verified rather than assumed: adding
+`import android.content.Context;` to `QuizRules` and running `:study:compileJava` fails with
+"package android.content does not exist". The immediate driver is Epic J — the Wear companion
+reuses SM-2 verbatim, and a schedule that drifts between the wrist and the phone is the bug this
+prevents by construction.
+
+**The files moved; the package names didn't.** `FlashcardScheduler` still declares
+`package mse.quill.data`, `ReviewSession` still `mse.quill.ui.flashcards`, and the quiz classes
+still `mse.quill.ui.quiz` — so `mse.quill.ui.quiz` now spans both modules. That is deliberate. Split
+packages across Gradle modules are legal here (there is no JPMS in the picture), and keeping the
+names made the move import-invisible: **not one import in `:app` changed.** The diff is eleven
+renames and three build files, which is reviewable at a glance in a way that the tidier
+`mse.quill.study.*` rename — same zero behaviour change, sixty-odd files touched — would not have
+been. It also sidestepped a real hazard: `QuizQuestion`'s constructor is package-private and only
+`QuizGenerator` calls it, so a rename would have had to widen it or move both in lockstep anyway.
+
+The package names are, admittedly, now lying twice over: `mse.quill.data` for a class with no
+database in it and `ui.flashcards` for one with no views. They were lying before the split too —
+that's *why* the split was possible. Rename if it ever earns itself; it hasn't.
+
+**What stayed in `:app`.** `FlashcardRepository` and `QuizRepository` (SQLite), the fragments, and
+`FlashcardRepository.reviewableQa` — which takes `NoteSegment` and so belongs on the Android side
+of the line. `ExampleUnitTest` stayed too; the four real JVM suites moved (32 tests:
+`FlashcardSchedulerTest` 9, `ReviewSessionTest` 8, `QuizGeneratorTest` 9, `QuizSessionTest` 6) and
+run under `:study:test` with no device and no Android test runner.
+
+**Gradle gotcha worth keeping:** `:study` pins `sourceCompatibility`/`targetCompatibility` to 11 to
+match `:app`'s `compileOptions`. A mismatch compiles clean and then fails at dex time complaining
+about class file versions, which reads as anything but a toolchain problem.
+
+## Wear OS — why `:wear` will be Kotlin
+
+Recorded here because it is the project's first departure from "one language, Java", and the
+reasoning is not obvious from the outside. Full checklist in
+[requirements.md](requirements.md)'s Epic J.
+
+The tempting plan was to stay in Java as long as possible: build the tile and complication in Java
+(both are ordinary Java-callable Android services), and add Kotlin only later, for the Compose
+review screen. It doesn't survive the tile libraries, which split by language and not evenly —
+`protolayout-material` (Material **2.5**) has Java builders, while `protolayout-material3` (M3
+Expressive, `MaterialScope`, `Material3TileService`) is Kotlin-only with no Java builders at all.
+So a Java tile is a Material 2.5 tile, which trades one recorded divergence (a Kotlin module) for a
+worse one (a watch surface off the Material 3 standard the rest of the app was migrated onto),
+to postpone a language boundary the review screen forces anyway. The boundary goes at the module
+edge instead: `:app` and `:study` stay Java, `:wear` is Kotlin + Compose.
+
+**Correcting a thing that was written down wrong:** Wear's view-based widgets are *not* deprecated.
+`androidx.wear:wear` ships; individual pieces are retired (`AmbientModeSupport` →
+`AmbientLifecycleObserver`) and Compose is merely "recommended". The reason to skip the view path is
+the M2.5/M3 split above — worth keeping straight, since a decision defended on a false claim gets
+reopened the moment someone checks.
+
+## Wear phase 1 — the projection, the tile, the complication
+
+Built 2026-08-13. `:wear` is a third module (`com.android.application`, `applicationId = "mse.quill"`
+to match the phone — a mismatch there is the classic reason a `DataItem` publishes fine and never
+arrives). What exists: the phone builds and publishes the projection, the watch decodes it, and the
+tile and complication render from it.
+
+**The split between `:study` and `:app` is the useful part.** `DueProjection.select` — horizon
+filter, most-overdue-first ordering, the 120-card cap, the 240-character trim — is pure and lives in
+`:study` with ten tests. `FlashcardRepository.dueProjectionSync` does only the two things that need
+a database: the query and the lock rule. Neither half can be got wrong without the other noticing.
+
+**The lock rule is stricter here than anywhere else in the app, on purpose.** Every *locked*
+collection is excluded, open or not — not just the hidden ones the rest of the app filters. Screens
+ask "should this be visible"; the watch asks "should this leave the device", and for anything the
+user chose to encrypt the answer is no regardless of what's unlocked this session. `NoteCrypto`
+gained `excludeCollectionsClause` so the call site reads as the rule rather than as
+`hiddenClause(lockedIds)`, which looks like a bug. A free consequence worth knowing: because rows
+drop out by collection id, nothing in the projection can ever be ciphertext, so unlike `loadDecks`
+there is no decryption step to forget.
+
+**`null` and zero are different answers.** No `DataItem` means the pair has never synced → "Open on
+phone". An empty card list means the phone looked and found nothing → "All caught up". The
+complication returns *no data* rather than "0" in the first case: a watch face reading 0 would tell
+someone they were up to date on the strength of never having heard from the phone.
+
+**There is no cache on the watch.** The `DataItem` *is* the store — the Data Layer already persists
+it across reboots and replaces it atomically, so a SharedPreferences copy beside it would only add a
+second thing that can be stale. `ProjectionListenerService` therefore holds no state; it just calls
+`TileService.getUpdater(...).requestUpdate(...)` and `ComplicationDataSourceUpdateRequester`.
+
+**Three publish triggers**, and the ordering of one of them matters: `StudyReminderWorker` publishes
+**before** its notifications-enabled early return, because turning the daily nudge off is not a
+request for a tile that stops counting. The other two are `recordReview` (after the callback, so the
+review screen advances at database speed rather than Data Layer speed) and `MainActivity.onCreate`
+(which covers a watch paired since the last of the other two).
+
+**Gotchas, all of them found the hard way:**
+
+- **AGP 9 has built-in Kotlin support.** Applying `org.jetbrains.kotlin.android` fails twice over —
+  first "already on the classpath with an unknown version", then "extension with name 'kotlin'
+  already registered". `:wear` applies AGP alone and configures `kotlin { compilerOptions { } }`.
+- **`Material3TileService.tileResponse` is an extension on `MaterialScope`**, not a method taking
+  one: `override suspend fun MaterialScope.tileResponse(requestParams: TileRequest): Tile`. So
+  `this` inside it is the scope, and the scope has its own `Context` — an unqualified
+  `DueProjectionClient(this)` won't compile and an unqualified `getString` would resolve to the
+  wrong receiver. Bind `val service = this@DueTileService` first.
+- **The tile's main slot truncates at roughly twenty characters** on a 384px watch. "Open Quill on
+  your phone" rendered as "Open Quill on your p…"; the string is now "Open on phone".
+- **`Tasks.await` on `Dispatchers.IO`** rather than adding `kotlinx-coroutines-play-services` for a
+  single `.await()`.
+
+**Verified on the Wear emulator (`emulator-5556`, Wear OS 6 / API 36, 384×384 round):** both
+services register, the tile was added with
+`adb shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE --es operation add-tile
+--ecn component mse.quill/mse.quill.wear.DueTileService`, and it renders the correct never-synced
+state under the system's Material 3 theme. (`show-tile` is *not* a recognised operation on this
+build — swipe left from the watch face instead.)
+
+**Not verified, and the reason is worth writing down: the phone↔watch round trip needs the
+emulators paired.** The publish path runs to the GMS boundary and fails there with
+`ApiException: 17 — Wearable.API is not available on this device`, because the phone emulator has no
+Wear OS companion app. Pairing needs the companion app from Play and a Google sign-in on the phone
+emulator, which is the user's credential, not something automatable. So the decode half of
+`DueProjectionClient` and every non-empty tile state are **written but unexercised**.
+
 ## Conventions worth following
 
 - **All UI is Material 3 — no exceptions without a recorded reason.** Every new or edited
@@ -1481,6 +1608,11 @@ invocations are 200-400ms apart, slower than a person).
   the way the whiteboard code did.
 - Model classes (`data/model/*`) are plain field-holder POJOs, no builders/getters —
   keep new ones consistent with that.
+- **Study logic goes in `:study`, not `:app`.** Anything that is pure state transitions over
+  cards or questions — scheduling, session progression, generation — belongs in the plain-JVM
+  module, and the compiler will tell you if it doesn't (no Android classpath in there). Anything
+  touching SQLite, a `Context` or a view stays in `:app`. Tests for the former are ordinary JUnit
+  under `study/src/test` and need no device.
 - Soft-delete via a `deleted_at`/similar timestamp column, not hard `DELETE`, for
   anything user-facing (matches `notes.deleted_at`).
 - IDs are `UUID.randomUUID().toString()` throughout, not autoincrement — consistent

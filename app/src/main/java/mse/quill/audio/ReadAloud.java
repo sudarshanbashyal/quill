@@ -99,6 +99,10 @@ public final class ReadAloud {
 
     public static String title() { return title; }
 
+    /** Which note the voice is reading, or null for one that has never been saved. Read by
+     *  {@code WearReadStatePublisher}, which has to know whose title it is about to publish. */
+    public static String noteId() { return noteId; }
+
     public static float progress() {
         return reader == null ? 0f : reader.progress();
     }

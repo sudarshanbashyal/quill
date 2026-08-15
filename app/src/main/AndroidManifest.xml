@@ -122,6 +122,86 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- Answers coming back from the watch. Exported, and it has to be: the caller is Play
+             Services delivering on behalf of the watch app, which is a different process. The
+             path filter is what narrows it — Quill sees only /quill/answer, not every message on
+             the Data Layer. -->
+        <service
+            android:name=".data.WearAnswerListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/quill/answer" />
+            </intent-filter>
+        </service>
+
+        <!-- Voice memos recorded on the watch. A second service rather than a second path on the
+             one above: the two have nothing in common but their transport, and a single callback
+             branching on the path would put a note write and a schedule write in the same place.
+
+             DATA_CHANGED rather than MESSAGE_RECEIVED, unlike every other Wear service here. The
+             recording travels as a DataItem carrying an Asset, because a message is capped at 100KB
+             and is dropped outright when no node is connected — see AudioCaptureKeys. -->
+        <service
+            android:name=".data.WearAudioCaptureListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/quill/audio-capture/" />
+            </intent-filter>
+        </service>
+
+        <!-- "Read this one to me", from the watch. Separate again: this one starts a voice, and
+             has nothing in common with writing a note but the transport.
+
+             The prefix is exact rather than /quill/read, which would also swallow the control path
+             below and hand a pause to the service that starts readings. -->
+        <service
+            android:name=".data.WearReadListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:path="/quill/read" />
+            </intent-filter>
+        </service>
+
+        <!-- "Is this list still right?", asked by the watch as it opens a picker. The reply is a
+             republished note list on the usual DataItem path, not a message back. -->
+        <service
+            android:name=".data.WearNoteListRefreshListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:path="/quill/notes-refresh" />
+            </intent-filter>
+        </service>
+
+        <!-- "…and now stop." The reading's transport, so a note started from the wrist can be
+             paused there instead of only in the phone's now-playing bar. -->
+        <service
+            android:name=".data.WearReadControlListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:path="/quill/read-control" />
+            </intent-filter>
+        </service>
+
         <!-- Required by ImageEmbedder.openCamera(): it hands the camera app a content:// URI
              for a file in getFilesDir()/images. The authority must match what that code builds
              (getPackageName() + ".fileprovider"). Without this declaration
