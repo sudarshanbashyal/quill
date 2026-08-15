@@ -371,8 +371,15 @@
     <string name="dialog_new_whiteboard_title">New whiteboard</string>
     <string name="dialog_rename_whiteboard_title">Rename whiteboard</string>
     <string name="whiteboard_name_hint">Whiteboard name</string>
+    <string name="whiteboard_nothing_to_undo">Nothing to undo</string>
     <string name="delete_whiteboard_title_format">Delete \"%s\"?</string>
     <string name="delete_whiteboard_message">This whiteboard and everything drawn on it will be deleted.</string>
+    <!-- Shown in the danger colour under the message above. Says where the loss lands, because the
+         notes holding this board are not on screen and will keep the embed as a dead marker. -->
+    <plurals name="delete_whiteboard_embedded_warning">
+        <item quantity="one">It is embedded in %d note, which will be left with an empty placeholder.</item>
+        <item quantity="other">It is embedded in %d notes, which will be left with an empty placeholder.</item>
+    </plurals>
 
     <!-- ==================== Profile ==================== -->
 

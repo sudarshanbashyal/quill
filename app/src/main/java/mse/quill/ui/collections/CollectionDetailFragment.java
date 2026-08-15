@@ -6,6 +6,9 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -48,6 +51,9 @@ public class CollectionDetailFragment extends Fragment {
     private NotesAdapter notesAdapter;
     private TextView emptyNotesView;
     private TextView toolbarSubtitle;
+    private EditText titleField;
+    /** The name as the database has it, so an edit can be told from a redraw — and reverted to. */
+    private String committedName = "";
 
     private String collectionId;
     private List<Collection> allCollections = new ArrayList<>();
@@ -76,7 +82,11 @@ public class CollectionDetailFragment extends Fragment {
         tagRepository = new TagRepository(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
 
-        ((TextView) view.findViewById(R.id.toolbar_title)).setText(collectionName);
+        titleField = view.findViewById(R.id.toolbar_title);
+        titleField.setText(collectionName);
+        committedName = collectionName == null ? "" : collectionName;
+        setUpRename();
+
         toolbarSubtitle = view.findViewById(R.id.toolbar_subtitle);
         view.findViewById(R.id.back_button).setOnClickListener(v ->
                 NavHostFragment.findNavController(this).navigateUp());
@@ -163,6 +173,53 @@ public class CollectionDetailFragment extends Fragment {
                 packAndShare(name, finalColor, noteIds);
             });
         });
+    }
+
+    /**
+     * Commits a rename when the field is finished with, rather than on every keystroke.
+     *
+     * <p>Two moments count as finished: Done on the keyboard, and the field losing focus — the
+     * second is what catches the common case of typing a name and then tapping straight into a
+     * note. Leaving the screen goes through {@code onPause}, which is the same commit again.
+     *
+     * <p>An empty name is refused rather than saved. A collection with no name is unreachable in
+     * every list that shows one, and the field reverts so it is obvious nothing happened.
+     */
+    private void setUpRename() {
+        titleField.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_DONE) return false;
+            commitRename();
+            titleField.clearFocus();
+            InputMethodManager imm = requireContext().getSystemService(InputMethodManager.class);
+            if (imm != null) imm.hideSoftInputFromWindow(titleField.getWindowToken(), 0);
+            return true;
+        });
+        titleField.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) commitRename();
+        });
+    }
+
+    private void commitRename() {
+        if (titleField == null || collectionId == null) return;
+        String typed = titleField.getText().toString().trim();
+
+        if (typed.isEmpty()) {
+            titleField.setText(committedName);
+            return;
+        }
+        if (typed.equals(committedName)) return;
+
+        committedName = typed;
+        // Nothing on this screen is drawn from the name, so there is no reload to wait for; Home
+        // rereads its collections when it comes back.
+        collectionRepository.renameCollection(collectionId, typed, null);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        // Backing out with the field still focused is a finished edit like any other.
+        commitRename();
     }
 
     private void packAndShare(String name, int color, List<String> noteIds) {

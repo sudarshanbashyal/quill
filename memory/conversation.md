@@ -2812,3 +2812,47 @@ same indicator already proven on the initial-load path.
 update` with a full SQLite stack trace appears on every save and delete on this emulator. It is
 pre-existing and deliberate — the build has no FTS5 and both index helpers tolerate its absence —
 not a symptom of anything added here.
+
+## 2026-08-15 (later) — Six small fixes, one of which was a process death
+
+**Deleting a whiteboard killed the app, and the reported cause was the smaller half.** Three tables
+carry a foreign key onto `whiteboards.id` — `strokes`, `whiteboard_texts` and `note_whiteboards` —
+and `deleteWhiteboard` cleared only the first. So the crash fires for a board embedded in any note
+*and* for one that merely has a text box on it. `SQLiteConstraintException` on the disk thread is
+not a failed delete, it is a dead process: nothing catches it. Reproduced by seeding a board and an
+embed straight into the DB, which was far quicker than drawing one.
+
+**A second, latent one found while fixing it.** The embed line stays in the note after the board
+goes (deliberately — rewriting somebody's note because they deleted a drawing is a larger liberty
+than leaving a marker). But `WhiteboardLinks.replace` re-inserts a link row from that line on the
+next save, and **`ON CONFLICT` does not apply to foreign keys in SQLite**, so `CONFLICT_IGNORE` was
+never going to save it. The insert is now `INSERT OR IGNORE … SELECT … WHERE EXISTS`, which covers
+both the duplicate-embed case (a primary key, which the conflict clause does handle) and the dead
+board. Symptom would have been the app dying on saving a note you had only opened.
+
+**The other five**, all small:
+
+- **Collections rename from the top bar**, like notes: `toolbar_title` is an `EditText` now,
+  committed on IME Done, focus loss and `onPause`. Empty reverts rather than saving — a nameless
+  collection is unreachable in every list that shows one.
+- **"Nothing to undo" stacked** because Android *queues* toasts. Held in a field and cancelled
+  before each show, so repeating the tap restarts one message instead of lining up five.
+- **The gap above the search bar** was `content_sheet_min_height` at 56dp, twice the 28dp corner
+  radius it exists to keep visible. Now exactly the radius.
+- **Default whiteboard paper is dots.** Only the *fallback* moved — anyone who has picked a paper
+  keeps it, and existing boards keep theirs.
+- **Pinned-band jitter**: the band was built from a database read, so it appeared a frame or two
+  late and shoved the page down. Home now draws placeholder cards from a remembered count before
+  the read returns. Placeholders rather than a spinner precisely because a spinner is a different
+  height from what replaces it — it would jump too. The count only has to be close: every card is
+  a fixed height, so the band's height is right even when the number is briefly wrong.
+
+**One thing fixed in passing**: the "whiteboard was deleted" placeholder rendered its 24dp glyph at
+`CENTER_CROP`, blowing it up until it ran off both edges. `CENTER` while it is the fallback;
+`loadPreview` still switches to `CENTER_CROP` for a real thumbnail.
+
+**Verified on the emulator**: crash gone (delete completes, process alive, note opens and saves),
+the danger-coloured "embedded in 1 note" warning, rename round-tripping to Home and the DB, dots on
+a new board, the tighter sheet, and the pinned band already at full height on the first frame back
+from a note. Undo confirmed by the user. Test artifacts (seeded board, renamed collection, pinned
+note, scratch whiteboard) cleaned out of the emulator DB afterwards.

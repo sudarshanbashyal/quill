@@ -1,6 +1,11 @@
 package mse.quill.ui.home;
 
 import android.content.Context;
+import android.graphics.Typeface;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputLayout;
@@ -57,12 +62,35 @@ public final class WhiteboardDialogs {
                 .show();
     }
 
-    /** Deletion is permanent (there is no whiteboard trash), so it always confirms. */
-    public static void showDeleteConfirmation(Context context, Whiteboard whiteboard, Runnable onConfirmed) {
+    /**
+     * Deletion is permanent (there is no whiteboard trash), so it always confirms.
+     *
+     * <p>{@code embeddingNotes} is how many notes have this board in them. When it is more than
+     * none, the message gains a second line in the danger colour: the board is about to vanish out
+     * of the middle of writing the user is not currently looking at, and a confirmation that only
+     * mentions the drawing is not describing what the button does.
+     */
+    public static void showDeleteConfirmation(Context context, Whiteboard whiteboard,
+                                              int embeddingNotes, Runnable onConfirmed) {
+        CharSequence message = context.getString(R.string.delete_whiteboard_message);
+        if (embeddingNotes > 0) {
+            String warning = context.getResources().getQuantityString(
+                    R.plurals.delete_whiteboard_embedded_warning, embeddingNotes, embeddingNotes);
+            SpannableStringBuilder body = new SpannableStringBuilder(message);
+            body.append("\n\n");
+            int start = body.length();
+            body.append(warning);
+            body.setSpan(new ForegroundColorSpan(context.getColor(R.color.danger)),
+                    start, body.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            body.setSpan(new StyleSpan(Typeface.BOLD),
+                    start, body.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            message = body;
+        }
+
         new MaterialAlertDialogBuilder(context)
                 .setTitle(context.getString(R.string.delete_whiteboard_title_format,
                         NoteDisplayUtils.resolveWhiteboardTitle(context, whiteboard)))
-                .setMessage(R.string.delete_whiteboard_message)
+                .setMessage(message)
                 .setPositiveButton(R.string.action_delete, (d, w) -> onConfirmed.run())
                 .setNegativeButton(R.string.action_cancel, null)
                 .show();
