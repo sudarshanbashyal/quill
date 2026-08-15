@@ -1,11 +1,14 @@
 package mse.quill.wear
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -20,6 +23,7 @@ import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 
@@ -49,6 +53,8 @@ fun <T> PickerList(
     subtitle: (T) -> String? = { null },
     /** A line above the rows saying what picking one will do. Scrolls with them. */
     header: String? = null,
+    /** Whether the list is being rechecked with the phone — see [rememberSyncedNoteList]. */
+    syncing: Boolean = false,
     /** Rows that answer false are shown and greyed rather than hidden — see the deck picker. */
     enabled: (T) -> Boolean = { true },
     /**
@@ -81,6 +87,21 @@ fun <T> PickerList(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        // The slot is always here, spinner or not. Letting it appear and vanish would move every
+        // row down and back up again while the user is reaching for one of them — which is the
+        // exact failure this whole mechanism exists to prevent.
+        Box(
+            modifier = Modifier.height(SYNC_SLOT_HEIGHT),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (syncing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(SYNC_SLOT_HEIGHT),
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+
         if (header != null) {
             // Above the rows and inside the scroll, not pinned. A watch screen has no room for a
             // permanent header, and this one has nothing to say after the first row is read.
@@ -140,3 +161,6 @@ fun <T> PickerList(
 /** Shared by the rows and by anything a caller puts in [PickerList]'s leading slot, so an action
  *  above the list is the same height as the list. */
 val ROW_PADDING: PaddingValues = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+
+/** Small enough to cost almost nothing when empty, big enough to be seen turning. */
+private val SYNC_SLOT_HEIGHT = 14.dp

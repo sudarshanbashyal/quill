@@ -315,6 +315,12 @@ public class NoteRepository {
                 db.endTransaction();
             }
             if (onDeleted != null) executors.mainThread(onDeleted);
+
+            // The watch's pickers are built from this list, and until now only a *save* rebuilt it.
+            // A delete therefore left the note on the wrist — offered, tappable, and gone by the
+            // time a memo aimed at it reached the phone, which filed it in the inbox instead. The
+            // rule this restores: anything that changes what should be on the list republishes it.
+            WearNoteListPublisher.publishSync(appContext);
         });
     }
 
@@ -391,6 +397,11 @@ public class NoteRepository {
             }
 
             if (onDone != null) executors.mainThread(onDone);
+
+            // A move can change whether the watch is allowed to see this note at all: into a
+            // locked collection and its title has to leave the wrist, out of one and it may
+            // return. Same rule as the delete above.
+            WearNoteListPublisher.publishSync(appContext);
         });
     }
 

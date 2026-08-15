@@ -2769,3 +2769,46 @@ every activity still launches, and the real SM-R860 was never touched.
 **Worth remembering**: verifying anything that lives in the Wear system UI (tile picker, carousel,
 watch-face editor) by adb is a poor bet. Verify the *wiring* in the APK with aapt2 and leave the
 system UI to a human.
+
+## 2026-08-15 — A deleted note stayed on the wrist: the publish that was never there
+
+**`WearNoteListPublisher.publishSync` had exactly two callers**: `MainActivity.onCreate` and
+`NoteRepository.saveNote`. So the watch's list was rebuilt when a note was *written* and at no other
+time. Deleting one left it on the wrist — offered, tappable, and gone by the time a memo aimed at it
+reached the phone, which filed it in the inbox instead. That is what the user hit.
+
+Three more callers were missing for the same reason, and one of them is not cosmetic:
+
+- **`deleteNote`** — the reported bug.
+- **`assignCollection`** — a note moved into an encrypted collection has to leave the wrist; moved
+  out, it may return.
+- **`CollectionLockRepository.lock` / `unlock` / `discardUnreadable`** — **locking a collection did
+  not withdraw its titles from the watch.** The encryption was applied everywhere except the one
+  surface that had already carried the names off the phone, and they stayed there until something
+  unrelated happened to republish. Same rule as `WearNoteListPublisher` states: the question is not
+  "should this appear on screen" but "should this leave the device".
+
+**And the refresh the user asked for, as belt to those braces.** No push mechanism can promise
+delivery, and the watch cannot tell a current list from a stale one by looking — both are the same
+`DataItem` with a different number inside. So `NoteListKeys.REFRESH_PATH` is a message the watch
+sends as a picker opens, `WearNoteListRefreshListenerService` republishes, and the answer arrives on
+the ordinary path.
+
+**Draw first, ask second** (`rememberSyncedNoteList`). The cached list appears immediately, because
+it is nearly always right and a picker you watch load is a worse picker. Rows are replaced only if
+they genuinely differ — `WatchNoteList.generatedAt` plus a content comparison — since swapping
+identical rows under a thumb is a way to lose a tap, and the Data Layer redelivers on reconnect. The
+spinner sits in a **fixed-height slot** for the same reason: letting it appear and vanish would move
+every row while someone is reaching for one, which is the exact failure the mechanism exists to
+prevent. A six-second ceiling stops it spinning forever for a watch with no phone.
+
+**Verified, and partly by the user.** They deleted "Geography" on the phone mid-session to test it,
+and the watch's picker dropped it with nothing else touched. My own run deleted an untitled note and
+the watch matched the phone's live rows exactly eleven seconds later. What I could *not* catch on
+camera was the spinner itself — the round trip finishes faster than `screencap` can cycle. It is the
+same indicator already proven on the initial-load path.
+
+**A red herring worth writing down**: `W NoteRepository: notes_fts unavailable, skipping index
+update` with a full SQLite stack trace appears on every save and delete on this emulator. It is
+pre-existing and deliberate — the build has no FTS5 and both index helpers tolerate its absence —
+not a symptom of anything added here.

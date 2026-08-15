@@ -54,7 +54,6 @@ import kotlinx.coroutines.launch
 class ReadAloudActivity : ComponentActivity() {
 
     private var phase by mutableStateOf(Phase.LOADING)
-    private var notes by mutableStateOf<List<WatchNote>?>(null)
 
     /** What the controls draw. Locally optimistic between a tap and the phone's next publish. */
     private var state by mutableStateOf(ReadState(false, false, "", 0f))
@@ -75,6 +74,10 @@ class ReadAloudActivity : ComponentActivity() {
     @Composable
     private fun ReadScreen() {
         val client = ReadStateClient(this)
+        // Started regardless of which screen we land on: the round trip runs while the read state
+        // is being fetched, so by the time the picker is reached the answer is usually already in.
+        val list = rememberSyncedNoteList(this)
+        val notes = list.notes
 
         LaunchedEffect(Unit) {
             val current = client.read()
@@ -84,7 +87,6 @@ class ReadAloudActivity : ComponentActivity() {
                 state = current
                 phase = Phase.CONTROLLING
             } else {
-                notes = NoteListClient(this@ReadAloudActivity).read()
                 phase = Phase.CHOOSING
             }
         }
@@ -98,15 +100,19 @@ class ReadAloudActivity : ComponentActivity() {
             Phase.LOADING -> Centered { CircularProgressIndicator() }
 
             Phase.CHOOSING -> when {
+                // The list read has its own moment, separate from the read state's.
+                !list.loaded -> Centered { CircularProgressIndicator() }
+
                 // Never synced is not the same as having no notes — see NoteListClient.
                 notes == null -> Message(getString(R.string.read_no_phone))
 
-                notes.orEmpty().isEmpty() -> Message(getString(R.string.read_no_notes))
+                notes.isEmpty() -> Message(getString(R.string.read_no_notes))
 
                 else -> PickerList(
-                    items = notes.orEmpty(),
+                    items = notes,
                     label = { it.title },
                     header = getString(R.string.read_pick_note),
+                    syncing = list.syncing,
                 ) { picked ->
                     startReading(picked)
                 }

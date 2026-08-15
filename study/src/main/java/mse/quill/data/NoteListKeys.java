@@ -19,6 +19,20 @@ public final class NoteListKeys {
     /** The {@code DataItem} path. One item, replaced whole, like the due projection. */
     public static final String PATH = "/quill/notes";
 
+    /**
+     * A {@code MessageClient} path the watch uses to say "rebuild this list now".
+     *
+     * <p>The list is normally pushed: the phone republishes whenever something changes what should
+     * be on it. This is the admission that pushing alone is a promise the phone cannot always keep —
+     * a publish can be missed, and the watch has no way to tell a list that is current from one that
+     * is a day old, because both look like the same {@code DataItem}.
+     *
+     * <p>Asking is cheap and the answer arrives on the existing path, so the watch does not wait on
+     * a reply: it draws what it has, asks, and redraws if what comes back differs. The cost of
+     * being wrong here is a memo filed into a note the user deleted a minute ago.
+     */
+    public static final String REFRESH_PATH = "/quill/notes-refresh";
+
     /** When the phone built this list, epoch millis. */
     public static final String KEY_GENERATED_AT = "generated_at";
 

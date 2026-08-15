@@ -68,8 +68,6 @@ class CaptureActivity : ComponentActivity() {
     private val recorder by lazy { MemoRecorder(this) }
 
     private var phase by mutableStateOf(Phase.CHOOSING)
-    private var notes by mutableStateOf<List<WatchNote>?>(null)
-    private var loaded by mutableStateOf(false)
 
     /** Redrawn from the recorder a few times a second while it runs — see [RecordingScreen]. */
     private var elapsedMs by mutableLongStateOf(0L)
@@ -106,14 +104,14 @@ class CaptureActivity : ComponentActivity() {
 
     @Composable
     private fun CaptureScreen() {
-        LaunchedEffect(Unit) {
-            notes = NoteListClient(this@CaptureActivity).read()
-            loaded = true
-        }
+        // Rechecked with the phone every time this screen opens — a note deleted since the last
+        // publish is one this picker would otherwise still offer.
+        val list = rememberSyncedNoteList(this)
+        val notes = list.notes
 
         when (phase) {
             Phase.CHOOSING -> {
-                if (!loaded) {
+                if (!list.loaded) {
                     Centered { CircularProgressIndicator() }
                 } else {
                     // The inbox is a row like any other so the list has one shape, but it is
@@ -131,6 +129,7 @@ class CaptureActivity : ComponentActivity() {
                         // Says what the tap does. Without it the screen is a list of note names
                         // with no clue that recording starts the moment one is chosen.
                         header = getString(R.string.capture_pick_note),
+                        syncing = list.syncing,
                         leadingContent = {
                             NewNoteButton {
                                 target = CaptureTarget.NewNote
