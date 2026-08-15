@@ -73,9 +73,21 @@ public class WhiteboardRepository {
     }
 
     /**
-     * Deletes the board and its strokes. Hard delete, matching how collections are removed —
-     * there is no trash surface for whiteboards, so a soft-deleted board would just be
-     * unreachable rows. The strokes go first: they carry a foreign key onto this row.
+     * Deletes the board and everything that points at it. Hard delete, matching how collections
+     * are removed — there is no trash surface for whiteboards, so a soft-deleted board would just
+     * be unreachable rows.
+     *
+     * <p><b>All three referencing tables go first, not just the strokes.</b> Three tables carry a
+     * foreign key onto {@code whiteboards.id} — {@code strokes}, {@code whiteboard_texts} and
+     * {@code note_whiteboards} — and this used to clear only the first. Deleting a board with a
+     * text box on it, or one embedded in any note, therefore raised
+     * {@code SQLiteConstraintException} on a background thread, which is not a failed delete but a
+     * dead process: nothing catches it, so the app disappeared mid-tap.
+     *
+     * <p>The note's Markdown is deliberately left alone. The embed line stays, and the editor
+     * renders it as a board that is gone — see {@code WhiteboardSegmentView}. Rewriting somebody's
+     * note because they deleted a drawing is a larger liberty than leaving a marker they can
+     * remove themselves.
      */
     public void deleteWhiteboard(String id, Runnable onDone) {
         executors.diskIO(() -> {
@@ -83,6 +95,8 @@ public class WhiteboardRepository {
             db.beginTransaction();
             try {
                 db.delete("strokes", "whiteboard_id = ?", new String[]{id});
+                db.delete("whiteboard_texts", "whiteboard_id = ?", new String[]{id});
+                db.delete("note_whiteboards", "whiteboard_id = ?", new String[]{id});
                 db.delete("whiteboards", "id = ?", new String[]{id});
                 db.setTransactionSuccessful();
             } finally {
@@ -90,6 +104,21 @@ public class WhiteboardRepository {
             }
             if (onDone != null) executors.mainThread(onDone);
         });
+    }
+
+    /**
+     * How many notes embed this board. <b>Blocking — call from a background thread.</b>
+     *
+     * <p>Asked before the delete confirmation, so the warning can say what will be left behind
+     * rather than making the user find out afterwards.
+     */
+    public int embeddingNoteCountSync(String whiteboardId) {
+        try (Cursor c = appDatabase.getWritableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM note_whiteboards nw JOIN notes n ON n.id = nw.note_id "
+                        + "WHERE nw.whiteboard_id = ? AND n.deleted_at IS NULL",
+                new String[]{whiteboardId})) {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        }
     }
 
     /**

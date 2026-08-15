@@ -135,6 +135,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
      */
     private final Deque<Undoable> undoStack = new ArrayDeque<>();
 
+    /** Held so repeated undos on an empty board restart one toast instead of queueing several. */
+    private Toast nothingToUndoToast;
+
     /** An id plus what it is, so undo knows which view call and which table to use. */
     private static final class Undoable {
         final String id;
@@ -568,7 +571,14 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
     private void undoLastStroke() {
         if (undoStack.isEmpty()) {
-            Toast.makeText(requireContext(), "Nothing to undo", Toast.LENGTH_SHORT).show();
+            // Cancelled before it is shown again, because Android *queues* toasts: tapping undo on
+            // an empty stack five times used to mean five "Nothing to undo" in a row, each waiting
+            // out the last. Holding the instance and cancelling it turns a queue into one message
+            // that keeps restarting, which is what repeating the same tap should look like.
+            if (nothingToUndoToast != null) nothingToUndoToast.cancel();
+            nothingToUndoToast = Toast.makeText(
+                    requireContext(), R.string.whiteboard_nothing_to_undo, Toast.LENGTH_SHORT);
+            nothingToUndoToast.show();
             return;
         }
         Undoable last = undoStack.pop(); // removes and returns the top of the stack

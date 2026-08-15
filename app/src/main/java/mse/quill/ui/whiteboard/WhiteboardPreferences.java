@@ -23,8 +23,17 @@ public final class WhiteboardPreferences {
 
     private WhiteboardPreferences() {}
 
+    /**
+     * Dots, for a board nobody has expressed a preference about yet.
+     *
+     * <p>Blank white is the honest default in the sense that it adds nothing, and the wrong one in
+     * the sense that it also gives nothing: dots are a sense of scale and a line to write along
+     * without being ruled paper that insists on horizontal text. Only the <em>fallback</em> moved —
+     * anyone who has already picked a paper keeps it, and boards that exist keep the one they were
+     * made with.
+     */
     public static int defaultBackground(Context context) {
-        return prefs(context).getInt(KEY_BACKGROUND, WhiteboardView.BACKGROUND_WHITE);
+        return prefs(context).getInt(KEY_BACKGROUND, WhiteboardView.BACKGROUND_DOTS);
     }
 
     public static void setDefaultBackground(Context context, int style) {

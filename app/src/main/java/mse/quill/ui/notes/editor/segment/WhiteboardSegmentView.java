@@ -53,7 +53,10 @@ public class WhiteboardSegmentView extends BaseSegmentView {
         preview = new ImageView(context);
         preview.setLayoutParams(new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 getResources().getDimensionPixelSize(R.dimen.note_whiteboard_preview_height)));
-        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        // CENTER, not CENTER_CROP, while this is the fallback icon: cropping is right for a
+        // drawing that should fill the box and absurd for a 24dp glyph, which it blew up until it
+        // ran off both edges. loadPreview switches to CENTER_CROP if a real thumbnail arrives.
+        preview.setScaleType(ImageView.ScaleType.CENTER);
         preview.setBackgroundColor(context.getColor(R.color.surface_container));
         preview.setImageResource(R.drawable.ic_section_whiteboard);
         preview.setOnClickListener(v -> showSheet());

@@ -32,15 +32,25 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content" />
 
-            <TextView
+            <!-- Editable in place, the way a note's title is. Renaming a collection used to mean
+                 going back to Home and long-pressing its card, which is a strange trip to take
+                 from the screen with the name written across the top of it.
+
+                 Single line, matching the note editor's for the same reason given there: a title
+                 that wraps mid-keystroke shoves the screen down a row. -->
+            <EditText
                 android:id="@+id/toolbar_title"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="@dimen/spacing_xs"
-                android:maxLines="2"
-                android:ellipsize="end"
+                android:background="@null"
+                android:hint="@string/collection_name_hint"
+                android:imeOptions="actionDone"
+                android:inputType="textCapSentences|textNoSuggestions"
+                android:maxLines="1"
                 android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
                 android:textSize="22sp"
                 android:textStyle="bold" />
 

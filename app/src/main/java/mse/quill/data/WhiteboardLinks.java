@@ -32,18 +32,27 @@ final class WhiteboardLinks {
 
     private WhiteboardLinks() {}
 
-    /** Rewrites one note's links to match the document being stored for it. */
+    /**
+     * Rewrites one note's links to match the document being stored for it.
+     *
+     * <p><b>Only for boards that still exist.</b> An embed can outlive its board — deleting one
+     * leaves the line in the note, on purpose — and the row carries a foreign key onto
+     * {@code whiteboards.id}. SQLite's {@code ON CONFLICT} algorithms do not cover foreign keys, so
+     * {@code CONFLICT_IGNORE} would not have saved us: the insert throws, inside the save
+     * transaction, on a background thread. The symptom would have been an app that died on saving
+     * a note you had merely opened.
+     */
     static void replace(SQLiteDatabase db, String noteId, String markdown) {
         db.delete("note_whiteboards", "note_id = ?", new String[]{noteId});
 
         List<String> boardIds = NoteDocument.whiteboardIdsIn(markdown);
         for (String boardId : boardIds) {
-            ContentValues cv = new ContentValues();
-            cv.put("note_id", noteId);
-            cv.put("whiteboard_id", boardId);
-            // The same board twice in one note is a legal document — one row is what the table says
-            // about it either way.
-            db.insertWithOnConflict("note_whiteboards", null, cv, SQLiteDatabase.CONFLICT_IGNORE);
+            // The same board twice in one note is a legal document, hence OR IGNORE — that part is
+            // a primary-key collision, which the conflict clause does handle.
+            db.execSQL(
+                    "INSERT OR IGNORE INTO note_whiteboards (note_id, whiteboard_id) "
+                            + "SELECT ?, ? WHERE EXISTS (SELECT 1 FROM whiteboards WHERE id = ?)",
+                    new Object[]{noteId, boardId, boardId});
         }
     }
 
