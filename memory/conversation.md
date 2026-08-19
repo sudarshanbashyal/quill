@@ -1,4 +1,4 @@
-# Quill — Conversation Log
+﻿# Quill — Conversation Log
 
 A running record of the sessions that shaped this project: what was asked, what options were
 weighed, and what got decided. Kept alongside [note.md](note.md) (how the code is built) and
@@ -2856,3 +2856,147 @@ the danger-coloured "embedded in 1 note" warning, rename round-tripping to Home 
 a new board, the tighter sheet, and the pinned band already at full height on the first frame back
 from a note. Undo confirmed by the user. Test artifacts (seeded board, renamed collection, pinned
 note, scratch whiteboard) cleaned out of the emulator DB afterwards.
+
+## 2026-08-14 — Feature implementation: home-screen App Widgets
+
+**Asked:** widget ideas, narrowed to two — a widget for collections/important notes, and one for
+whiteboards — then clarified as genuine Android launcher widgets ("like a weather widget"), not
+new in-app screens.
+
+**Built:** `CollectionsWidgetProvider` (stacked pinned-notes + collections lists) and
+`WhiteboardsWidgetProvider` (thumbnail grid of recent boards), both under `mse.quill.widget`.
+Full design and the reasoning behind each piece — the two-`RemoteViewsService` requirement, the
+new `WidgetThumbnailCache` bridging `WhiteboardThumbnails`' async-only rendering, the
+`WidgetUpdater` push-refresh hooks — now live in [note.md](note.md)'s "Home-screen App Widgets"
+section; the checklist is Epic K in [requirements.md](requirements.md) (not originally scoped in
+the one-pager, built opportunistically).
+
+**No `adb` in this environment.** Every bug in this feature was reported by the user from a real
+device, by symptom only ("doesn't load", "just opens the app"), and diagnosed from code review
+rather than logcat. Three real bugs, each confirmed by the user after a code-review fix:
+
+1. **"Problem loading widget"** on the collections widget — a plain `<View>` divider isn't in
+   RemoteViews' inflatable-class allowlist. Swapped for a 1dp `TextView`.
+2. **Tapping a whiteboard/note/collection opened the app but landed on whatever screen was last
+   open**, not the tapped item. Two stacked causes, found one after the other: first,
+   `runWhenNavHostReady` waited for `HomeFragment` to resume but nothing was driving the nav host
+   back to Home (fixed by forcing `popBackStack(R.id.homeFragment, false)`, matching
+   `handleViewIntent`'s existing pattern) — this alone didn't fix it. Second (found after the user
+   reported the bug *persisted*): the collection-widget `PendingIntent` templates were
+   `FLAG_IMMUTABLE`, which silently blocks the template+`fillInIntent` merge that hands each row's
+   tapped-item extras to `MainActivity` — needed `FLAG_MUTABLE` instead.
+3. Also fixed on request, unrelated to the widgets: the in-app pinned-notes strip
+   (`PinnedNoteCardView`) felt oversized — shrunk `pinned_card_width`/`_height` (164×148dp →
+   140×108dp), tighter padding, 1-line title.
+
+**Process note worth keeping**: when the user reports "issue 1 solved, issue 2 still persists"
+after a fix was applied, that's a signal there may be a *second*, independent cause behind the
+same symptom — don't assume the first fix was wrong, look for what else could produce the same
+observed behavior. That's exactly what happened with bug 2 above.
+
+**Verified working end-to-end by the user on-device**, including the pinned-card resize. Not
+committed as of end of session — check `git status` before assuming this has landed.
+
+## 2026-08-15 — Feature implementation: widget previews, third widget for flashcards
+
+**Asked:** add real widget-picker previews to the two existing widgets, and build a third
+widget for flashcards "in a list way." Clarified before building: the flashcards widget should
+show **both** a due-now card list and a deck list stacked (mirroring how the Collections widget
+stacks pinned notes + collections), and due cards should show **front text only** — revealing
+the answer defeats active recall.
+
+**Previews:** `android:previewLayout` (API 31+, renders the actual widget layout in the picker)
+added to all three widgets' `res/xml/widget_*_info.xml`, `previewImage="@mipmap/ic_launcher"`
+kept as the fallback below 31 since there's no screenshot asset in the repo to use instead.
+
+**Built:** `FlashcardsWidgetProvider` + `DueCardsRemoteViewsService` +
+`FlashcardDecksRemoteViewsService`, following the Collections widget's established shape
+exactly (two `ListView`s, two services, one mutable `PendingIntent` template, a `TextView`
+divider not a `View`). `FlashcardRepository` gained `loadDecksSync()` (sync twin of the
+existing `loadDecks`) and a new `loadDueCardsSync(now, limit)` — there was no prior query
+returning individual due cards, only `countDueSync`'s counts, so this is genuinely new query
+logic, not an extraction. Both follow `countDueSync`'s locked-collection exclusion pattern.
+Tap deep-links via a new `EXTRA_OPEN_FLASHCARD_NOTE_ID`, kept deliberately separate from the
+existing `EXTRA_OPEN_NOTE_ID` (opens the note *editor*) since this one opens the flashcard
+*review* screen for the same note id — same key name would have collided semantically even
+though the extra names differ.
+
+**Follow-up tweak:** due-now vs. decks was initially a fixed-96dp block + weighted remainder
+(matching the Collections widget's pinned-notes reasoning — a short, capped list next to a
+scrollable one). Asked to change to a 60/40 proportional split instead; swapped both sections
+to `layout_weight` (3 and 2) rather than fixed-height + weight-1.
+
+Full design detail lives in [note.md](note.md)'s "Home-screen App Widgets" section (updated
+this session); checklist is Epic K in [requirements.md](requirements.md) (also updated).
+
+**Verified:** clean `assembleDebug`, `compileDebugAndroidTestJavaWithJavac`, and
+`testDebugUnitTest` all pass — same no-`adb`-in-this-environment constraint as the first two
+widgets, so on-device confirmation (previews rendering, due/deck taps landing on the review
+screen, the 60/40 split reading right) is the user's to do, not verified here.
+
+**Not committed as of end of session** — check `git status` before assuming any of the widget
+work (this session's or 2026-08-14's) has landed.
+
+## 2026-08-16 — Bug fix: widgets vs. collection locking, a four-bug chain
+
+**Reported, in stages, as the repro was narrowed down:** pin a note in a collection, add the
+widget, lock the collection — the collection correctly vanished from the widget, but (1) its
+pinned note stayed visible and tapping it silently deleted the real note and opened what looked
+like a new one, (2) creating a new note while inside a locked collection crashed the app, and
+crucially — the app then kept crashing on **every subsequent launch**, widget untouched. Full
+technical writeup in [note.md](note.md)'s "Widgets vs. collection locking" subsection; this
+entry is the narrative of how it was chased down without `adb` access for most of the session.
+
+**Bug 1, applied defensively but wasn't the actual cause:** none of the six widget
+`RemoteViewsFactory` implementations caught exceptions. Those run on a binder thread *inside the
+app's own process* — unlike almost anywhere else in Android widget code, an uncaught exception
+there crashes the whole app, not just the widget. Added `RuntimeException` guards to all six.
+Crash persisted — which was itself useful information: it ruled out the widget rendering path.
+
+**Bug 2, the actual "kept crashing on plain app open" cause:** `MainActivity.onCreate` calls
+three Wear OS publishers unconditionally on every launch (`WearProjectionPublisher`,
+`WearNoteListPublisher`, `WearReadStatePublisher` — merged in from the parallel watch-companion
+branch). Both `publishSync` methods only wrapped their *final* network call in a try/catch; the
+DB query and title-resolution code above it, which runs every time regardless of the widget,
+was unguarded. Widened both to wrap the whole method, plus the DB-touching lambda in the read
+state publisher. This is what actually stopped the repeated crash-on-launch.
+
+**Bugs 3 and 4, found by reading code once the crash was contained, not from a stack trace:**
+traced `autoSave()`'s delete-on-empty branch and `NoteRepository.createNote()`'s plaintext write
+by hand. `createNote` never encrypted a new note's title even for a locked collection target —
+only the *next* `saveNote` call did — so the immediate follow-up autosave's "did this change"
+check tried to Base64-decode plaintext as ciphertext and threw an uncaught
+`IllegalArgumentException` (`NoteCrypto`'s `decryptTitleOrNull`/`decryptBodyOrNull` only caught
+the checked `GeneralSecurityException`, despite both claiming "never throw, return null" as
+their whole contract). Separately, `NoteEditorFragment` couldn't tell "note doesn't exist" from
+"note exists but its collection is locked" — both came back `null` from `loadNote`, and either
+way the fragment marked itself ready to autosave, so a real encrypted note reachable only
+because its `note == null` case was mishandled got deleted by the same "empty note, clean it
+up" logic that's supposed to only ever fire on genuinely blank notes.
+
+**Bug 5, reported last, after everything above stopped crashing:** the pinned note *still*
+stayed visible in the widget after locking (no crash this time, just wrong). Root cause: the
+collections list already excluded a `biometricLocked` collection unconditionally, but the
+pinned-notes list relied on `NoteRepository.loadPinnedNotesSync`'s normal in-app hiding rule,
+which only hides a locked collection if it isn't unlocked *this session* — and `lock()` itself
+calls `CollectionLock.markUnlocked` right after locking, by design, so the app doesn't
+immediately re-prompt. That's correct for the app (you just authenticated), wrong for a widget
+(no session of its own). Fixed by having `PinnedNotesRemoteViewsService` cross-check each note's
+collection against the `biometricLocked` flag directly, same as the collections list already
+did — a pattern `FlashcardRepository.dueProjectionSync` (the Wear watch projection) had already
+gotten right independently, worth checking against next time before re-deriving it.
+
+**Process note, reinforcing the one from 2026-08-14:** "still crashing" after a fix (bug 1 →
+still crashed) again meant a second independent cause, not a wrong fix — same lesson, worth
+actually internalizing this time. Also: the two most serious bugs here (3 and 4) were real,
+previously-undiscovered issues in `NoteRepository`/`NoteEditorFragment` unrelated to the widget
+feature itself — the widget was just the first code path to reach a locked-collection note
+through a route the in-app screens don't normally allow (a direct id-based deep link, bypassing
+the authenticate-before-entering-a-locked-collection flow every other entry point goes through).
+Worth remembering if another deep-link-style entry point gets added later: it needs the same
+"does this note/collection actually resolve" check before navigating, not after.
+
+**Verified:** clean builds throughout; each fix confirmed by the user on-device in turn, ending
+with full end-to-end confirmation ("done") after bug 5's fix. Landed in commit `95859d5`
+("Fixing bugs for widget") except for the bug 5 fix (`PinnedNotesRemoteViewsService`), which was
+still uncommitted as of this entry — check `git status` before assuming otherwise.

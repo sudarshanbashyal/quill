@@ -1,6 +1,21 @@
 <resources>
     <string name="app_name">Quill</string>
 
+    <!-- Home-screen widgets -->
+    <string name="widget_pinned_notes_header">Pinned Notes</string>
+    <string name="widget_pinned_notes_empty">No pinned notes yet</string>
+    <string name="widget_collections_header">Collections</string>
+    <string name="widget_collections_empty">No collections yet</string>
+    <string name="widget_collections_description">Pinned notes and collections</string>
+    <string name="widget_whiteboards_header">Whiteboards</string>
+    <string name="widget_whiteboards_empty">No whiteboards yet</string>
+    <string name="widget_whiteboards_description">Recent whiteboards</string>
+    <string name="widget_due_cards_header">Due Now</string>
+    <string name="widget_due_cards_empty">Nothing due</string>
+    <string name="widget_flashcard_decks_header">Decks</string>
+    <string name="widget_flashcard_decks_empty">No flashcards yet</string>
+    <string name="widget_flashcards_description">Due flashcards and decks</string>
+
     <!-- Spoken by TalkBack for every header's back arrow (see Widget.Quill.Button.Back). -->
     <string name="action_back">Back</string>
 
@@ -474,6 +489,9 @@
     <!-- The editor, when a note\'s collection re-locked itself while the note was open. -->
     <string name="note_save_needs_unlock">Collection locked. Unlock to save your changes.</string>
     <string name="note_save_unlock_action">Unlock</string>
+    <!-- A note_id pointed at a real note whose collection is locked (and not open this session) —
+         e.g. a stale widget row tapped after the collection was locked. -->
+    <string name="note_unavailable_locked">This note is in a locked collection. Unlock it in the app to open this note.</string>
 
     <!-- ==================== Study reminders ==================== -->
 

@@ -37,6 +37,17 @@ public final class WearNoteListPublisher {
 
     /** Builds and publishes the list. <b>Blocking — call from a background thread.</b> */
     public static void publishSync(Context context) {
+        // See WearProjectionPublisher.publishSync's identical wrapper for why this catches
+        // everything: called from MainActivity.onCreate on every launch, uncaught here means the
+        // app never gets to a screen, not just a missed sync.
+        try {
+            publishSyncOrThrow(context);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not build the note list; nothing published this round", e);
+        }
+    }
+
+    private static void publishSyncOrThrow(Context context) {
         Context appContext = context.getApplicationContext();
         SQLiteDatabase db = AppDatabase.getInstance(appContext).getWritableDatabase();
 
