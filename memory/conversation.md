@@ -2936,3 +2936,67 @@ screen, the 60/40 split reading right) is the user's to do, not verified here.
 
 **Not committed as of end of session** — check `git status` before assuming any of the widget
 work (this session's or 2026-08-14's) has landed.
+
+## 2026-08-16 — Bug fix: widgets vs. collection locking, a four-bug chain
+
+**Reported, in stages, as the repro was narrowed down:** pin a note in a collection, add the
+widget, lock the collection — the collection correctly vanished from the widget, but (1) its
+pinned note stayed visible and tapping it silently deleted the real note and opened what looked
+like a new one, (2) creating a new note while inside a locked collection crashed the app, and
+crucially — the app then kept crashing on **every subsequent launch**, widget untouched. Full
+technical writeup in [note.md](note.md)'s "Widgets vs. collection locking" subsection; this
+entry is the narrative of how it was chased down without `adb` access for most of the session.
+
+**Bug 1, applied defensively but wasn't the actual cause:** none of the six widget
+`RemoteViewsFactory` implementations caught exceptions. Those run on a binder thread *inside the
+app's own process* — unlike almost anywhere else in Android widget code, an uncaught exception
+there crashes the whole app, not just the widget. Added `RuntimeException` guards to all six.
+Crash persisted — which was itself useful information: it ruled out the widget rendering path.
+
+**Bug 2, the actual "kept crashing on plain app open" cause:** `MainActivity.onCreate` calls
+three Wear OS publishers unconditionally on every launch (`WearProjectionPublisher`,
+`WearNoteListPublisher`, `WearReadStatePublisher` — merged in from the parallel watch-companion
+branch). Both `publishSync` methods only wrapped their *final* network call in a try/catch; the
+DB query and title-resolution code above it, which runs every time regardless of the widget,
+was unguarded. Widened both to wrap the whole method, plus the DB-touching lambda in the read
+state publisher. This is what actually stopped the repeated crash-on-launch.
+
+**Bugs 3 and 4, found by reading code once the crash was contained, not from a stack trace:**
+traced `autoSave()`'s delete-on-empty branch and `NoteRepository.createNote()`'s plaintext write
+by hand. `createNote` never encrypted a new note's title even for a locked collection target —
+only the *next* `saveNote` call did — so the immediate follow-up autosave's "did this change"
+check tried to Base64-decode plaintext as ciphertext and threw an uncaught
+`IllegalArgumentException` (`NoteCrypto`'s `decryptTitleOrNull`/`decryptBodyOrNull` only caught
+the checked `GeneralSecurityException`, despite both claiming "never throw, return null" as
+their whole contract). Separately, `NoteEditorFragment` couldn't tell "note doesn't exist" from
+"note exists but its collection is locked" — both came back `null` from `loadNote`, and either
+way the fragment marked itself ready to autosave, so a real encrypted note reachable only
+because its `note == null` case was mishandled got deleted by the same "empty note, clean it
+up" logic that's supposed to only ever fire on genuinely blank notes.
+
+**Bug 5, reported last, after everything above stopped crashing:** the pinned note *still*
+stayed visible in the widget after locking (no crash this time, just wrong). Root cause: the
+collections list already excluded a `biometricLocked` collection unconditionally, but the
+pinned-notes list relied on `NoteRepository.loadPinnedNotesSync`'s normal in-app hiding rule,
+which only hides a locked collection if it isn't unlocked *this session* — and `lock()` itself
+calls `CollectionLock.markUnlocked` right after locking, by design, so the app doesn't
+immediately re-prompt. That's correct for the app (you just authenticated), wrong for a widget
+(no session of its own). Fixed by having `PinnedNotesRemoteViewsService` cross-check each note's
+collection against the `biometricLocked` flag directly, same as the collections list already
+did — a pattern `FlashcardRepository.dueProjectionSync` (the Wear watch projection) had already
+gotten right independently, worth checking against next time before re-deriving it.
+
+**Process note, reinforcing the one from 2026-08-14:** "still crashing" after a fix (bug 1 →
+still crashed) again meant a second independent cause, not a wrong fix — same lesson, worth
+actually internalizing this time. Also: the two most serious bugs here (3 and 4) were real,
+previously-undiscovered issues in `NoteRepository`/`NoteEditorFragment` unrelated to the widget
+feature itself — the widget was just the first code path to reach a locked-collection note
+through a route the in-app screens don't normally allow (a direct id-based deep link, bypassing
+the authenticate-before-entering-a-locked-collection flow every other entry point goes through).
+Worth remembering if another deep-link-style entry point gets added later: it needs the same
+"does this note/collection actually resolve" check before navigating, not after.
+
+**Verified:** clean builds throughout; each fix confirmed by the user on-device in turn, ending
+with full end-to-end confirmation ("done") after bug 5's fix. Landed in commit `95859d5`
+("Fixing bugs for widget") except for the bug 5 fix (`PinnedNotesRemoteViewsService`), which was
+still uncommitted as of this entry — check `git status` before assuming otherwise.

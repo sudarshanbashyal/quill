@@ -6,11 +6,15 @@ import android.widget.RemoteViews;
 import android.widget.RemoteViewsService;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import mse.quill.MainActivity;
 import mse.quill.R;
+import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
+import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
 
 public class PinnedNotesRemoteViewsService extends RemoteViewsService {
@@ -39,7 +43,26 @@ public class PinnedNotesRemoteViewsService extends RemoteViewsService {
         // caught here rather than trusted to behave.
         @Override public void onDataSetChanged() {
             try {
-                notes = new NoteRepository(context).loadPinnedNotesSync();
+                List<Note> pinned = new NoteRepository(context).loadPinnedNotesSync();
+
+                // loadPinnedNotesSync only hides a locked collection's notes if the collection
+                // isn't unlocked *this session* — right, for an in-app screen, since the user
+                // already authenticated to see them. A widget has no session of its own and no
+                // way to ask for one, so unlike the app it must hide every locked collection's
+                // notes unconditionally, the same way CollectionsRemoteViewsService already does
+                // for the collections list itself. Without this, a note stayed visible in the
+                // widget for as long as the app session considered its collection open — which,
+                // since locking leaves the collection open in-session on purpose, meant right up
+                // until the app was backgrounded.
+                Set<String> lockedCollectionIds = new HashSet<>();
+                for (Collection collection : new CollectionRepository(context).loadCollectionsSync()) {
+                    if (collection.biometricLocked) lockedCollectionIds.add(collection.id);
+                }
+                List<Note> visible = new ArrayList<>();
+                for (Note note : pinned) {
+                    if (!lockedCollectionIds.contains(note.collectionId)) visible.add(note);
+                }
+                notes = visible;
             } catch (RuntimeException e) {
                 Log.e(TAG, "loadPinnedNotesSync failed, showing an empty list", e);
                 notes = new ArrayList<>();

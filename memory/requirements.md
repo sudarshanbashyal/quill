@@ -136,6 +136,28 @@ there's a window where "locked" content leaves the device unencrypted.
       on lock (the index stores the body as plain text); flashcards for those notes are
       deleted on lock for the same reason (`front`/`back` are plaintext columns), which costs
       the SM-2 schedule and is stated in the confirmation dialog
+  - [x] **Home-screen widgets closed too** *(2026-08-16, part of Epic K)* — `PinnedNotesRemoteViewsService`
+        was excluding a locked collection's notes only when the collection wasn't unlocked *this
+        session*, which is right for an in-app screen but wrong for a widget with no session of
+        its own — a pinned note stayed visible until the app backgrounded. Now filters against
+        `biometricLocked` directly, unconditionally, matching `CollectionsRemoteViewsService`
+- [x] **Bugs found 2026-08-16, chasing a widget-triggered crash into two pre-existing gaps** —
+      full narrative in [note.md](note.md)'s "Widgets vs. collection locking" subsection
+  - [x] `NoteRepository.createNote()` wrote a new note's title as plaintext unconditionally, even
+        into a locked collection (only `saveNote` encrypted, and only on the *next* call) — the
+        following autosave's change-check then tried to Base64-decode that plaintext as
+        ciphertext, throwing an uncaught `IllegalArgumentException` and crashing the app on the
+        disk-IO thread, repeatedly, on every relaunch. Symptom-fixed by widening
+        `NoteCrypto.decryptTitleOrNull`/`decryptBodyOrNull` to catch `RuntimeException` alongside
+        `GeneralSecurityException` — matches what both methods already claimed to guarantee
+        ("never throw, return null"). **Root cause not fully closed**: `createNote` still writes
+        plaintext for the brief window before the follow-up `saveNote` call encrypts it
+  - [x] `NoteEditorFragment` couldn't distinguish "note doesn't exist" from "note exists but is
+        locked and unreadable" — both came back `null` from `loadNote`, and the fragment treated
+        either as a blank note ready to autosave, which meant a real, still-encrypted note could
+        get silently soft-deleted by the empty-note-on-exit path. Fixed: a null result for what
+        `onViewCreated` already knows is a real pre-existing `note_id` now shows "locked" and
+        backs out without ever marking itself save-ready
 
 > **Deferred — media encryption.** Images and recordings referenced by `note_segments.file_path`
 > are unreachable through the UI while a collection is shut, but the files themselves are still
@@ -730,6 +752,14 @@ the three RemoteViews gotchas hit, and what's reused vs. new live in
 - [x] Verified working end-to-end by the user on-device (2026-08-14/15) — this environment has
       no `adb`, so every fix landed via code review + a clean build, confirmed afterward by the
       user
+- [x] **Widget-vs-collection-lock bug chain, found and fixed 2026-08-16** — a locked collection's
+      pinned notes stayed live in the widget, tapping one could delete the real note, and
+      creating a note in a locked collection crashed the app outright (repeatedly, on every
+      relaunch). Two of the three were pre-existing app bugs the widget was just the first thing
+      to reach from outside the normal in-app flow. Full account in [note.md](note.md); see also
+      Epic B above, where the two non-widget-specific bugs are tracked as security-relevant fixes
+- [x] Verified working end-to-end by the user on-device again after the lock-chain fixes
+      (2026-08-16)
 
 ---
 

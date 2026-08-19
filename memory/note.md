@@ -1707,3 +1707,73 @@ build, then confirmed against real device behavior by the user afterward. If `ad
 available, prefer it for anything widget-related; RemoteViews failures in particular
 (the allowlist crash above) are much faster to diagnose from `logcat` than from symptom
 descriptions alone.
+
+### Widgets vs. collection locking — a real bug chain, found 2026-08-16
+
+Locking a collection with pinned notes and the widget on the home screen surfaced a chain of
+four distinct bugs, three of them **pre-existing and independent of the widget feature** — the
+widget was just the first thing to reach these code paths from outside the normal in-app flow.
+Fixed in `95859d5` plus one follow-up (`PinnedNotesRemoteViewsService`, still uncommitted as of
+this entry). Worth reading in full before touching lock/widget code again:
+
+1. **`RemoteViewsFactory` runs on a binder thread inside this app's own process.** Unlike almost
+   everywhere else in a widget, an uncaught exception there crashes the *whole app*, not just the
+   widget's rendering. None of the six factories had any exception guarding. All now catch
+   `RuntimeException` in `onDataSetChanged`/`getViewAt`/`getItemId` and fall back to an empty
+   list / blank row rather than propagate. Didn't turn out to be the actual crash cause here, but
+   is a real gap that would have bitten some other data edge case eventually — worth keeping for
+   any future `RemoteViewsFactory`.
+2. **`CollectionLockRepository.lock()`/`unlock()`/`discardUnreadable()` never told the widgets
+   anything changed.** The widget kept showing whatever `RemoteViews` rows it built *before* the
+   lock, including the collection and its pinned notes, until something else happened to trigger
+   a refresh. Fixed by adding `WidgetUpdater.notifyCollectionsChanged`/`notifyFlashcardsChanged`
+   calls to all three methods (flashcards too — `writeNotes(locked=true)` deletes the collection's
+   flashcards, so the flashcards widget goes stale the same way).
+3. **The actual app-crashing bug, and it predates the widget entirely**:
+   `NoteRepository.createNote()` writes a new note's title as **plaintext unconditionally**, even
+   when the target collection is locked — it only ever encrypts on the *next* `saveNote()` call,
+   never on creation. The very next autosave then tries to `Base64.decode()` that plaintext title
+   as if it were ciphertext (in `saveNote`'s "did anything actually change" check), which throws
+   `IllegalArgumentException` — a `RuntimeException` that
+   `NoteCrypto.decryptTitleOrNull`/`decryptBodyOrNull` didn't catch (only the checked
+   `GeneralSecurityException`), despite both methods' entire contract being "never throw, return
+   null instead". Uncaught on the disk-IO thread → whole process dies, repeatedly, on every
+   subsequent launch too (nothing about the broken state self-heals on restart). Fixed by
+   widening both catches to `GeneralSecurityException | RuntimeException`. **Not fully fixed**:
+   `createNote` itself still writes plaintext into a locked collection for the brief window
+   before the follow-up `saveNote` call encrypts it — low real exposure (same disk-IO executor,
+   nothing reads between the two queued calls) but worth closing properly if this file is touched
+   again, by having `createNote` encrypt up front when `NoteCrypto.isLocked` is true.
+4. **`NoteEditorFragment.loadExistingNote()` couldn't tell "note doesn't exist" from "note exists
+   but is currently locked and unreadable".** Both came back as `note == null` from
+   `NoteRepository.loadNote`, and the fragment treated either case as "blank, start typing" —
+   marking itself `contentLoaded = true` regardless. The next autosave then saw an empty title
+   and no segments and ran the **delete-empty-note-on-exit** path from `autoSave()` — on a real,
+   still-encrypted note, not an actually-empty one. Fixed narrowly: `loadExistingNote()` only
+   ever runs for a real pre-existing `note_id` (a genuinely new note skips it, see
+   `onViewCreated`), so a `null` result there is now unambiguous — show
+   `R.string.note_unavailable_locked` and pop back immediately, `contentLoaded` never set, so
+   `autoSave()`'s first line (`if (!contentLoaded) return;`) refuses to run at all for that
+   fragment instance.
+5. **Pinned notes ≠ collections for lock visibility, and shouldn't have been.**
+   `CollectionsRemoteViewsService` already excluded every `biometricLocked` collection
+   unconditionally (session state or not) — that reasoning was written down explicitly in this
+   file already. `PinnedNotesRemoteViewsService`, though, just called
+   `NoteRepository.loadPinnedNotesSync()` as-is, which hides a locked collection's notes only if
+   the collection *isn't unlocked this session* (`NoteCrypto.hiddenOf` → `CollectionLock
+   .isUnlocked`) — correct for an in-app screen the user is actively looking at, wrong for a
+   widget that can't represent "I already authenticated" at all. And `lock()` itself calls
+   `CollectionLock.markUnlocked` right after locking (so the user isn't immediately re-prompted)
+   — meaning the pinned note stayed visible in the widget for as long as the app session
+   considered the collection open, i.e. until the app was backgrounded. Fixed by having the
+   factory cross-check each pinned note's `collectionId` against `CollectionRepository`'s
+   `biometricLocked` flag directly and drop it if locked, mirroring the collections list's own
+   session-independent filter. `FlashcardRepository.dueProjectionSync` (the Wear OS watch
+   projection, see below) already got this right from the start — worth pattern-matching next
+   time rather than rediscovering it.
+
+**Debugging note**: bugs 3 and 4 were found by tracing the actual code paths (`autoSave`'s
+delete-on-empty branch, `NoteRepository.createNote`'s plaintext write, `NoteCrypto`'s narrow
+catch clauses) after the user's symptom reports, not from a stack trace — `adb` wasn't available
+in this environment for most of the session. `adb logcat -d *:E > crash.txt`, then search for
+`FATAL EXCEPTION`, is the fast path if this happens again and a device is reachable.
