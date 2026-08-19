@@ -17,8 +17,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import mse.quill.audio.AudioPlayback;
 import mse.quill.audio.ReadAloud;
+import mse.quill.audio.ReadPlaylist;
 import mse.quill.data.model.Note;
-import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.util.NoteDisplayUtils;
 
@@ -88,8 +88,8 @@ public class WearReadListenerService extends WearableListenerService {
             return;
         }
 
-        String spoken = NoteDocument.toPlainText(NoteDocument.toMarkdown(segments)).trim();
-        if (spoken.isEmpty()) {
+        ReadPlaylist playlist = ReadPlaylist.fromSegments(segments);
+        if (playlist.isEmpty()) {
             // An empty note, or one whose collection was locked after the list was published — the
             // decrypt fails soft and leaves nothing to say. Either way there is no reading to
             // start, and starting a silent one would leave a media card that never ends.
@@ -110,7 +110,7 @@ public class WearReadListenerService extends WearableListenerService {
             // One voice at a time, the same rule the editor's own button follows: a recording
             // playing under a note being read is noise, and both would fight for the same bar.
             AudioPlayback.get(getApplicationContext()).close();
-            ReadAloud.start(getApplicationContext(), noteId, title, spoken);
+            ReadAloud.start(getApplicationContext(), noteId, title, playlist);
         });
     }
 }

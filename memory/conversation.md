@@ -2856,3 +2856,66 @@ the danger-coloured "embedded in 1 note" warning, rename round-tripping to Home 
 a new board, the tighter sheet, and the pinned band already at full height on the first frame back
 from a note. Undo confirmed by the user. Test artifacts (seeded board, renamed collection, pinned
 note, scratch whiteboard) cleaned out of the emulator DB afterwards.
+
+## 2026-08-16 — Read-aloud plays the note's recordings too
+
+**The ask**: reading a note aloud should play its voice recordings as well. They were being
+skipped — the one part of a note that is *already* someone talking was the part listening to it
+left out.
+
+**The shape of the fix**: read-aloud stopped taking a string. `ReadPlaylist` is the note as the
+voice hears it — text runs and recordings, in document order, with consecutive text (separate
+segments, and both halves of a Q&A) merged so a recording is the only thing that breaks the
+reading into pieces. Built two ways from one assembler: `NoteEditorView.buildReadPlaylist()` walks
+the live views (it is asked on every keystroke, so it must not copy spannables), and
+`ReadPlaylist.fromSegments` covers the watch's "read note N" path, which has models and no views.
+`getPlainText()` and `NoteDocument.toMarkdown → toPlainText` are both gone from that path.
+
+`ReadAloud` is now a sequencer over two engines rather than a wrapper around one: `NoteReader` for
+words, a new `ClipReader` for recordings. It owns `active`/`paused` itself, because neither engine
+can answer "is a reading going" between items or while a clip plays.
+
+**Why `ClipReader` and not `AudioPlayback`**: `AudioPlayback` *is* the answer to "the user is
+playing a recording" — it owns the bar's waveform, the foreground service, the lock-screen card,
+and the note's audio cards draw from it. Routing a reading's clip through it would have the bar
+flip identity mid-note and its ✕ end something other than what it appears to. Cost of the split:
+the note's own audio card doesn't animate while the reading plays that clip. The bar's progress
+covers the whole reading, which is the thing being controlled. Audio-focus bookkeeping was pulled
+out to `AudioFocus` so both players share it instead of duplicating the version split.
+
+**Progress is weighted, not counted**: items are worth roughly how long they take (a clip's real
+duration; text at ~15 chars/sec, an estimate never shown as a time). Counting items equally would
+make a two-minute recording worth the same as the word before it, and the bar would jump.
+
+**Falls out of it**: a note that is *only* a recording is now readable — the menu item used to be
+hidden for one, since there was no text. Watch-started readings get the recordings too, for free,
+because the watch sends an id and the phone builds the playlist.
+
+**Verified on the emulator** (not the phone), on the seeded "Inbox" note (two lines of text + a
+0:22 memo): TTS synthesis, then `ClipReader` taking audio focus ~2s later, then focus abandoned 23s
+after that — text, recording, end, in order. Pause mid-recording abandons focus and the bar shows
+▶; resume re-requests it and carries on. Bar reads "Reading: Inbox" throughout, progress ~30% six
+seconds into the clip, which is the weighting working. An audio-only untitled note now offers
+"Play aloud" and plays with no synthesis at all. Six unit tests cover playlist assembly.
+
+**Known limit, unchanged from before**: a reading still has no foreground service or notification,
+so it is the process's to lose if Android reclaims it — TTS survives that better than a
+`MediaPlayer` does. Wiring readings into `AudioPlaybackService` is its own piece of work.
+
+## 2026-08-16 (same session) — The startup crash was a missing table alias
+
+Reported as "crashes as soon as I open", on both the emulator and the phone. Not the read-aloud
+work: `WearNoteListPublisher.publishSync` builds its query as `SELECT … FROM notes` and then pastes
+in `NoteCrypto.excludeCollectionsClause`, which qualifies its columns as `n.collection_id` — every
+*other* caller of that clause (and of `hiddenClause`) has the notes table aliased `n`, this one
+never did. Result: `no such column: n.collection_id`, on the background executor MainActivity kicks
+off in `onCreate`, so the process died about two seconds into every launch and kept dying.
+
+It only bites once a collection is locked, because the clause is the empty string until then —
+which is why it lay dormant. What woke it was the connected-test run reseeding the emulator DB with
+a locked "Private" collection; the phone must have had one too. Fix is `FROM notes n` with the
+three selected columns qualified to match.
+
+**Verified**: relaunched with the same seeded DB — no crash buffer entries, the same PID alive
+across 15 seconds (it was cycling 5282 → 5755 → 5841 before), and the app now reaches its own
+biometric "Unlock Quill" prompt. The black screenshots are `FLAG_SECURE`, not a broken screen.

@@ -40,6 +40,7 @@ import com.google.android.material.snackbar.Snackbar;
 
 import mse.quill.audio.AudioPlayback;
 import mse.quill.audio.ReadAloud;
+import mse.quill.audio.ReadPlaylist;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.FlashcardRepository;
@@ -883,7 +884,8 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         playAloud.setTitle(speaking ? R.string.action_stop_reading : R.string.action_read_aloud);
         playAloud.setIcon(speaking ? R.drawable.ic_menu_pause : R.drawable.ic_menu_play);
         // Reading an empty note would just be silence, so the item goes away rather than misleading.
-        playAloud.setVisible(speaking || !buildSpokenText().isEmpty());
+        // A note with only a recording in it still has something to play, and still offers this.
+        playAloud.setVisible(speaking || !buildReadPlaylist().isEmpty());
 
         menu.setForceShowIcon(true);
         menu.setOnMenuItemClickListener(item -> {
@@ -947,10 +949,11 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         if (ReadAloud.isReadingNote(noteId)) {
             ReadAloud.stop();
         } else {
-            // One voice at a time: a recording playing under a note being read aloud is just noise,
-            // and both would be fighting for the same bar.
+            // One voice at a time: a recording the user started by hand playing under a note being
+            // read aloud is just noise, and both would be fighting for the same bar. The reading
+            // plays this note's own recordings itself, in the order they sit in the note.
             AudioPlayback.get(requireContext()).close();
-            ReadAloud.start(requireContext(), noteId, clipTitle(), buildSpokenText());
+            ReadAloud.start(requireContext(), noteId, clipTitle(), buildReadPlaylist());
         }
     }
 
@@ -1013,17 +1016,17 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         });
     }
 
-    /** Body text only — the title is often just the auto-generated "Untitled Note - <date>"
+    /** The body only — the title is often just the auto-generated "Untitled Note - <date>"
      *  placeholder, which shouldn't be read aloud (and, since it's never actually empty, would
      *  otherwise make a blank note look like it has something to say). */
-    private String buildSpokenText() {
-        return noteEditorView.getPlainText().trim();
+    private ReadPlaylist buildReadPlaylist() {
+        return noteEditorView.buildReadPlaylist();
     }
 
-    /** Halts a reading in progress if its last bit of text just got deleted out from under it.
-     *  Only this note's — emptying one note is no reason to silence another. */
+    /** Halts a reading in progress if the last thing it had to read just got deleted out from
+     *  under it. Only this note's — emptying one note is no reason to silence another. */
     private void stopReadingIfNothingLeft() {
-        if (ReadAloud.isReadingNote(noteId) && buildSpokenText().isEmpty()) {
+        if (ReadAloud.isReadingNote(noteId) && buildReadPlaylist().isEmpty()) {
             ReadAloud.stop();
         }
     }
