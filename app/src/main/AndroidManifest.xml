@@ -122,6 +122,65 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- Home-screen widgets. exported="true" is required for a launcher widget: the widget
+             host lives in the launcher's own process/UID, so the receiver has to be reachable
+             from outside the app. -->
+        <receiver
+            android:name=".widget.CollectionsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_collections_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.WhiteboardsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_whiteboards_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.FlashcardsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_flashcards_info" />
+        </receiver>
+
+        <!-- Not exported beyond BIND_REMOTEVIEWS: only the widget host (the launcher, holding
+             that permission) is allowed to bind these to fetch each row's RemoteViews. -->
+        <service
+            android:name=".widget.PinnedNotesRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.CollectionsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.WhiteboardsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.DueCardsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.FlashcardDecksRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <!-- Answers coming back from the watch. Exported, and it has to be: the caller is Play
              Services delivering on behalf of the watch app, which is a different process. The
              path filter is what narrows it — Quill sees only /quill/answer, not every message on

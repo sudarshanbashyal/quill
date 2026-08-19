@@ -39,6 +39,19 @@ public final class WearProjectionPublisher {
      * anything that changes the schedule, which in practice means answering a card.
      */
     public static void publishSync(Context context) {
+        // Called from MainActivity.onCreate on every launch, on a background thread with nothing
+        // else catching for it — an uncaught exception here doesn't just skip one publish, it
+        // takes the whole app down before it ever gets to a screen. Best-effort background sync
+        // has to fail silently the same way the network call below already does; a wide catch
+        // here is that same policy applied to the query building it depends on, not a new one.
+        try {
+            publishSyncOrThrow(context);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not build the due projection; nothing published this round", e);
+        }
+    }
+
+    private static void publishSyncOrThrow(Context context) {
         Context appContext = context.getApplicationContext();
         long now = System.currentTimeMillis();
         TimeZone zone = TimeZone.getDefault();

@@ -427,6 +427,7 @@ public class NoteRepository {
             ContentValues cv = new ContentValues();
             cv.put("pinned_at", System.currentTimeMillis());
             db.update("notes", cv, "id = ?", new String[]{noteId});
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
             if (cb != null) executors.mainThread(cb::onPinned);
         });
     }
@@ -437,6 +438,7 @@ public class NoteRepository {
             ContentValues cv = new ContentValues();
             cv.putNull("pinned_at");
             db.update("notes", cv, "id = ?", new String[]{noteId});
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -457,6 +459,12 @@ public class NoteRepository {
             List<Note> notes = getAllNotesSync(db, null, true);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(notes));
         });
+    }
+
+    /** Synchronous form of {@link #loadPinnedNotes}, for the pinned-notes widget's
+     *  RemoteViewsFactory, which Android already runs off the main thread. */
+    public List<Note> loadPinnedNotesSync() {
+        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true);
     }
 
     /** Everything a {@code .quill}/{@code .quillpack} bundle needs to carry for one note. */

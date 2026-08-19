@@ -136,6 +136,28 @@ there's a window where "locked" content leaves the device unencrypted.
       on lock (the index stores the body as plain text); flashcards for those notes are
       deleted on lock for the same reason (`front`/`back` are plaintext columns), which costs
       the SM-2 schedule and is stated in the confirmation dialog
+  - [x] **Home-screen widgets closed too** *(2026-08-16, part of Epic K)* — `PinnedNotesRemoteViewsService`
+        was excluding a locked collection's notes only when the collection wasn't unlocked *this
+        session*, which is right for an in-app screen but wrong for a widget with no session of
+        its own — a pinned note stayed visible until the app backgrounded. Now filters against
+        `biometricLocked` directly, unconditionally, matching `CollectionsRemoteViewsService`
+- [x] **Bugs found 2026-08-16, chasing a widget-triggered crash into two pre-existing gaps** —
+      full narrative in [note.md](note.md)'s "Widgets vs. collection locking" subsection
+  - [x] `NoteRepository.createNote()` wrote a new note's title as plaintext unconditionally, even
+        into a locked collection (only `saveNote` encrypted, and only on the *next* call) — the
+        following autosave's change-check then tried to Base64-decode that plaintext as
+        ciphertext, throwing an uncaught `IllegalArgumentException` and crashing the app on the
+        disk-IO thread, repeatedly, on every relaunch. Symptom-fixed by widening
+        `NoteCrypto.decryptTitleOrNull`/`decryptBodyOrNull` to catch `RuntimeException` alongside
+        `GeneralSecurityException` — matches what both methods already claimed to guarantee
+        ("never throw, return null"). **Root cause not fully closed**: `createNote` still writes
+        plaintext for the brief window before the follow-up `saveNote` call encrypts it
+  - [x] `NoteEditorFragment` couldn't distinguish "note doesn't exist" from "note exists but is
+        locked and unreadable" — both came back `null` from `loadNote`, and the fragment treated
+        either as a blank note ready to autosave, which meant a real, still-encrypted note could
+        get silently soft-deleted by the empty-note-on-exit path. Fixed: a null result for what
+        `onViewCreated` already knows is a real pre-existing `note_id` now shows "locked" and
+        backs out without ever marking itself save-ready
 
 > **Deferred — media encryption.** Images and recordings referenced by `note_segments.file_path`
 > are unreachable through the UI while a collection is shut, but the files themselves are still
@@ -369,9 +391,10 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
     deliberately encrypted would leak both its existence and their neglect of it.
   - **Reusable beyond flashcards, as the epic asks**: `StudyReminders.sync()` is the whole
     scheduling contract, so a second reminder type needs a worker and a preference, not new
-    infrastructure. Epic J's watch tile and Epic I's home-screen widget can read
+    infrastructure. Epic J's watch tile and the home-screen widgets (Epic K below) can read
     `FlashcardRepository.countDueSync` directly — that's the "projected count" they were
-    blocked on.
+    blocked on. (This paragraph used to say "Epic I's home-screen widget" — Epic I below is
+    unrelated whiteboard work; the widget itself didn't have an epic slot until it was built.)
 
 ---
 
@@ -703,6 +726,40 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
 - **Sensor gimmicks.** A watch makes Epic G tempting, but heart-rate-during-review is a demo, not
   a feature. The honest version, if Epic G is to be retired here, is using on-body/idle state to
   *time* the review nudge.
+
+---
+
+## Epic K — Home-Screen App Widgets (built opportunistically, not originally scoped)
+
+**Why here**: not part of the original one-pager scoping; built 2026-08-14 in response to a
+direct ask, reusing infrastructure Epics D/I already put in place (`NoteRepository`'s pinned
+notes, `CollectionRepository`, `WhiteboardRepository` + `WhiteboardThumbnails`). Full design,
+the three RemoteViews gotchas hit, and what's reused vs. new live in
+[note.md](note.md)'s "Home-screen App Widgets" section.
+
+- [x] **Collections widget** — stacked pinned-notes + collections lists, locked collections
+      excluded, tap deep-links to the note/collection
+- [x] **Whiteboards widget** — thumbnail grid of recent boards (thumbnails via a new disk
+      cache, `WidgetThumbnailCache`, mirroring what `WhiteboardThumbnails` already renders
+      in-app), tap deep-links to the board
+- [x] **Flashcards widget** *(2026-08-15)* — due-now cards (front only) stacked 60/40 over a
+      deck list, closing the "projected count" gap the reminders section above anticipated for
+      a home-screen surface. Tap deep-links to that note's review screen
+      (`EXTRA_OPEN_FLASHCARD_NOTE_ID`, separate from the note-editor extra)
+- [x] Live updates on data change (`WidgetUpdater`), not polling — now covers all three widgets
+- [x] **Widget-picker previews** *(2026-08-15)* — `android:previewLayout` on all three
+      (API 31+, renders the real layout), `previewImage` (app icon) as the fallback below that
+- [x] Verified working end-to-end by the user on-device (2026-08-14/15) — this environment has
+      no `adb`, so every fix landed via code review + a clean build, confirmed afterward by the
+      user
+- [x] **Widget-vs-collection-lock bug chain, found and fixed 2026-08-16** — a locked collection's
+      pinned notes stayed live in the widget, tapping one could delete the real note, and
+      creating a note in a locked collection crashed the app outright (repeatedly, on every
+      relaunch). Two of the three were pre-existing app bugs the widget was just the first thing
+      to reach from outside the normal in-app flow. Full account in [note.md](note.md); see also
+      Epic B above, where the two non-widget-specific bugs are tracked as security-relevant fixes
+- [x] Verified working end-to-end by the user on-device again after the lock-chain fixes
+      (2026-08-16)
 
 ---
 

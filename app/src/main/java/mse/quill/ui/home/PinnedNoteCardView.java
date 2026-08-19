@@ -55,7 +55,7 @@ final class PinnedNoteCardView {
         int height = dimen(context, R.dimen.pinned_card_height);
         int gap = dimen(context, R.dimen.pinned_card_gap);
         int spacingXs = dimen(context, R.dimen.spacing_xs);
-        int spacingMd = dimen(context, R.dimen.spacing_md);
+        int spacingSm = dimen(context, R.dimen.spacing_sm);
 
         MaterialCardView card = new MaterialCardView(context);
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(width, height);
@@ -69,18 +69,15 @@ final class PinnedNoteCardView {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        content.setPadding(spacingMd, spacingMd, spacingMd, spacingMd);
+        content.setPadding(spacingSm, spacingSm, spacingSm, spacingSm);
         card.addView(content);
 
-        // Up to two lines, not always two: reserving the second line left a short title floating
-        // above a gap before its date. The card's own fixed height is what keeps the row even, so
-        // the title doesn't have to hold the shape as well.
         TextView title = new TextView(context);
         title.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        title.setMaxLines(2);
+        title.setMaxLines(1);
         title.setEllipsize(TextUtils.TruncateAt.END);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         title.setText(NoteDisplayUtils.resolveTitle(context, note));
         content.addView(title);
@@ -110,7 +107,7 @@ final class PinnedNoteCardView {
         tagsContainer.setOrientation(LinearLayout.HORIZONTAL);
         tagsContainer.setVisibility(View.GONE);
         content.addView(tagsContainer);
-        TagChipView.renderNeutralFitting(context, tagsContainer, note.tags, width - 2 * spacingMd);
+        TagChipView.renderNeutralFitting(context, tagsContainer, note.tags, width - 2 * spacingSm);
 
         card.setOnClickListener(v -> listener.onClicked(note));
         card.setOnLongClickListener(v -> {

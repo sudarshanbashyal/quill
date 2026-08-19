@@ -100,6 +100,16 @@ public class CollectionLockRepository {
                 CollectionLock.markUnlocked(collectionId);
                 if (cb != null) executors.mainThread(cb::onDone);
 
+                // The Collections widget's rows were built before this lock — without a refresh
+                // it keeps showing the collection and any of its pinned notes exactly as they
+                // were, and a tap on one of those stale rows deep-links straight past the gate
+                // this method just put up (the note/collection screens' own lock check is what
+                // guards the in-app path; the widget's tap has nothing else in between).
+                mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+                // writeNotes(..., locked=true) just deleted this collection's flashcards — the
+                // Flashcards widget's due-now/deck rows are stale in exactly the same way.
+                mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+
                 // These titles are no longer allowed off the device — see WearNoteListPublisher,
                 // which excludes every encrypted collection whether it is open or shut. Without
                 // this the watch kept listing them until something else happened to republish,
@@ -146,6 +156,10 @@ public class CollectionLockRepository {
                 CollectionLock.relock(collectionId);
                 if (cb != null) executors.mainThread(cb::onDone);
 
+                // Same reasoning as lock(): the widget's rows are stale until asked again, and an
+                // unlocked collection's notes are allowed to reappear in the pinned list now.
+                mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+
                 // The other direction: these notes are ordinary again and may rejoin the watch's
                 // pickers. Unlike the lock, nothing is at stake in being late — but a list that is
                 // rebuilt on one edge and not the other is a list nobody can reason about.
@@ -189,6 +203,11 @@ public class CollectionLockRepository {
             deleteKeyQuietly(collectionId);
             CollectionLock.relock(collectionId);
             if (onDone != null) executors.mainThread(onDone);
+
+            // Same reasoning as lock()/unlock(): the collection and its (now-deleted) notes must
+            // not linger in the widget's cached rows.
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
 
             // These notes are gone for good, not soft-deleted, so the watch must stop offering
             // them. Same rule as everywhere else that changes what belongs on the list.

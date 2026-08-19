@@ -81,7 +81,14 @@ public final class WhiteboardThumbnails {
             // is the part that would actually block.
             executors.mainThread(() -> {
                 Bitmap rendered = render(appContext, whiteboard, strokes, texts);
-                if (rendered != null) CACHE.put(key, rendered);
+                if (rendered != null) {
+                    CACHE.put(key, rendered);
+                    // Mirrors this render to disk so the whiteboards widget — which can't run a
+                    // WhiteboardView off-screen the way this method does — has something to read
+                    // synchronously. See mse.quill.widget.WidgetThumbnailCache.
+                    executors.diskIO(() -> mse.quill.widget.WidgetThumbnailCache.write(
+                            appContext, whiteboard.id, rendered));
+                }
                 onReady.onThumbnail(rendered);
             });
         });
