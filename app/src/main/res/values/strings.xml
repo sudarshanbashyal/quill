@@ -489,6 +489,9 @@
     <!-- The editor, when a note\'s collection re-locked itself while the note was open. -->
     <string name="note_save_needs_unlock">Collection locked. Unlock to save your changes.</string>
     <string name="note_save_unlock_action">Unlock</string>
+    <!-- A note_id pointed at a real note whose collection is locked (and not open this session) —
+         e.g. a stale widget row tapped after the collection was locked. -->
+    <string name="note_unavailable_locked">This note is in a locked collection. Unlock it in the app to open this note.</string>
 
     <!-- ==================== Study reminders ==================== -->
 

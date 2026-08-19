@@ -97,8 +97,17 @@ public final class WearReadStatePublisher {
             // Off the main thread from here: naming the note means asking the database whether it
             // is one whose name is allowed to leave the device. The executor is a single thread,
             // so two changes in quick succession still reach the watch in the order they happened.
-            AppExecutors.getInstance().diskIO(
-                    () -> put(active, playing, publishableTitle(noteId, title), progress));
+            AppExecutors.getInstance().diskIO(() -> {
+                try {
+                    put(active, playing, publishableTitle(noteId, title), progress);
+                } catch (RuntimeException e) {
+                    // This fires on every reading state change, including from a locked
+                    // collection's note — an uncaught exception here would crash the app well
+                    // past startup, not just skip a watch sync. Same policy as
+                    // WearProjectionPublisher/WearNoteListPublisher's wrappers.
+                    Log.w(TAG, "Could not publish the read state; nothing published this round", e);
+                }
+            });
         }
 
         /**

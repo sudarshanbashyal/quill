@@ -738,17 +738,31 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
     private void loadExistingNote() {
         noteRepository.loadNote(noteId, (note, segments) -> {
             if (!isAdded()) return;
-            suppressAutoSave = true;
-            if (note != null) {
-                noteTitle.setText(note.title);
-                // A note saved without a title reads as "Untitled Note - <date>" everywhere else,
-                // so the editor labels it the same way rather than showing a blank field — but as
-                // a hint, so it stays as easy to name as it was on the day it was created.
-                showUntitledHint(note.createdAt);
-                pendingCollectionId = note.collectionId;
-                noteCreatedAt = note.createdAt;
-                collectionRepository.isLocked(note.collectionId, locked -> collectionLocked = locked);
+
+            // This method only ever runs for a real, existing note id (see onViewCreated: a brand
+            // new note skips it entirely). So a null note here is never "blank, start typing" —
+            // it means the row exists but couldn't be read right now, almost always because its
+            // collection re-locked (or was never unlocked this session) between the tap that
+            // opened this screen and this callback landing. contentLoaded is deliberately left
+            // false in that case: autoSave()'s very first line refuses to run without it, which is
+            // what stops the empty-looking editor from being "helpfully" autosaved as blank and
+            // soft-deleting the real, still-encrypted note out from under the user.
+            if (note == null) {
+                Snackbar.make(requireView(), R.string.note_unavailable_locked, Snackbar.LENGTH_LONG)
+                        .show();
+                NavHostFragment.findNavController(this).popBackStack();
+                return;
             }
+
+            suppressAutoSave = true;
+            noteTitle.setText(note.title);
+            // A note saved without a title reads as "Untitled Note - <date>" everywhere else,
+            // so the editor labels it the same way rather than showing a blank field — but as
+            // a hint, so it stays as easy to name as it was on the day it was created.
+            showUntitledHint(note.createdAt);
+            pendingCollectionId = note.collectionId;
+            noteCreatedAt = note.createdAt;
+            collectionRepository.isLocked(note.collectionId, locked -> collectionLocked = locked);
             noteEditorView.loadSegments(segments);
             noteEditorView.setAudioClipTitle(clipTitle());
             suppressAutoSave = false;
