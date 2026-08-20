@@ -34,6 +34,29 @@ public final class CollectionDialogs {
 
     private CollectionDialogs() {}
 
+    /** The two ways a note gets into a collection. */
+    public interface AddNoteListener {
+        void onNewNote();
+        void onExistingNote();
+    }
+
+    /**
+     * Asks which of the two the user meant, for the collection screen's "+" and for the button on
+     * its empty state — both of which used to be halves of a split button that named neither.
+     */
+    public static void showAddNoteDialog(Context context, AddNoteListener listener) {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.dialog_add_note_title)
+                .setItems(new String[]{
+                        context.getString(R.string.action_add_note_new),
+                        context.getString(R.string.action_add_note_existing)
+                }, (dialog, which) -> {
+                    if (which == 0) listener.onNewNote();
+                    else listener.onExistingNote();
+                })
+                .show();
+    }
+
     public static void showCreateDialog(Context context, OnTextPicked callback) {
         TextInputLayout nameField = TextFieldUtils.outlinedField(context, R.string.collection_name_hint);
 

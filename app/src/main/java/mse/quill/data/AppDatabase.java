@@ -2,6 +2,7 @@ package mse.quill.data;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
@@ -51,6 +52,28 @@ public class AppDatabase extends SQLiteOpenHelper {
             instance = null;
         }
         context.getApplicationContext().deleteDatabase(DATABASE_NAME);
+    }
+
+    /**
+     * True if this Quill holds anything the user would recognise as theirs — a note, a collection
+     * or a whiteboard. <b>Blocking — call from the disk thread.</b>
+     *
+     * <p>For {@code Onboarding}, which needs to tell a first install from an update. The stored
+     * "welcome seen" flag can't answer that on its own: it is missing for someone who has been
+     * using Quill since before the welcome screen existed, and showing them an empty-app
+     * introduction over a notebook they have been keeping for weeks would be worse than never
+     * having built one.
+     *
+     * <p>Counted across three tables rather than notes alone because none of them is a reliable
+     * proxy for the others — a board drawn from Home belongs to no note, and a collection can be
+     * made before anything is filed in it.
+     */
+    public boolean hasAnyContentSync() {
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT (SELECT COUNT(*) FROM notes) + (SELECT COUNT(*) FROM collections) "
+                        + "+ (SELECT COUNT(*) FROM whiteboards)", null)) {
+            return c.moveToFirst() && c.getInt(0) > 0;
+        }
     }
 
     @Override

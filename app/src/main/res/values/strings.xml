@@ -27,6 +27,8 @@
     <!-- Whiteboards joined the searchable set on master, so the hint names them too. -->
     <string name="search_hint">Search notes, whiteboards or collections…</string>
     <string name="search_hint_collection">Search notes in this collection…</string>
+    <!-- The picker for "Add existing note", which searches notes and nothing else. -->
+    <string name="search_hint_notes">Search notes…</string>
 
     <!-- Search filtering and sorting -->
     <string name="action_filter_and_sort">Filter and sort</string>
@@ -34,8 +36,6 @@
     <string name="action_clear_filters">Clear all</string>
     <string name="filter_sort_by">Sort by</string>
     <string name="filter_by_tag">Filter by tag</string>
-    <string name="filter_other">Other</string>
-    <string name="filter_pinned_only">Pinned only</string>
     <string name="sort_recent">Most recent</string>
     <string name="sort_oldest">Oldest first</string>
     <string name="sort_title_asc">Title A–Z</string>
@@ -46,7 +46,7 @@
     <string name="section_notes">Notes</string>
     <string name="section_whiteboards">Whiteboards</string>
 
-    <string name="action_create_note">Create Note</string>
+    <string name="action_create_note">Note</string>
     <string name="action_create_collection">Collection</string>
     <string name="notes_count_zero">No notes</string>
     <string name="updated_relative_format">Updated %s</string>
@@ -77,8 +77,14 @@
     <!-- Quoted so aapt keeps the spaces around the dot; unquoted it collapses to a bare "·". -->
     <string name="count_separator" translatable="false">" · "</string>
 
+    <string name="empty_collections">No collections yet — tap + to make one</string>
     <string name="empty_notes">No notes yet — tap + to create one</string>
     <string name="empty_notes_in_collection">No notes in this collection yet</string>
+    <string name="action_add_note_to_collection">Add a note</string>
+    <!-- The two ways a note gets into a collection, offered wherever the collection screen asks. -->
+    <string name="dialog_add_note_title">Add a note</string>
+    <string name="action_add_note_new">New note</string>
+    <string name="action_add_note_existing">Add existing note</string>
 
     <string name="action_move_to_collection">Move to collection…</string>
     <string name="action_remove_from_collection">Remove from collection</string>
@@ -195,6 +201,7 @@
     <!-- Shown instead of the share options when the note lives in a locked collection. -->
     <string name="share_locked_collection">Notes in a locked collection can\'t be shared</string>
     <string name="action_import_note">Import</string>
+    <string name="action_join_session">Join session</string>
     <string name="import_in_progress">Importing note…</string>
     <string name="import_succeeded">Imported \"%1$s\"</string>
     <string name="import_succeeded_untitled">Imported note</string>
@@ -223,6 +230,17 @@
     <string name="collab_disconnected">Collaboration session ended</string>
     <string name="collab_scan_failed">Could not read that code</string>
     <string name="collab_connect_failed">Could not connect to that session</string>
+    <!-- One per way joining can fail, so the dialog says what to do rather than what went wrong.
+         See CollabSession.Failure. -->
+    <string name="collab_error_title">Couldn\'t join</string>
+    <string name="collab_scan_again">Scan again</string>
+    <string name="collab_error_not_a_session">That QR code isn\'t a Quill session. Scan the code shown by the phone hosting the whiteboard.</string>
+    <string name="collab_error_scanner">The scanner couldn\'t start. Check your connection and try again.</string>
+    <string name="collab_error_not_found">No session found for that code. Check the other phone is still showing it, and that you\'re both nearby.</string>
+    <string name="collab_error_connect_failed">Found the session but couldn\'t connect. Move the phones closer together and try again.</string>
+    <string name="collab_error_radios">Turn on Bluetooth and Wi-Fi — Quill needs both to find the other phone.</string>
+    <string name="collab_error_cannot_host">Couldn\'t start hosting. Turn Bluetooth and Wi-Fi off and on again, then retry.</string>
+    <string name="collab_error_cannot_search">Couldn\'t start looking for the session. Turn Bluetooth and Wi-Fi off and on again, then retry.</string>
     <string name="collab_end_session">End session</string>
     <string name="collab_leaving_locks_others_out">Ending the session disconnects everyone.</string>
     <string name="collab_permission_denied">Nearby needs Bluetooth/Wi-Fi permissions to find another device</string>
@@ -373,7 +391,7 @@
 
     <string name="delete_audio_title">Delete audio?</string>
     <string name="delete_audio_message">This audio clip will be removed from the note.</string>
-    <string name="action_create_whiteboard">New Whiteboard</string>
+    <string name="action_create_whiteboard">Whiteboard</string>
 
     <string name="whiteboard_icon_glyph">🎨</string>
     <string name="untitled_whiteboard_with_date">Untitled Whiteboard - %s</string>
@@ -387,6 +405,8 @@
     <string name="dialog_rename_whiteboard_title">Rename whiteboard</string>
     <string name="whiteboard_name_hint">Whiteboard name</string>
     <string name="whiteboard_nothing_to_undo">Nothing to undo</string>
+    <!-- "Centre", matching action_centre_canvas — the button this confirms. -->
+    <string name="whiteboard_centred">Whiteboard centred</string>
     <string name="delete_whiteboard_title_format">Delete \"%s\"?</string>
     <string name="delete_whiteboard_message">This whiteboard and everything drawn on it will be deleted.</string>
     <!-- Shown in the danger colour under the message above. Says where the loss lands, because the
@@ -528,4 +548,37 @@
          is being read. Names nothing, on purpose: the DataItem outlives the unlock that let the
          reading start, so a real title would sit on the wrist long after the collection shut. -->
     <string name="wear_read_private_title">A private note</string>
+
+    <!-- ── First run ─────────────────────────────────────────────────────────────────────────
+         The welcome screen, shown once on a Quill with nothing in it. Its job is that Quill has
+         four features and a new user meets all four at once; naming them costs one screen and
+         saves the guessing. -->
+    <string name="welcome_title">Welcome to Quill</string>
+    <string name="welcome_subtitle">Notes, flashcards, quizzes and whiteboards — everything for studying, in one app that keeps it all on this device.</string>
+
+    <string name="welcome_feature_notes_title">Notes and collections</string>
+    <string name="welcome_feature_notes_summary">Write, format and group them however suits the subject.</string>
+    <string name="welcome_feature_flashcards_title">Flashcards</string>
+    <string name="welcome_feature_flashcards_summary">A question-and-answer block in a note becomes a card to review.</string>
+    <string name="welcome_feature_quizzes_title">Quizzes</string>
+    <string name="welcome_feature_quizzes_summary">Sit a quiz built from those same blocks and keep the scores.</string>
+    <string name="welcome_feature_whiteboards_title">Whiteboards</string>
+    <string name="welcome_feature_whiteboards_summary">Sketch what a sentence cannot say, alone or inside a note.</string>
+
+    <string name="welcome_action_sample">Start with sample content</string>
+    <string name="welcome_action_skip">Start empty</string>
+    <string name="welcome_action_working">Adding sample content…</string>
+
+    <!-- The report afterwards. Every count in it comes from what was actually written, so the
+         phrasing has to survive a number other than the expected one. -->
+    <string name="welcome_done_title">Sample content added</string>
+    <string name="welcome_done_subtitle">Here is what is now in your Quill. None of it is special — edit or long-press to delete any of it, like anything else you write.</string>
+    <string name="welcome_done_action">Start exploring</string>
+
+    <string name="welcome_summary_collection_where">“%1$s” — open it from Home</string>
+    <string name="welcome_summary_notes_where_pinned">“%1$s” is pinned to the top of Home</string>
+    <string name="welcome_summary_notes_where">Under Notes on Home</string>
+    <string name="welcome_summary_flashcards_where">Due now, on the Flashcards tab</string>
+    <string name="welcome_summary_quizzes_where">Ready to sit, on the Quizzes tab</string>
+    <string name="welcome_summary_whiteboards_where">In Home\'s whiteboards row, and inside the welcome note</string>
 </resources>

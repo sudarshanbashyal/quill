@@ -33,6 +33,7 @@ import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 
+import mse.quill.collab.SessionCode;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.WearNoteListPublisher;
 import mse.quill.data.WearProjectionPublisher;
@@ -78,6 +79,13 @@ public class MainActivity extends AppCompatActivity {
             applyBottomInset();
             return insets;
         });
+
+        // Before handleViewIntent below, which is the thing that reads them.
+        if (savedInstanceState != null) {
+            pendingImportUri = savedInstanceState.getParcelable(STATE_PENDING_IMPORT);
+            viewIntentConsumed = savedInstanceState.getBoolean(STATE_IMPORT_CONSUMED, false);
+            pendingJoinToken = savedInstanceState.getString(STATE_PENDING_JOIN);
+        }
 
         applyTopInsetToEveryScreen();
         setupNowPlayingBar();
@@ -138,6 +146,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        // A new intent is a new request, whatever the last one was — see viewIntentConsumed.
+        viewIntentConsumed = false;
         handleViewIntent(intent);
         handleReminderIntent(intent);
         handleWidgetIntent(intent);
@@ -235,10 +245,51 @@ public class MainActivity extends AppCompatActivity {
      *  what lets {@link #deliverSharedFileWhenHomeIsReady} deliver it the moment it is. */
     private Uri pendingImportUri;
 
+    /**
+     * Whether the file named by the <em>current</em> intent has already been handed to Home.
+     *
+     * <p>The activity's intent outlives the activity: a rotation recreates this Activity and
+     * {@link #getIntent()} still returns the VIEW intent that started it, so without this the file
+     * would be imported a second time and the user would find two copies of the note they opened
+     * once. Reset in {@link #onNewIntent}, because a new intent is a new request — the same file
+     * tapped twice on purpose is two imports, and that is the user's call to make.
+     */
+    private boolean viewIntentConsumed;
+
+    private static final String STATE_PENDING_IMPORT = "pending_import_uri";
+    private static final String STATE_IMPORT_CONSUMED = "view_intent_consumed";
+    private static final String STATE_PENDING_JOIN = "pending_join_token";
+
+    /** Carries both across a rotation: the flag so an imported file isn't imported again, and the
+     *  uri so one that arrived in the moment before Home was ready isn't dropped instead. */
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putParcelable(STATE_PENDING_IMPORT, pendingImportUri);
+        outState.putBoolean(STATE_IMPORT_CONSUMED, viewIntentConsumed);
+        outState.putString(STATE_PENDING_JOIN, pendingJoinToken);
+    }
+
     private void handleViewIntent(Intent intent) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return;
         Uri uri = intent.getData();
-        if (uri == null) return;
+        if (uri == null || viewIntentConsumed) return;
+        viewIntentConsumed = true;
+
+        // Two kinds of thing arrive as a VIEW: a file to import, and a whiteboard session's link.
+        // The scheme settles it before either is attempted — a quill:// link handed to the
+        // importers would be opened, found to contain no bundle, and reported as a broken file.
+        if ("quill".equals(uri.getScheme())) {
+            String token = SessionCode.parse(uri.getLastPathSegment());
+            if (token == null) {
+                android.widget.Toast.makeText(this, R.string.collab_error_not_a_session,
+                        android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            joinSessionWhenUnlocked(token);
+            return;
+        }
+
         pendingImportUri = uri;
 
         // The file's result belongs on Home (that's where a manually-picked import already lands),
@@ -250,6 +301,33 @@ public class MainActivity extends AppCompatActivity {
 
         deliverPendingImportIfReady();
     }
+
+    /**
+     * Opens a board joined to the scanned session — but not until the app is unlocked.
+     *
+     * <p>The lock gate is a view over this window rather than a screen of its own, so Home goes on
+     * resuming behind it: without the wait, a link scanned while Quill was locked would create a
+     * board, join a stranger's session and start drawing it onto the screen underneath the words
+     * "Quill is locked". The gate has to come down first, and if the user walks away from it,
+     * nothing has happened at all.
+     */
+    private void joinSessionWhenUnlocked(String token) {
+        if (AppLock.shouldPrompt(this)) {
+            pendingJoinToken = token;
+            return;
+        }
+        runWhenNavHostReady(host -> {
+            Bundle args = new Bundle();
+            args.putBoolean(mse.quill.ui.whiteboard.WhiteboardFragment.ARG_CREATED_NOW, true);
+            args.putString(mse.quill.ui.whiteboard.WhiteboardFragment.ARG_JOIN_TOKEN, token);
+            // No whiteboard_id: the screen mints one for itself, which is exactly what a joiner
+            // needs — an empty board of its own for the host's snapshot to fill.
+            host.getNavController().navigate(R.id.whiteboardFragment, args);
+        });
+    }
+
+    /** A session link that arrived while the gate was up, waiting for it to come down. */
+    private String pendingJoinToken;
 
     /** Home is resumed as soon as it exists, cold start or not, so watching for that (rather than
      *  e.g. a fixed delay) is what makes this reliable regardless of how long the nav host takes to
@@ -273,6 +351,19 @@ public class MainActivity extends AppCompatActivity {
         if (host == null) return;
         Fragment current = host.getChildFragmentManager().getPrimaryNavigationFragment();
         if (!(current instanceof mse.quill.ui.home.HomeFragment)) return;
+
+        // Resumed, not merely present — the check this used to be missing, and the difference
+        // between the two ways a file can arrive. Tapping a .quill in a file manager while Quill is
+        // already running finds a Home with a view, so it worked; doing it with Quill closed does
+        // not. A cold start restores the fragment during onCreate, so the instanceof above already
+        // passes while onCreateView is still ahead of it — and Home's first act on being handed a
+        // file is to show a Snackbar, which needs the view it does not yet have. That threw
+        // IllegalStateException out of onCreate, which is to say Quill crashed on launch and the
+        // user was dropped back in the file manager with nothing imported.
+        //
+        // Nothing is lost by waiting: deliverSharedFileWhenHomeIsReady is registered before the
+        // intent is ever read, and calls back here the moment Home resumes.
+        if (!current.isResumed()) return;
 
         Uri uri = pendingImportUri;
         pendingImportUri = null;
@@ -468,7 +559,13 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        if (!AppLock.shouldPrompt(this)) hideLockGate();
+        if (!AppLock.shouldPrompt(this)) {
+            hideLockGate();
+            // Also here, not only in hideLockGate: the gate may already be down by the time a
+            // waiting link is noticed — the device-credential fallback runs in its own Activity,
+            // so coming back from it resumes this one rather than dismissing anything.
+            deliverPendingJoin();
+        }
     }
 
     /**
@@ -524,6 +621,16 @@ public class MainActivity extends AppCompatActivity {
         if (lockGate == null || lockGate.getVisibility() == View.GONE) return;
         lockGate.setVisibility(View.GONE);
         setLockBackCallbackEnabled(false);
+        deliverPendingJoin();
+    }
+
+    /** The other half of {@link #joinSessionWhenUnlocked}: the gate is down, so the session link
+     *  that was waiting behind it can go ahead. */
+    private void deliverPendingJoin() {
+        if (pendingJoinToken == null) return;
+        String token = pendingJoinToken;
+        pendingJoinToken = null;
+        joinSessionWhenUnlocked(token);
     }
 
     /**

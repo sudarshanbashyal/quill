@@ -7,6 +7,7 @@ import java.io.File;
 
 import mse.quill.audio.AudioPlayback;
 import mse.quill.data.AppDatabase;
+import mse.quill.onboarding.Onboarding;
 import mse.quill.security.AppLock;
 import mse.quill.ui.profile.ProfilePreferences;
 import mse.quill.ui.whiteboard.WhiteboardPreferences;
@@ -55,6 +56,10 @@ public final class DataWipe {
         clearPrefs(appContext, ProfilePreferences.prefsName());
         clearPrefs(appContext, AppLock.prefsName());
         clearPrefs(appContext, WhiteboardPreferences.prefsName());
+        // So a wiped Quill is greeted the way a new one is. Without this the welcome screen stays
+        // answered forever, and "delete everything" would leave behind the one thing the user
+        // could not see to check: an empty app that has quietly decided it is not new.
+        clearPrefs(appContext, Onboarding.prefsName());
 
         // The wiped lock preference only decides what happens next launch; this drops the
         // already-granted unlock so the process can't carry it forward.

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Join session" on Home's expanding FAB. Same size-pinning wrapper as the other option icons —
+     ic_scan.png is a full-size asset and would draw at its own size otherwise. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="@dimen/section_header_icon"
+        android:height="@dimen/section_header_icon"
+        android:drawable="@drawable/ic_scan"
+        android:gravity="center" />
+</layer-list>

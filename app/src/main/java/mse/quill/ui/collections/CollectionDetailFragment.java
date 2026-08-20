@@ -49,7 +49,9 @@ public class CollectionDetailFragment extends Fragment {
     private NoteRepository noteRepository;
     private CollectionRepository collectionRepository;
     private NotesAdapter notesAdapter;
-    private TextView emptyNotesView;
+    private View emptyNotesView;
+    /** Shown only when the collection is genuinely empty — see {@link #applyFilters}. */
+    private View emptyAddNoteButton;
     private TextView toolbarSubtitle;
     private EditText titleField;
     /** The name as the database has it, so an edit can be told from a redraw — and reverted to. */
@@ -92,6 +94,7 @@ public class CollectionDetailFragment extends Fragment {
                 NavHostFragment.findNavController(this).navigateUp());
 
         emptyNotesView = view.findViewById(R.id.empty_notes);
+        emptyAddNoteButton = view.findViewById(R.id.empty_add_note);
 
         RecyclerView recyclerView = view.findViewById(R.id.recycler_notes);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -132,13 +135,8 @@ public class CollectionDetailFragment extends Fragment {
             }
         });
 
-        view.findViewById(R.id.btn_add_note).setOnClickListener(v -> {
-            Bundle noteArgs = new Bundle();
-            noteArgs.putString(NoteEditorFragment.ARG_COLLECTION_ID, collectionId);
-            NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment, noteArgs);
-        });
-
-        view.findViewById(R.id.btn_search_notes).setOnClickListener(v -> showAddExistingNotesDialog());
+        view.findViewById(R.id.btn_add_note).setOnClickListener(v -> showAddNoteChooser());
+        view.findViewById(R.id.empty_add_note).setOnClickListener(v -> showAddNoteChooser());
 
         view.findViewById(R.id.btn_share_collection).setOnClickListener(v -> shareCollection());
     }
@@ -288,6 +286,22 @@ public class CollectionDetailFragment extends Fragment {
         }
     }
 
+    /** Both ways in — the header's "+" and the empty state's button — ask the same question. */
+    private void showAddNoteChooser() {
+        CollectionDialogs.showAddNoteDialog(requireContext(), new CollectionDialogs.AddNoteListener() {
+            @Override public void onNewNote() {
+                Bundle noteArgs = new Bundle();
+                noteArgs.putString(NoteEditorFragment.ARG_COLLECTION_ID, collectionId);
+                NavHostFragment.findNavController(CollectionDetailFragment.this)
+                        .navigate(R.id.noteEditorFragment, noteArgs);
+            }
+
+            @Override public void onExistingNote() {
+                showAddExistingNotesDialog();
+            }
+        });
+    }
+
     private void showAddExistingNotesDialog() {
         noteRepository.loadNotes(null, notes -> {
             if (!isAdded()) return;
@@ -321,5 +335,9 @@ public class CollectionDetailFragment extends Fragment {
         List<Note> filtered = filter.apply(allNotesInCollection);
         notesAdapter.submitList(filtered);
         emptyNotesView.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
+        // The offer to add one belongs to an empty collection, not to a filter that happens to
+        // match nothing: the notes are there, and "Add a note" is not the way to see them.
+        emptyAddNoteButton.setVisibility(
+                allNotesInCollection.isEmpty() ? View.VISIBLE : View.GONE);
     }
 }
