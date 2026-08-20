@@ -225,6 +225,9 @@
     <string name="collab_connect_failed">Could not connect to that session</string>
     <string name="collab_end_session">End session</string>
     <string name="collab_leaving_locks_others_out">Ending the session disconnects everyone.</string>
+    <string name="collab_exit_warning_title">Leave whiteboard?</string>
+    <string name="collab_exit_warning_message">You\'re collaborating live. Leaving this whiteboard will end the session for everyone.</string>
+    <string name="collab_exit_confirm">Leave and end session</string>
     <string name="collab_permission_denied">Nearby needs Bluetooth/Wi-Fi permissions to find another device</string>
 
     <!-- Sharing a whole collection: a .quillpack, a zip of each member note's own .quill bundle. -->

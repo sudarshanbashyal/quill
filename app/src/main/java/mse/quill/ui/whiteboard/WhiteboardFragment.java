@@ -22,6 +22,7 @@ import android.widget.Toast;
 import android.provider.MediaStore;
 import android.content.ContentValues;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -209,6 +210,16 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         bindViews(view);          // find all UI elements by id
         setupToolbar();           // wire up click listeners
+
+        // Intercept system/gesture back the same way as the in-app back button, so a live
+        // collab session can't be dropped silently through either exit path.
+        requireActivity().getOnBackPressedDispatcher().addCallback(
+                getViewLifecycleOwner(), new OnBackPressedCallback(true) {
+                    @Override
+                    public void handleOnBackPressed() {
+                        attemptExit();
+                    }
+                });
         whiteboardView.setStrokeListener(this); // get notified when a stroke finishes
         whiteboardView.setTextPlacementListener(this::beginText);
         textEditor.setOnEditorActionListener((v, actionId, e) -> {
@@ -301,8 +312,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnWidthThick   = root.findViewById(R.id.btnWidthThick);
         btnWidthExtraThick = root.findViewById(R.id.btnWidthExtraThick);
 
-        root.findViewById(R.id.back_button).setOnClickListener(v ->
-                androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp());
+        root.findViewById(R.id.back_button).setOnClickListener(v -> attemptExit());
 
         leftSidebar     = root.findViewById(R.id.leftSidebar);
         btnToggleTools  = root.findViewById(R.id.btnToggleTools);
@@ -948,6 +958,22 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             btnCollab.setContentDescription(getString(collabSession != null
                     ? R.string.collab_end_session : R.string.action_collaborate));
         }
+    }
+
+    /** The back button / system back — warns before leaving if that would drop a live collab
+     *  session for everyone, since {@link #onDestroyView} ends the session unconditionally. */
+    private void attemptExit() {
+        if (collabSession == null) {
+            androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp();
+            return;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.collab_exit_warning_title)
+                .setMessage(R.string.collab_exit_warning_message)
+                .setPositiveButton(R.string.collab_exit_confirm, (d, w) ->
+                        androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp())
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
     }
 
     private void endCollabSession() {
