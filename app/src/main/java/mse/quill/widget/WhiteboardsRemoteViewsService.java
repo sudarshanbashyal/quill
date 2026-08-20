@@ -40,9 +40,12 @@ public class WhiteboardsRemoteViewsService extends RemoteViewsService {
         // uncaught exception here crashes the whole app, not just the widget.
         @Override public void onDataSetChanged() {
             try {
-                whiteboards = new WhiteboardRepository(context).loadWhiteboardsSync();
+                // The stricter query: every locked collection's boards stay off the home screen,
+                // whether or not the app currently considers that collection open. See
+                // WhiteboardRepository.loadWhiteboardsForWidgetSync.
+                whiteboards = new WhiteboardRepository(context).loadWhiteboardsForWidgetSync();
             } catch (RuntimeException e) {
-                Log.e(TAG, "loadWhiteboardsSync failed, showing an empty list", e);
+                Log.e(TAG, "loadWhiteboardsForWidgetSync failed, showing an empty list", e);
                 whiteboards = new ArrayList<>();
             }
         }

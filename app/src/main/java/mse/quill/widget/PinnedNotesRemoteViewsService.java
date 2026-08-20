@@ -6,15 +6,11 @@ import android.widget.RemoteViews;
 import android.widget.RemoteViewsService;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import mse.quill.MainActivity;
 import mse.quill.R;
-import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
-import mse.quill.data.model.Collection;
 import mse.quill.data.model.Note;
 
 public class PinnedNotesRemoteViewsService extends RemoteViewsService {
@@ -43,28 +39,15 @@ public class PinnedNotesRemoteViewsService extends RemoteViewsService {
         // caught here rather than trusted to behave.
         @Override public void onDataSetChanged() {
             try {
-                List<Note> pinned = new NoteRepository(context).loadPinnedNotesSync();
-
-                // loadPinnedNotesSync only hides a locked collection's notes if the collection
-                // isn't unlocked *this session* — right, for an in-app screen, since the user
-                // already authenticated to see them. A widget has no session of its own and no
-                // way to ask for one, so unlike the app it must hide every locked collection's
-                // notes unconditionally, the same way CollectionsRemoteViewsService already does
-                // for the collections list itself. Without this, a note stayed visible in the
-                // widget for as long as the app session considered its collection open — which,
-                // since locking leaves the collection open in-session on purpose, meant right up
-                // until the app was backgrounded.
-                Set<String> lockedCollectionIds = new HashSet<>();
-                for (Collection collection : new CollectionRepository(context).loadCollectionsSync()) {
-                    if (collection.biometricLocked) lockedCollectionIds.add(collection.id);
-                }
-                List<Note> visible = new ArrayList<>();
-                for (Note note : pinned) {
-                    if (!lockedCollectionIds.contains(note.collectionId)) visible.add(note);
-                }
-                notes = visible;
+                // The *ForWidget* query, not loadPinnedNotesSync: a widget has no session of its
+                // own and no way to ask for one, so it hides every locked collection's notes
+                // rather than only the ones shut this session. Done in SQL rather than by
+                // filtering the result here, which is what this used to do — the old way still
+                // decrypted the titles of an open collection's notes on the way to throwing them
+                // away, and the LIMIT on the pinned query counted rows nobody was going to see.
+                notes = new NoteRepository(context).loadPinnedNotesForWidgetSync();
             } catch (RuntimeException e) {
-                Log.e(TAG, "loadPinnedNotesSync failed, showing an empty list", e);
+                Log.e(TAG, "loadPinnedNotesForWidgetSync failed, showing an empty list", e);
                 notes = new ArrayList<>();
             }
         }

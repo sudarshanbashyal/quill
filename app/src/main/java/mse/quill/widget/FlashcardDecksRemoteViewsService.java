@@ -38,9 +38,9 @@ public class FlashcardDecksRemoteViewsService extends RemoteViewsService {
         // uncaught exception here crashes the whole app, not just the widget.
         @Override public void onDataSetChanged() {
             try {
-                decks = new FlashcardRepository(context).loadDecksSync();
+                decks = new FlashcardRepository(context).loadDecksForWidgetSync();
             } catch (RuntimeException e) {
-                Log.e(TAG, "loadDecksSync failed, showing an empty list", e);
+                Log.e(TAG, "loadDecksForWidgetSync failed, showing an empty list", e);
                 decks = new ArrayList<>();
             }
         }

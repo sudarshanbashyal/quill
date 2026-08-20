@@ -86,8 +86,16 @@ public final class WhiteboardThumbnails {
                     // Mirrors this render to disk so the whiteboards widget — which can't run a
                     // WhiteboardView off-screen the way this method does — has something to read
                     // synchronously. See mse.quill.widget.WidgetThumbnailCache.
-                    executors.diskIO(() -> mse.quill.widget.WidgetThumbnailCache.write(
-                            appContext, whiteboard.id, rendered));
+                    executors.diskIO(() -> {
+                        mse.quill.widget.WidgetThumbnailCache.write(
+                                appContext, whiteboard.id, rendered);
+                        // The widget reads that file rather than rendering anything, so a board
+                        // edited since the widget last drew keeps showing the old picture until it
+                        // is asked again. Here rather than on every canvas change: a re-render only
+                        // happens when the in-memory cache misses, which is exactly when the
+                        // picture on disk has actually changed.
+                        mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+                    });
                 }
                 onReady.onThumbnail(rendered);
             });

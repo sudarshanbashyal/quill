@@ -504,6 +504,13 @@ public class MainActivity extends AppCompatActivity {
         // material the user went out of their way to encrypt, so leaving the app is enough to shut
         // them — coming back to one always costs a prompt.
         CollectionLock.relockAll();
+
+        // Leaving the app is the moment the home screen is about to be looked at, and it is also
+        // the last chance to catch anything that changed without a push of its own. The widgets
+        // have no periodic refresh (updatePeriodMillis is 0), so this is a backstop rather than
+        // the mechanism: each repository pushes its own change as it makes it. Cheap when there is
+        // no widget on the home screen — every call short-circuits on an empty id array.
+        mse.quill.widget.WidgetUpdater.notifyAllChanged(this);
     }
 
     private void showLockGate() {

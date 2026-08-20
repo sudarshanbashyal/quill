@@ -151,9 +151,22 @@ public class FlashcardRepository {
         });
     }
 
-    /** Synchronous form of {@link #loadDecks}, for the flashcards widget's RemoteViewsFactory,
-     *  which Android already runs off the main thread. */
+    /** Synchronous form of {@link #loadDecks}, for callers already off the main thread. */
     public List<FlashcardDeck> loadDecksSync() {
+        return loadDecksSync(false);
+    }
+
+    /**
+     * The decks a home-screen widget is allowed to show — <b>every locked collection is excluded,
+     * open or not</b>. See {@code NoteRepository.loadPinnedNotesForWidgetSync} for the reasoning;
+     * a deck is titled with its note's title, so this is what keeps those titles off the home
+     * screen for any collection the user encrypted.
+     */
+    public List<FlashcardDeck> loadDecksForWidgetSync() {
+        return loadDecksSync(true);
+    }
+
+    private List<FlashcardDeck> loadDecksSync(boolean excludeAllLocked) {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             long now = System.currentTimeMillis();
             List<FlashcardDeck> decks = new ArrayList<>();
@@ -165,10 +178,12 @@ public class FlashcardRepository {
             // An open collection is still encrypted at rest, so its titles come back as ciphertext
             // and are decrypted below — hiding the shut ones is only half the job.
             Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
-            Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
+            // Either the collections shut right now, or — for the widget — every one that is
+            // encrypted at rest. Which of the two is the only difference between the two callers.
+            Set<String> excluded = excludeAllLocked ? lockedIds : NoteCrypto.hiddenOf(lockedIds);
             List<String> args = new ArrayList<>();
             args.add(String.valueOf(now));
-            args.addAll(hidden);
+            args.addAll(excluded);
             args.add(String.valueOf(now));
 
             Cursor c = db.rawQuery(
@@ -181,7 +196,7 @@ public class FlashcardRepository {
                             "n.created_at " +
                             "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
                             "WHERE n.deleted_at IS NULL " +
-                            NoteCrypto.hiddenClause(hidden) +
+                            NoteCrypto.excludeCollectionsClause(excluded) +
                             "GROUP BY n.id, n.title, n.collection_id, n.created_at " +
                             // Decks with something to do come first; among the rest, whichever comes
                             // back soonest.
@@ -301,12 +316,26 @@ public class FlashcardRepository {
      * excluded the same way {@link #countDueSync} excludes them.
      */
     public List<DueCardPreview> loadDueCardsSync(long now, int limit) {
+        return loadDueCardsSync(now, limit, false);
+    }
+
+    /**
+     * The due cards a home-screen widget is allowed to show — <b>every locked collection is
+     * excluded, open or not</b>, the same rule {@link #dueProjectionSync} applies for the watch
+     * and for the same reason: neither surface has a session or a gate.
+     */
+    public List<DueCardPreview> loadDueCardsForWidgetSync(long now, int limit) {
+        return loadDueCardsSync(now, limit, true);
+    }
+
+    private List<DueCardPreview> loadDueCardsSync(long now, int limit, boolean excludeAllLocked) {
         SQLiteDatabase db = appDatabase.getWritableDatabase();
-        Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
+        Set<String> excluded = excludeAllLocked
+                ? NoteCrypto.lockedCollectionIds(db) : NoteCrypto.hiddenCollectionIds(db);
 
         List<String> args = new ArrayList<>();
         args.add(String.valueOf(now));
-        args.addAll(hidden);
+        args.addAll(excluded);
         args.add(String.valueOf(limit));
 
         List<DueCardPreview> cards = new ArrayList<>();
@@ -314,7 +343,7 @@ public class FlashcardRepository {
                 "SELECT f.id, f.note_id, f.front " +
                         "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
                         "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
-                        NoteCrypto.hiddenClause(hidden) +
+                        NoteCrypto.excludeCollectionsClause(excluded) +
                         "ORDER BY f.next_review ASC LIMIT ?",
                 args.toArray(new String[0]))) {
             while (c.moveToNext()) {

@@ -3063,3 +3063,74 @@ three selected columns qualified to match.
 **Verified**: relaunched with the same seeded DB — no crash buffer entries, the same PID alive
 across 15 seconds (it was cycling 5282 → 5755 → 5841 before), and the app now reaches its own
 biometric "Unlock Quill" prompt. The black screenshots are `FLAG_SECURE`, not a broken screen.
+
+## 2026-08-20 — The widgets were late, and a locked collection could still be on the home screen
+
+**Two complaints, one root**: widgets didn't update when a note was added or a collection's lock was
+turned on or off, and locked material could still be showing. `updatePeriodMillis` is 0 for all
+three widgets, so a change that isn't pushed is a change that never arrives — "not quick enough"
+was, in most of these paths, "not ever".
+
+**What was missing.** `NoteRepository` pushed a refresh only from `pinNote`/`unpinNote`. Creating,
+saving, deleting and moving a note all changed something a widget row shows — a collection's note
+count, a pinned note's title and preview, whether a pinned note is still allowed to appear — and
+said nothing. `CollectionLockRepository` told the collections and flashcards widgets about a lock
+but never the whiteboards one. `WhiteboardThumbnails` wrote a fresh thumbnail to
+`WidgetThumbnailCache` and left the widget showing the old picture.
+
+**The leak was the more interesting half.** Three of the five factories asked
+`hiddenCollectionIds` — locked *and* not opened this session — which is the right question for an
+in-app screen and the wrong one for a widget. A widget has no session and no way to ask for one, so
+its contents must be a function of the database alone. Locking a collection deliberately leaves it
+open in-session (the user just authenticated), so under the old rule a locked collection's
+whiteboards, decks and due cards stayed on the home screen until the app was next backgrounded —
+and the boards are the sharp case, because the lock migration encrypts note text and nothing else:
+the query is the whole of what keeps a private drawing off the launcher. Each of those queries now
+has a `*ForWidgetSync` sibling that excludes every collection encrypted at rest, the same stricter
+rule `dueProjectionSync` already used for the watch, and for the same reason. The pinned-notes
+factory was already doing this correctly but in Java, after the fact — it now happens in SQL, so an
+open collection's titles aren't decrypted on the way to being thrown away.
+
+**One backstop**: `MainActivity.onStop` refreshes all three. Leaving the app is the moment the home
+screen is about to be looked at, and it is where `CollectionLock.relockAll()` already runs. It is a
+net, not the mechanism — every repository still pushes its own change.
+
+**Verified on the emulator**, against the seeded DB (locked "Private", open "Coursework"): both
+widgets dragged onto the launcher show only Coursework and only the boards outside the locked
+collection — "Private sketch" is gone, the unowned "Scratch pad" stays. A temporary probe in two
+factories (removed afterwards) showed both requerying ~1.5s after the app was backgrounded, which
+is the push path end to end. The in-app half of the loop — add a note, watch the count move — could
+not be driven here: the emulator's app lock wants a PIN, and disabling it was refused. The four
+widget queries were also run, old rule against new, over a copy of the emulator's own database:
+each strict variant drops exactly the locked collection's rows and nothing else.
+
+## 2026-08-20 (same session) — Deleting a note: the one delete that pushed nothing
+
+**The report**, after the above landed: in the widget, a deleted pinned note stays, but deleting a
+collection works fine. That asymmetry is the diagnosis. Both lists live in one widget and are
+refreshed by the same call, so the collections half updating proves the push reaches the launcher —
+what differed was the sender. `deleteCollection` always pushed; `deleteNote` never did, and it is
+the single place that sets `deleted_at`, so all three delete surfaces (Home's note dialog, the
+pinned card's dialog, the editor) were silent. Also added: a delete now tells the flashcards widget,
+since a trashed note's cards stay in the table and drop out of the deck and due-now queries by
+their note's `deleted_at` alone.
+
+**Verified end to end on the emulator**, with the app lock's PIN (1234, from the user): pin a note →
+it appears in the widget; delete it → two seconds later the row is gone and the collection reads
+"0 notes". Then the other half of the original complaint: a note created inside Coursework took the
+count to "2 notes" without leaving the app for anything.
+
+**How to drive the app despite `FLAG_SECURE`**: screenshots of Quill are black, but
+`uiautomator dump` gives the full tree, text and bounds included — and the launcher isn't secure, so
+the *widget's* contents can be read straight out of the launcher's own accessibility tree. That is a
+better check than a screenshot anyway: it reads the strings the widget is actually showing.
+
+**Cleanup**: the deleted note had nowhere to come back from — Quill has no trash surface, so a soft
+delete is unrecoverable through the UI. The emulator DB was pulled before any of this and pushed
+back afterwards (`run-as mse.quill cp`, journal removed, app force-stopped first), leaving the seed
+exactly as it was. Worth knowing for next time: **pull the DB before touching data on the emulator**.
+Restoring it also demonstrated the `MainActivity.onStop` backstop — the database changed underneath
+the app with no repository push at all, and backgrounding it brought the widget back in step.
+
+**Left on the emulator**: the Collections and Whiteboards widgets are still on the home screen,
+deliberately.

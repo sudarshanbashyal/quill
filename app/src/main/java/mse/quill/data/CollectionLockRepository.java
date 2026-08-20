@@ -109,6 +109,10 @@ public class CollectionLockRepository {
                 // writeNotes(..., locked=true) just deleted this collection's flashcards — the
                 // Flashcards widget's due-now/deck rows are stale in exactly the same way.
                 mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+                // And the boards: the strokes are not encrypted by any of this, so the only thing
+                // keeping this collection's drawings off the home screen is the widget's query
+                // being asked again. relinkWhiteboards above is what it will read.
+                mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
 
                 // These titles are no longer allowed off the device — see WearNoteListPublisher,
                 // which excludes every encrypted collection whether it is open or shut. Without
@@ -156,9 +160,10 @@ public class CollectionLockRepository {
                 CollectionLock.relock(collectionId);
                 if (cb != null) executors.mainThread(cb::onDone);
 
-                // Same reasoning as lock(): the widget's rows are stale until asked again, and an
-                // unlocked collection's notes are allowed to reappear in the pinned list now.
-                mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+                // Same reasoning as lock(), in the other direction: an unlocked collection's
+                // notes, decks and boards are all allowed back on the home screen now, and none of
+                // them return until each widget is asked again.
+                mse.quill.widget.WidgetUpdater.notifyAllChanged(appContext);
 
                 // The other direction: these notes are ordinary again and may rejoin the watch's
                 // pickers. Unlike the lock, nothing is at stake in being late — but a list that is
@@ -206,8 +211,7 @@ public class CollectionLockRepository {
 
             // Same reasoning as lock()/unlock(): the collection and its (now-deleted) notes must
             // not linger in the widget's cached rows.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            mse.quill.widget.WidgetUpdater.notifyAllChanged(appContext);
 
             // These notes are gone for good, not soft-deleted, so the watch must stop offering
             // them. Same rule as everywhere else that changes what belongs on the list.
