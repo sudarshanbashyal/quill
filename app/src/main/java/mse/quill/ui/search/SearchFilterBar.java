@@ -100,14 +100,6 @@ public class SearchFilterBar extends LinearLayout {
             activeFilters.addView(chip);
         }
 
-        if (filter.pinnedOnly()) {
-            activeFilters.addView(FilterChips.removable(getContext(),
-                    getContext().getString(R.string.filter_pinned_only), () -> {
-                        filter.setPinnedOnly(false);
-                        if (listener != null) listener.onFilterCleared();
-                    }));
-        }
-
         // The sort is shown only when it isn't the default, and it clears back to the default
         // rather than disappearing — there is always *some* ordering.
         if (filter.sort() != NoteFilter.Sort.RECENT) {

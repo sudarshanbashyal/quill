@@ -80,6 +80,10 @@ public class NoteRepository {
             cv.put("created_at", now);
             cv.put("updated_at", now);
             db.insert("notes", null, cv);
+            // The Collections widget counts a collection's notes, so a new one changes a row that
+            // is already on the home screen. Widgets have no periodic refresh (updatePeriodMillis
+            // is 0), so a change that isn't pushed is a change that never arrives.
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
 
             if (onCreated != null) executors.mainThread(onCreated);
         });
@@ -235,6 +239,13 @@ public class NoteRepository {
 
             if (cb != null) executors.mainThread(cb::onSaved);
 
+            // A pinned note's row shows its title and first line, and both can change on any save;
+            // so can the whiteboards a note embeds, which is what decides whether a board counts as
+            // belonging to a locked collection. Before the Wear publish below, which blocks on a
+            // Data Layer round trip — the widgets shouldn't wait behind the watch.
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+
             // After the callback, matching recordReview and syncFromNote: the editor returns at
             // the speed of the database write, not of a Data Layer round trip. A title can change
             // on any save, and the watch's pickers are the only thing that reads this — without
@@ -315,6 +326,14 @@ public class NoteRepository {
                 db.endTransaction();
             }
             if (onDeleted != null) executors.mainThread(onDeleted);
+
+            // Same rule as the watch below, for the same reason: a deleted note must stop being
+            // offered anywhere it was listed. On the home screen that is the pinned row it may
+            // have had, its collection's note count — and its deck, since the cards stay in the
+            // table when a note is trashed (restoring the note restores them) and drop out of the
+            // decks and due-now queries by their note's deleted_at alone.
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
 
             // The watch's pickers are built from this list, and until now only a *save* rebuilt it.
             // A delete therefore left the note on the wrist — offered, tappable, and gone by the
@@ -398,6 +417,12 @@ public class NoteRepository {
 
             if (onDone != null) executors.mainThread(onDone);
 
+            // A move changes both collections' counts, and — moving into a locked collection — can
+            // take a pinned note off the widget entirely. It also deletes the note's flashcards on
+            // the way in, which is the decks list's business.
+            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+
             // A move can change whether the watch is allowed to see this note at all: into a
             // locked collection and its title has to leave the wrist, out of one and it may
             // return. Same rule as the delete above.
@@ -461,10 +486,25 @@ public class NoteRepository {
         });
     }
 
-    /** Synchronous form of {@link #loadPinnedNotes}, for the pinned-notes widget's
-     *  RemoteViewsFactory, which Android already runs off the main thread. */
+    /** Synchronous form of {@link #loadPinnedNotes}, for callers already off the main thread. */
     public List<Note> loadPinnedNotesSync() {
-        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true);
+        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true, false);
+    }
+
+    /**
+     * The pinned notes a home-screen widget is allowed to show — <b>every locked collection is
+     * excluded, open or not</b>, which is stricter than {@link #loadPinnedNotesSync}.
+     *
+     * <p>Same rule, and the same reasoning, as {@code FlashcardRepository.dueProjectionSync} uses
+     * for the watch: in the app the question is "should this appear on a screen the user
+     * authenticated to reach", and an open collection's notes should. A widget has no session and
+     * no way to ask for one, so for it the question is only "is this collection encrypted at
+     * rest". Asking the session instead would make the widget's contents depend on something it
+     * cannot see change — locking a collection deliberately leaves it open in-session, so the
+     * notes would sit on the home screen until the app was next backgrounded.
+     */
+    public List<Note> loadPinnedNotesForWidgetSync() {
+        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true, true);
     }
 
     /** Everything a {@code .quill}/{@code .quillpack} bundle needs to carry for one note. */
@@ -532,6 +572,15 @@ public class NoteRepository {
     }
 
     private List<Note> getAllNotesSync(SQLiteDatabase db, String filter, boolean pinnedOnly) {
+        return getAllNotesSync(db, filter, pinnedOnly, false);
+    }
+
+    /**
+     * @param excludeAllLocked leave out every collection encrypted at rest rather than only the
+     *     ones shut right now — see {@link #loadPinnedNotesForWidgetSync}.
+     */
+    private List<Note> getAllNotesSync(SQLiteDatabase db, String filter, boolean pinnedOnly,
+                                       boolean excludeAllLocked) {
         StringBuilder sql = new StringBuilder(
                 "SELECT n.id, n.collection_id, n.title, n.created_at, n.updated_at, n.deleted_at, n.pinned_at, " +
                         "n.content_blob " +
@@ -548,9 +597,9 @@ public class NoteRepository {
         // a locked collection is the case that makes this the right place: it would otherwise sit
         // at the top of Home, preview and all, having never gone through a collection screen.
         Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
-        Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
-        sql.append(NoteCrypto.hiddenClause(hidden));
-        args.addAll(hidden);
+        Set<String> excluded = excludeAllLocked ? lockedIds : NoteCrypto.hiddenOf(lockedIds);
+        sql.append(NoteCrypto.excludeCollectionsClause(excluded));
+        args.addAll(excluded);
 
         if (pinnedOnly) {
             sql.append(" AND n.pinned_at IS NOT NULL");

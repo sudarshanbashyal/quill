@@ -57,12 +57,16 @@ public final class WearNoteListPublisher {
         List<String> ids = new ArrayList<>();
         List<String> titles = new ArrayList<>();
         try (Cursor c = db.rawQuery(
-                "SELECT id, title, created_at FROM notes "
-                        + "WHERE deleted_at IS NULL "
+                // Aliased n, and it has to be: the exclusion clause qualifies its columns that way,
+                // the same as every other query it is pasted into. Without the alias this compiles
+                // to "no such column: n.collection_id" — and only once a collection has been
+                // locked, since the clause is empty until then.
+                "SELECT n.id, n.title, n.created_at FROM notes n "
+                        + "WHERE n.deleted_at IS NULL "
                         + NoteCrypto.excludeCollectionsClause(locked)
                         // Most recently touched first, so the cap drops the notes furthest from
                         // whatever the user is actually working on.
-                        + "ORDER BY updated_at DESC LIMIT " + NoteListKeys.MAX_NOTES,
+                        + "ORDER BY n.updated_at DESC LIMIT " + NoteListKeys.MAX_NOTES,
                 args.toArray(new String[0]))) {
             while (c.moveToNext()) {
                 ids.add(c.getString(0));

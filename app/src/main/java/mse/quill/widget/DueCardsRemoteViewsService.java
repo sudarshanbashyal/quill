@@ -43,9 +43,9 @@ public class DueCardsRemoteViewsService extends RemoteViewsService {
         @Override public void onDataSetChanged() {
             try {
                 cards = new FlashcardRepository(context)
-                        .loadDueCardsSync(System.currentTimeMillis(), LIMIT);
+                        .loadDueCardsForWidgetSync(System.currentTimeMillis(), LIMIT);
             } catch (RuntimeException e) {
-                Log.e(TAG, "loadDueCardsSync failed, showing an empty list", e);
+                Log.e(TAG, "loadDueCardsForWidgetSync failed, showing an empty list", e);
                 cards = new ArrayList<>();
             }
         }

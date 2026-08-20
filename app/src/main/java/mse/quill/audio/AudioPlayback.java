@@ -2,11 +2,8 @@ package mse.quill.audio;
 
 import android.content.Context;
 import android.content.Intent;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -45,8 +42,8 @@ public final class AudioPlayback {
     private static volatile AudioPlayback instance;
 
     private final Context appContext;
-    private final AudioManager audioManager;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final AudioFocus focus;
     private final List<Listener> listeners = new ArrayList<>();
 
     private MediaPlayer player;
@@ -55,7 +52,6 @@ public final class AudioPlayback {
     private int durationMs;
     private boolean playing;
 
-    private AudioFocusRequest focusRequest;
     private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
         // A call, another app's audio, or an alarm: give way rather than talk over it. Transient
         // ducking is treated as a pause too — a voice memo half-heard under something else is
@@ -77,7 +73,7 @@ public final class AudioPlayback {
 
     private AudioPlayback(Context context) {
         this.appContext = context.getApplicationContext();
-        this.audioManager = (AudioManager) appContext.getSystemService(Context.AUDIO_SERVICE);
+        this.focus = new AudioFocus(appContext, handler);
     }
 
     public static AudioPlayback get(Context context) {
@@ -141,10 +137,7 @@ public final class AudioPlayback {
         release();
         try {
             player = new MediaPlayer();
-            player.setAudioAttributes(new AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build());
+            player.setAudioAttributes(AudioFocus.speechAttributes());
             player.setDataSource(path);
             player.prepare();
             player.setOnCompletionListener(mp -> {
@@ -248,34 +241,11 @@ public final class AudioPlayback {
     // ── Audio focus ────────────────────────────────────────────────────────
 
     private boolean requestFocus() {
-        if (audioManager == null) return true;
-        int result;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .build())
-                    .setOnAudioFocusChangeListener(focusListener, handler)
-                    .build();
-            result = audioManager.requestAudioFocus(focusRequest);
-        } else {
-            result = audioManager.requestAudioFocus(focusListener,
-                    AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-        }
-        return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        return focus.request(focusListener);
     }
 
     private void abandonFocus() {
-        if (audioManager == null) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (focusRequest != null) {
-                audioManager.abandonAudioFocusRequest(focusRequest);
-                focusRequest = null;
-            }
-        } else {
-            audioManager.abandonAudioFocus(focusListener);
-        }
+        focus.abandon(focusListener);
     }
 
     // ── Listeners ──────────────────────────────────────────────────────────

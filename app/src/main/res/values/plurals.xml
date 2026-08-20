@@ -13,4 +13,32 @@
         <item quantity="other">in %1$d hours</item>
     </plurals>
 
+
+    <!-- The first-run report's counts. Pluralised rather than written as "1 collection(s)" for the
+         same reason the hours above are: the number is nearly always one or a handful, so the
+         wrong form would be on screen most of the time. -->
+    <plurals name="welcome_summary_collections">
+        <item quantity="one">%1$d collection</item>
+        <item quantity="other">%1$d collections</item>
+    </plurals>
+
+    <plurals name="welcome_summary_notes">
+        <item quantity="one">%1$d note</item>
+        <item quantity="other">%1$d notes</item>
+    </plurals>
+
+    <plurals name="welcome_summary_flashcards">
+        <item quantity="one">%1$d flashcard</item>
+        <item quantity="other">%1$d flashcards</item>
+    </plurals>
+
+    <plurals name="welcome_summary_quizzes">
+        <item quantity="one">%1$d quiz</item>
+        <item quantity="other">%1$d quizzes</item>
+    </plurals>
+
+    <plurals name="welcome_summary_whiteboards">
+        <item quantity="one">%1$d whiteboard</item>
+        <item quantity="other">%1$d whiteboards</item>
+    </plurals>
 </resources>

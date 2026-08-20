@@ -39,6 +39,17 @@ public final class WidgetUpdater {
         manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_whiteboards_grid);
     }
 
+    /**
+     * Every widget at once, for a change that isn't one list's business — a collection's lock
+     * being turned on or off touches notes, boards and decks together, and so does the session
+     * ending when the app leaves the screen.
+     */
+    public static void notifyAllChanged(Context context) {
+        notifyCollectionsChanged(context);
+        notifyWhiteboardsChanged(context);
+        notifyFlashcardsChanged(context);
+    }
+
     public static void notifyFlashcardsChanged(Context context) {
         if (context == null) return;
         AppWidgetManager manager = AppWidgetManager.getInstance(context);

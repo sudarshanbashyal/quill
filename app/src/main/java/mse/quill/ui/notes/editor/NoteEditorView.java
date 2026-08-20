@@ -13,8 +13,8 @@ import androidx.core.view.OneShotPreDrawListener;
 import java.util.ArrayList;
 import java.util.List;
 
+import mse.quill.audio.ReadPlaylist;
 import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.HeadingMarker;
 import mse.quill.ui.notes.editor.model.ImageSegment;
 import mse.quill.ui.notes.editor.model.NoteSegment;
 import mse.quill.ui.notes.editor.model.QaSegment;
@@ -338,32 +338,30 @@ public class NoteEditorView extends LinearLayout implements BaseSegmentView.Segm
         }
     }
 
-    /** Concatenates every text segment's plain text, in reading order — used by read-aloud,
-     *  which only cares about the note's words, not images/audio embeds or their formatting.
-     *  Heading markers are stripped: they're invisible on screen, so they must not reach TTS. */
-    public String getPlainText() {
-        StringBuilder sb = new StringBuilder();
+    /**
+     * The note as read-aloud hears it: the words to speak and the recordings to play, in the order
+     * they appear on screen. Images and whiteboards have nothing to say and don't appear.
+     *
+     * <p>Built from the views rather than from {@link #exportSegments()} so it costs no copies —
+     * it is asked for on every keystroke, to decide whether a reading still has anything left to
+     * read.
+     */
+    public ReadPlaylist buildReadPlaylist() {
+        ReadPlaylist.Builder playlist = ReadPlaylist.builder();
         for (BaseSegmentView view : segments) {
             if (view instanceof TextSegmentView) {
-                appendSpoken(sb, ((TextSegmentView) view).getText());
+                playlist.addText(((TextSegmentView) view).getText());
             } else if (view instanceof QASegmentView) {
                 // Read a Q&A as the pair it is, so listening to a note doesn't silently skip it.
                 QASegmentView qa = (QASegmentView) view;
-                appendSpoken(sb, qa.getQuestion());
-                appendSpoken(sb, qa.getAnswer());
+                playlist.addText(qa.getQuestion());
+                playlist.addText(qa.getAnswer());
+            } else if (view instanceof AudioSegmentView) {
+                AudioSegmentView audio = (AudioSegmentView) view;
+                playlist.addClip(audio.getFilePath(), audio.getDurationMs());
             }
         }
-        return sb.toString();
-    }
-
-    private static void appendSpoken(StringBuilder sb, CharSequence text) {
-        if (text == null || text.length() == 0) return;
-        if (sb.length() > 0) sb.append(". ");
-        String[] lines = text.toString().split("\n", -1);
-        for (int i = 0; i < lines.length; i++) {
-            if (i > 0) sb.append('\n');
-            sb.append(HeadingMarker.strip(lines[i]));
-        }
+        return playlist.build();
     }
 
     // ── SegmentCallback ────────────────────────────────────────────────────

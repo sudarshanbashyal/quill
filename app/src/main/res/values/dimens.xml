@@ -217,4 +217,9 @@
     <dimen name="formatting_icon_size">20dp</dimen>
     <dimen name="formatting_dot_size">5dp</dimen>
     <dimen name="formatting_dot_margin_top">3dp</dimen>
+
+    <!-- Welcome screen. The icon size is the settings row's, so the two lists of "here is a thing
+         Quill does" look like the same list. -->
+    <dimen name="welcome_row_icon">24dp</dimen>
+    <dimen name="welcome_logo_size">44sp</dimen>
 </resources>

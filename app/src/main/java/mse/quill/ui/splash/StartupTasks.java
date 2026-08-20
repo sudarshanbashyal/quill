@@ -3,26 +3,31 @@ package mse.quill.ui.splash;
 import android.content.Context;
 
 import mse.quill.data.AppExecutors;
+import mse.quill.onboarding.Onboarding;
 
 /**
  * The work the app wants finished before its first real screen appears — the thing the splash is
  * actually waiting on.
  *
- * <p>Right now there is none, so this completes as soon as it is asked to and the splash is
- * governed purely by {@code SplashActivity.MINIMUM_DISPLAY_MS}. The indirection is here so that
- * adding a check later is a change to <em>this</em> file only: put the work inside the {@code
- * diskIO} block below (that is the same single background thread every repository uses, so a
- * warm-up here cannot race a query the first screen makes), and the splash will hold until it
- * finishes — the logo keeps animating throughout, because none of this touches the main thread.
+ * <p>Today that is one question — where to send the user, {@link mse.quill.onboarding.Onboarding}
+ * being the thing that answers it — asked here rather than by whichever Activity comes next
+ * because it reads the database, and a first frame that has to wait on a disk read is a first
+ * frame that stutters. The splash is already waiting, and its logo keeps animating throughout:
+ * none of this touches the main thread.
  *
- * <p>Candidates when they arrive: opening the Room database, running a migration, priming the
- * due-flashcard counts the home screen asks for, or resolving where to send the user first.
+ * <p>Anything else that has to finish before the first real screen belongs in the same {@code
+ * diskIO} block below. It is the single background thread every repository uses, so work put there
+ * cannot race a query the first screen makes.
  */
 public final class StartupTasks {
 
     /** Notified on the main thread once startup work is done. */
     public interface Callback {
-        void onStartupFinished();
+        /**
+         * @param showWelcome true if this looks like a first install and the welcome screen is due
+         *                    — see {@link mse.quill.onboarding.Onboarding#shouldShowWelcome}.
+         */
+        void onStartupFinished(boolean showWelcome);
     }
 
     private StartupTasks() {}
@@ -36,8 +41,8 @@ public final class StartupTasks {
     public static void run(Context context, Callback callback) {
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
-            // Startup work goes here. Nothing to do yet.
-            executors.mainThread(callback::onStartupFinished);
+            boolean showWelcome = Onboarding.shouldShowWelcome(context);
+            executors.mainThread(() -> callback.onStartupFinished(showWelcome));
         });
     }
 }

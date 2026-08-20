@@ -50,6 +50,13 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private static final int TYPE_WHITEBOARD_CARD = 4;
 
     public interface Listener {
+        /** A section header was tapped — every one of them offers to add to its own section, which
+         *  is the only thing a header could usefully do and the shortest route to a first
+         *  collection when the FAB is the only alternative. */
+        void onCreateCollectionRequested();
+        void onCreateNoteRequested();
+        void onCreateWhiteboardRequested();
+
         void onCollectionClicked(String collectionId, String displayName);
         void onCollectionLongPressed(Collection collection);
         void onNoteClicked(Note note);
@@ -95,17 +102,19 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private static final int POS_COLLECTIONS_HEADER = 0;
 
-    private int collectionsCount() {
-        return collections.size();
+    /** An empty section still occupies one row — the empty-state message. Collections were the
+     *  one section without this, so a Quill with no collections showed a header with nothing under
+     *  it, which reads as a section that failed to load rather than one waiting to be filled. */
+    private int collectionsSectionCount() {
+        return collections.isEmpty() ? 1 : collections.size();
     }
 
     private int collectionsStart() { return POS_COLLECTIONS_HEADER + 1; }
 
-    private int notesHeaderPos() { return collectionsStart() + collectionsCount(); }
+    private int notesHeaderPos() { return collectionsStart() + collectionsSectionCount(); }
 
     private int notesStart() { return notesHeaderPos() + 1; }
 
-    /** An empty section still occupies one row — the empty-state message. */
     private int notesSectionCount() { return notes.isEmpty() ? 1 : notes.size(); }
 
     private int whiteboardsHeaderPos() { return notesStart() + notesSectionCount(); }
@@ -126,7 +135,9 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 || position == whiteboardsHeaderPos()) {
             return TYPE_SECTION_HEADER;
         }
-        if (position < notesHeaderPos()) return TYPE_COLLECTION_CARD;
+        if (position < notesHeaderPos()) {
+            return collections.isEmpty() ? TYPE_EMPTY : TYPE_COLLECTION_CARD;
+        }
         if (position < whiteboardsHeaderPos()) return notes.isEmpty() ? TYPE_EMPTY : TYPE_NOTE;
         return whiteboards.isEmpty() ? TYPE_EMPTY : TYPE_WHITEBOARD_CARD;
     }
@@ -158,9 +169,14 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         params.setMargins(
                 NoteRowView.dimen(context, R.dimen.list_item_gutter),
                 NoteRowView.dimen(context, R.dimen.section_header_margin_top),
-                0,
+                // Matching end margin, which the leading icon never needed: the trailing plus
+                // would otherwise sit hard against the edge of the screen.
+                NoteRowView.dimen(context, R.dimen.list_item_gutter),
                 NoteRowView.dimen(context, R.dimen.section_header_margin_bottom));
         header.setLayoutParams(params);
+        header.setBackground(rippleBackground(context));
+        header.setPadding(0, NoteRowView.dimen(context, R.dimen.spacing_xs),
+                0, NoteRowView.dimen(context, R.dimen.spacing_xs));
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setCompoundDrawablePadding(NoteRowView.dimen(context, R.dimen.spacing_sm));
         header.setCompoundDrawableTintList(
@@ -169,6 +185,15 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         header.setTypeface(header.getTypeface(), android.graphics.Typeface.BOLD);
         return header;
+    }
+
+    /** The platform's own selectable-item ripple, so a tappable header feels like every other
+     *  tappable row rather than like text that happens to respond. */
+    private static android.graphics.drawable.Drawable rippleBackground(Context context) {
+        TypedValue outValue = new TypedValue();
+        context.getTheme().resolveAttribute(
+                android.R.attr.selectableItemBackground, outValue, true);
+        return androidx.core.content.ContextCompat.getDrawable(context, outValue.resourceId);
     }
 
     private static TextView buildEmptyMessage(Context context) {
@@ -187,7 +212,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         int type = getItemViewType(position);
         if (type == TYPE_SECTION_HEADER) {
             ((SectionHeaderViewHolder) holder).bind(
-                    sectionTitleRes(position), sectionIconRes(position));
+                    sectionTitleRes(position), sectionIconRes(position), createActionFor(position));
         } else if (type == TYPE_COLLECTION_CARD) {
             int index = position - collectionsStart();
             bindCollectionCard((CollectionCardViewHolder) holder, index);
@@ -195,12 +220,19 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             Whiteboard whiteboard = whiteboards.get(position - whiteboardsStart());
             ((WhiteboardCardViewHolder) holder).bind(whiteboard, listener);
         } else if (type == TYPE_EMPTY) {
-            ((EmptyViewHolder) holder).bind(
-                    position < whiteboardsHeaderPos() ? R.string.empty_notes : R.string.empty_whiteboards);
+            ((EmptyViewHolder) holder).bind(emptyMessageRes(position));
         } else {
             Note note = notes.get(position - notesStart());
             ((NoteRowViewHolder) holder).bind(note, listener);
         }
+    }
+
+    /** Which section's empty row this is — the same three-way the header resources use, since an
+     *  empty row only ever appears directly under its own header. */
+    private int emptyMessageRes(int position) {
+        if (position < notesHeaderPos()) return R.string.empty_collections;
+        if (position < whiteboardsHeaderPos()) return R.string.empty_notes;
+        return R.string.empty_whiteboards;
     }
 
     private void bindCollectionCard(CollectionCardViewHolder holder, int index) {
@@ -211,6 +243,13 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (position == POS_COLLECTIONS_HEADER) return R.string.section_collections;
         if (position == notesHeaderPos()) return R.string.section_notes;
         return R.string.section_whiteboards;
+    }
+
+    /** What tapping this header does: add to the section it names. */
+    private Runnable createActionFor(int position) {
+        if (position == POS_COLLECTIONS_HEADER) return listener::onCreateCollectionRequested;
+        if (position == notesHeaderPos()) return listener::onCreateNoteRequested;
+        return listener::onCreateWhiteboardRequested;
     }
 
     /** Paired with {@link #sectionTitleRes}; every section header carries its icon. */
@@ -225,12 +264,17 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     static class SectionHeaderViewHolder extends RecyclerView.ViewHolder {
         SectionHeaderViewHolder(@NonNull View itemView) { super(itemView); }
 
-        void bind(int titleRes, int iconRes) {
+        void bind(int titleRes, int iconRes, Runnable onCreate) {
             TextView header = (TextView) itemView;
             header.setText(titleRes);
             // The icon resources are size-pinning layer-lists, so intrinsic bounds are already the
-            // section-header icon size — see drawable/ic_section_note.xml.
-            header.setCompoundDrawablesRelativeWithIntrinsicBounds(iconRes, 0, 0, 0);
+            // section-header icon size — see drawable/ic_section_note.xml. The trailing plus is
+            // the same trick, and it is there because a header that does something has to look
+            // like it does: the row is tappable across its full width, but nothing else on it
+            // would say so.
+            header.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                    iconRes, 0, R.drawable.ic_section_add, 0);
+            header.setOnClickListener(v -> onCreate.run());
         }
     }
 

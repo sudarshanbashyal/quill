@@ -65,48 +65,21 @@
                 android:src="@drawable/ic_menu_share"
                 android:tint="@color/text_primary" />
 
-            <LinearLayout
-                android:id="@+id/split_button"
+            <!-- One control, not the old split button. Its two halves ("+" and "▾") were two
+                 different ways of adding a note dressed as one widget, and which half did which
+                 was guessable at best — the caret in particular looked like it opened a menu of
+                 the "+" rather than a second action of its own. Both now live behind this, in a
+                 chooser that names them. -->
+            <ImageButton
+                android:id="@+id/btn_add_note"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/spacing_sm"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_fab_option">
-
-                <TextView
-                    android:id="@+id/btn_add_note"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:paddingHorizontal="@dimen/spacing_md"
-                    android:paddingVertical="@dimen/spacing_sm"
-                    android:text="+"
-                    android:textColor="@color/text_on_brand"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <View
-                    android:layout_width="1dp"
-                    android:layout_height="match_parent"
-                    android:layout_marginVertical="@dimen/spacing_xs"
-                    android:background="@color/text_on_brand"
-                    android:alpha="0.3" />
-
-                <TextView
-                    android:id="@+id/btn_search_notes"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:paddingHorizontal="@dimen/spacing_md"
-                    android:paddingVertical="@dimen/spacing_sm"
-                    android:text="▾"
-                    android:textColor="@color/text_on_brand"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-            </LinearLayout>
+                android:layout_marginStart="@dimen/spacing_xs"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/dialog_add_note_title"
+                android:padding="@dimen/spacing_xs"
+                android:src="@drawable/ic_add"
+                android:tint="@color/text_primary" />
 
         </LinearLayout>
 
@@ -143,16 +116,35 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <TextView
+    <!-- An empty collection is the one screen in Quill with nothing on it at all, and the "+"
+         that fills it is a small icon in the corner. The message keeps its place; the button under
+         it is the thing to press, and it opens the same chooser. -->
+    <LinearLayout
         android:id="@+id/empty_notes"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/empty_notes_in_collection"
-        android:textColor="@color/text_secondary"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
         android:visibility="gone"
         app:layout_constraintTop_toBottomOf="@id/search_bar"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/empty_notes_in_collection"
+            android:textColor="@color/text_secondary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/empty_add_note"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:text="@string/action_add_note_to_collection"
+            app:icon="@drawable/ic_add" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

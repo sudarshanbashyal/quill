@@ -40,7 +40,7 @@ public final class AddExistingNotesDialog {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(pad, pad, pad, pad);
 
-        TextInputLayout searchField = TextFieldUtils.outlinedField(context, R.string.search_hint);
+        TextInputLayout searchField = TextFieldUtils.outlinedField(context, R.string.search_hint_notes);
         content.addView(searchField);
 
         LinearLayout checklistContainer = new LinearLayout(context);
