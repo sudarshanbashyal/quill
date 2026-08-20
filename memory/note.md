@@ -1625,3 +1625,155 @@ emulator, which is the user's credential, not something automatable. So the deco
   directly.
 - `aapt` strips leading/trailing whitespace from a string resource unless the value is quoted —
   `<string name="count_separator">" · "</string>`.
+
+## Home-screen App Widgets
+
+**Status: built 2026-08-14, extended 2026-08-15.** Three Android launcher widgets,
+`mse.quill.widget` package — Quill's first use of `AppWidgetProvider`/`RemoteViews` (the
+"Epic I home-screen widget" mentioned in [requirements.md](requirements.md)'s
+flashcard-reminders section was a forward reference to this; Epic I itself is unrelated
+whiteboard work — see that file for the correction).
+
+- **Collections widget** (`CollectionsWidgetProvider`) — pinned notes (fixed-height block,
+  since `NoteRepository.MAX_PINNED_NOTES` caps it at 3) stacked above a scrollable collections
+  list. Two `ListView`s, each needing its **own** `RemoteViewsService`
+  (`PinnedNotesRemoteViewsService`, `CollectionsRemoteViewsService`) — one service can only
+  feed one collection view. Locked collections (`Collection.biometricLocked`) are filtered out
+  before rendering: a widget has no way to gate behind `BiometricPrompt`, so a locked
+  collection's name/count would otherwise leak onto the home screen unlocked.
+- **Whiteboards widget** (`WhiteboardsWidgetProvider` / `WhiteboardsRemoteViewsService`) — a
+  `GridView` of recent boards with thumbnails.
+- **Flashcards widget** (`FlashcardsWidgetProvider`, added 2026-08-15) — due-now cards (front
+  text only, `DueCardsRemoteViewsService`) stacked above a deck list
+  (`FlashcardDecksRemoteViewsService`), weighted **3:2 (60/40)** rather than the Collections
+  widget's fixed-height-for-the-short-section approach — due cards are the reason to open this
+  widget, so they get the larger, still-proportional share. `FlashcardRepository` gained
+  `loadDecksSync()` (sync twin of the existing `loadDecks`) and a new
+  `loadDueCardsSync(now, limit)` — no prior query returned individual due cards, only
+  `countDueSync`'s counts. Tapping either section opens the tapped note's flashcard review
+  screen via a new `EXTRA_OPEN_FLASHCARD_NOTE_ID` — deliberately separate from
+  `EXTRA_OPEN_NOTE_ID`, which opens the note *editor*, not the review screen.
+
+**All three widgets carry `android:previewLayout`** (added 2026-08-15, API 31+) pointing at
+their own root layout, so the widget picker renders the real layout instead of a generic icon.
+`android:previewImage="@mipmap/ic_launcher"` stays as the fallback below API 31 — there's no
+screenshot asset in the repo to use instead.
+
+**Reused rather than rebuilt**: each repository already had (or gained) a synchronous
+`load*Sync()` twin of its async method — `NoteRepository.loadPinnedNotesSync`,
+`CollectionRepository.loadCollectionsSync`, `WhiteboardRepository.loadWhiteboardsSync`,
+`FlashcardRepository.loadDecksSync`/`loadDueCardsSync` — safe to call from a
+`RemoteViewsFactory`, since Android already runs those calls off the main thread.
+`WidgetUpdater.notifyCollectionsChanged`/`notifyWhiteboardsChanged`/`notifyFlashcardsChanged`
+are called from the existing pin/unpin, collection/whiteboard CRUD, and
+`recordReview`/`syncFromNote`/`deleteForNote` methods to push live refreshes
+(`AppWidgetManager.notifyAppWidgetViewDataChanged`) rather than polling on a timer.
+
+**Thumbnails needed a second cache.** `WhiteboardThumbnails` renders asynchronously through a
+live `WhiteboardView` on the main thread and only ever hands the bitmap back via callback —
+there is no synchronous path, but `RemoteViewsFactory.getViewAt()` must return synchronously
+from a background binder thread with no view hierarchy to render through. `WidgetThumbnailCache`
+mirrors every render `WhiteboardThumbnails` produces to a PNG under
+`getCacheDir()/widget_thumbs/`, and the widget factory reads that file synchronously
+(`BitmapFactory.decodeFile`), falling back to a placeholder for a board that's never been opened
+in-app since install.
+
+**Deep-linking a tap.** `MainActivity` gained the `EXTRA_OPEN_NOTE_ID`/`_COLLECTION_ID`/
+`_WHITEBOARD_ID` extras (same shape as the existing `EXTRA_OPEN_FLASHCARDS` reminder-tap
+pattern) and a `handleWidgetIntent`/`runWhenNavHostReady` pair. Each row's `RemoteViews` carries
+a `fillInIntent` with the relevant extra; the provider sets one `PendingIntent` **template**
+per collection view (`setPendingIntentTemplate`) rather than one per row.
+
+**Three non-obvious bugs found the hard way, worth not rediscovering:**
+1. **A plain `<View>` isn't in RemoteViews' inflatable-class allowlist.** Only specific widget
+   classes (`TextView`, `ListView`, `FrameLayout`, `LinearLayout`, …) are inflatable inside a
+   home-screen widget; a bare `android.view.View` (used as a divider) throws at inflation and
+   the whole widget falls back to Android's "Problem loading widget" placeholder. Fixed by
+   using a 1dp-tall `TextView` with a background color instead.
+2. **The `PendingIntent` template needs `FLAG_MUTABLE`, not `FLAG_IMMUTABLE`.** The
+   template + per-row `fillInIntent` mechanism requires the system to merge each row's extras
+   into the template at click time; an immutable template silently refuses that merge, so every
+   row still fires the same bare intent with none of its extras — the app opens, but always
+   lands wherever `MainActivity` was left, never on the tapped item.
+3. **Waiting for `HomeFragment` to resume isn't enough on its own** — nothing was actually
+   driving the nav host back to Home if the user was already elsewhere in the app, so the wait
+   callback registered and then hung forever. `runWhenNavHostReady` now forces
+   `popBackStack(R.id.homeFragment, false)` first, the same call `handleViewIntent` already
+   used for the identical reason on a shared-file import.
+
+**No on-device testing tooling in this environment** — `adb` isn't on PATH here, so every fix
+in this feature was verified by code review + a clean `assembleDebug`/`compileDebugJavaWithJavac`
+build, then confirmed against real device behavior by the user afterward. If `adb` becomes
+available, prefer it for anything widget-related; RemoteViews failures in particular
+(the allowlist crash above) are much faster to diagnose from `logcat` than from symptom
+descriptions alone.
+
+### Widgets vs. collection locking — a real bug chain, found 2026-08-16
+
+Locking a collection with pinned notes and the widget on the home screen surfaced a chain of
+four distinct bugs, three of them **pre-existing and independent of the widget feature** — the
+widget was just the first thing to reach these code paths from outside the normal in-app flow.
+Fixed in `95859d5` plus one follow-up (`PinnedNotesRemoteViewsService`, still uncommitted as of
+this entry). Worth reading in full before touching lock/widget code again:
+
+1. **`RemoteViewsFactory` runs on a binder thread inside this app's own process.** Unlike almost
+   everywhere else in a widget, an uncaught exception there crashes the *whole app*, not just the
+   widget's rendering. None of the six factories had any exception guarding. All now catch
+   `RuntimeException` in `onDataSetChanged`/`getViewAt`/`getItemId` and fall back to an empty
+   list / blank row rather than propagate. Didn't turn out to be the actual crash cause here, but
+   is a real gap that would have bitten some other data edge case eventually — worth keeping for
+   any future `RemoteViewsFactory`.
+2. **`CollectionLockRepository.lock()`/`unlock()`/`discardUnreadable()` never told the widgets
+   anything changed.** The widget kept showing whatever `RemoteViews` rows it built *before* the
+   lock, including the collection and its pinned notes, until something else happened to trigger
+   a refresh. Fixed by adding `WidgetUpdater.notifyCollectionsChanged`/`notifyFlashcardsChanged`
+   calls to all three methods (flashcards too — `writeNotes(locked=true)` deletes the collection's
+   flashcards, so the flashcards widget goes stale the same way).
+3. **The actual app-crashing bug, and it predates the widget entirely**:
+   `NoteRepository.createNote()` writes a new note's title as **plaintext unconditionally**, even
+   when the target collection is locked — it only ever encrypts on the *next* `saveNote()` call,
+   never on creation. The very next autosave then tries to `Base64.decode()` that plaintext title
+   as if it were ciphertext (in `saveNote`'s "did anything actually change" check), which throws
+   `IllegalArgumentException` — a `RuntimeException` that
+   `NoteCrypto.decryptTitleOrNull`/`decryptBodyOrNull` didn't catch (only the checked
+   `GeneralSecurityException`), despite both methods' entire contract being "never throw, return
+   null instead". Uncaught on the disk-IO thread → whole process dies, repeatedly, on every
+   subsequent launch too (nothing about the broken state self-heals on restart). Fixed by
+   widening both catches to `GeneralSecurityException | RuntimeException`. **Not fully fixed**:
+   `createNote` itself still writes plaintext into a locked collection for the brief window
+   before the follow-up `saveNote` call encrypts it — low real exposure (same disk-IO executor,
+   nothing reads between the two queued calls) but worth closing properly if this file is touched
+   again, by having `createNote` encrypt up front when `NoteCrypto.isLocked` is true.
+4. **`NoteEditorFragment.loadExistingNote()` couldn't tell "note doesn't exist" from "note exists
+   but is currently locked and unreadable".** Both came back as `note == null` from
+   `NoteRepository.loadNote`, and the fragment treated either case as "blank, start typing" —
+   marking itself `contentLoaded = true` regardless. The next autosave then saw an empty title
+   and no segments and ran the **delete-empty-note-on-exit** path from `autoSave()` — on a real,
+   still-encrypted note, not an actually-empty one. Fixed narrowly: `loadExistingNote()` only
+   ever runs for a real pre-existing `note_id` (a genuinely new note skips it, see
+   `onViewCreated`), so a `null` result there is now unambiguous — show
+   `R.string.note_unavailable_locked` and pop back immediately, `contentLoaded` never set, so
+   `autoSave()`'s first line (`if (!contentLoaded) return;`) refuses to run at all for that
+   fragment instance.
+5. **Pinned notes ≠ collections for lock visibility, and shouldn't have been.**
+   `CollectionsRemoteViewsService` already excluded every `biometricLocked` collection
+   unconditionally (session state or not) — that reasoning was written down explicitly in this
+   file already. `PinnedNotesRemoteViewsService`, though, just called
+   `NoteRepository.loadPinnedNotesSync()` as-is, which hides a locked collection's notes only if
+   the collection *isn't unlocked this session* (`NoteCrypto.hiddenOf` → `CollectionLock
+   .isUnlocked`) — correct for an in-app screen the user is actively looking at, wrong for a
+   widget that can't represent "I already authenticated" at all. And `lock()` itself calls
+   `CollectionLock.markUnlocked` right after locking (so the user isn't immediately re-prompted)
+   — meaning the pinned note stayed visible in the widget for as long as the app session
+   considered the collection open, i.e. until the app was backgrounded. Fixed by having the
+   factory cross-check each pinned note's `collectionId` against `CollectionRepository`'s
+   `biometricLocked` flag directly and drop it if locked, mirroring the collections list's own
+   session-independent filter. `FlashcardRepository.dueProjectionSync` (the Wear OS watch
+   projection, see below) already got this right from the start — worth pattern-matching next
+   time rather than rediscovering it.
+
+**Debugging note**: bugs 3 and 4 were found by tracing the actual code paths (`autoSave`'s
+delete-on-empty branch, `NoteRepository.createNote`'s plaintext write, `NoteCrypto`'s narrow
+catch clauses) after the user's symptom reports, not from a stack trace — `adb` wasn't available
+in this environment for most of the session. `adb logcat -d *:E > crash.txt`, then search for
+`FATAL EXCEPTION`, is the fast path if this happens again and a device is reachable.

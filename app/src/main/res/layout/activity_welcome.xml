@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The first thing a new Quill shows. Two panes in one screen rather than two screens: the report
+     that follows "start with sample content" is the answer to the question this screen just asked,
+     and pushing an Activity for it would put a back gesture between the two halves of one thought.
+
+     The actions live outside the ScrollView so they stay reachable on a short screen — the feature
+     list scrolls, the choice never moves. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/welcome_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/app_background"
+    android:orientation="vertical">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="@dimen/spacing_lg"
+            android:paddingTop="@dimen/spacing_lg">
+
+            <!-- Pane one: what Quill is, and the choice. -->
+            <LinearLayout
+                android:id="@+id/welcome_pane"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- The same mark the splash was animating a moment ago, so the two screens read
+                     as one arrival rather than as an app that starts twice. -->
+                <mse.quill.ui.splash.QuillLogoView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:contentDescription="@string/app_name"
+                    android:textColor="@color/brand_ink"
+                    android:textSize="@dimen/welcome_logo_size" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:text="@string/welcome_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:text="@string/welcome_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="15sp" />
+
+                <!-- Filled in by WelcomeActivity from view_welcome_row.xml. -->
+                <LinearLayout
+                    android:id="@+id/welcome_features"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:orientation="vertical" />
+
+            </LinearLayout>
+
+            <!-- Pane two: what was created. Gone until there is something to report. -->
+            <LinearLayout
+                android:id="@+id/welcome_summary_pane"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:text="@string/welcome_done_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:text="@string/welcome_done_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="15sp" />
+
+                <LinearLayout
+                    android:id="@+id/welcome_summary_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:orientation="vertical" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/welcome_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/spacing_lg"
+        android:paddingTop="@dimen/spacing_md"
+        android:paddingBottom="@dimen/spacing_lg">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/welcome_sample"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/welcome_action_sample" />
+
+        <!-- A text button, not a second filled one: skipping is a perfectly good answer, but it is
+             the one that leaves the new user with an empty app and nothing to look at. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/welcome_skip"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:text="@string/welcome_action_skip" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/welcome_summary_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/spacing_lg"
+        android:paddingTop="@dimen/spacing_md"
+        android:paddingBottom="@dimen/spacing_lg"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/welcome_start"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/welcome_done_action" />
+
+    </LinearLayout>
+
+</LinearLayout>

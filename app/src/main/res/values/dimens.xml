@@ -86,7 +86,7 @@
     <!-- Pinned note cards (PinnedNoteCardView). The height is fixed rather than wrapped: a card's
          title runs to one or two lines and its tag row may be absent entirely, and letting that
          drive the height left the row of cards visibly ragged. -->
-    <dimen name="pinned_card_width">164dp</dimen>
+    <dimen name="pinned_card_width">140dp</dimen>
     <!-- Preview strip on a Home whiteboard card. Roughly the 159x97 proportion the Figma
          HomePage_whiteboard frame uses, against this grid's narrower card. -->
     <dimen name="whiteboard_thumbnail_height">96dp</dimen>
@@ -95,7 +95,7 @@
     <dimen name="note_whiteboard_preview_height">160dp</dimen>
     <!-- Row thumbnail in the whiteboard picker: enough to recognise a diagram at a glance. -->
     <dimen name="whiteboard_picker_preview_size">56dp</dimen>
-    <dimen name="pinned_card_height">148dp</dimen>
+    <dimen name="pinned_card_height">108dp</dimen>
     <dimen name="pinned_card_gap">12dp</dimen>
 
     <!-- Home FAB expanding menu -->
@@ -217,4 +217,9 @@
     <dimen name="formatting_icon_size">20dp</dimen>
     <dimen name="formatting_dot_size">5dp</dimen>
     <dimen name="formatting_dot_margin_top">3dp</dimen>
+
+    <!-- Welcome screen. The icon size is the settings row's, so the two lists of "here is a thing
+         Quill does" look like the same list. -->
+    <dimen name="welcome_row_icon">24dp</dimen>
+    <dimen name="welcome_logo_size">44sp</dimen>
 </resources>

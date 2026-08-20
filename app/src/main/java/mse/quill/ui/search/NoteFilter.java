@@ -41,7 +41,6 @@ public final class NoteFilter {
     private String query = "";
     private Sort sort = Sort.RECENT;
     private final Set<String> tagIds = new HashSet<>();
-    private boolean pinnedOnly;
 
     // ── State ──────────────────────────────────────────────────────────────
 
@@ -65,29 +64,30 @@ public final class NoteFilter {
 
     public void removeTag(String tagId) { tagIds.remove(tagId); }
 
-    public boolean pinnedOnly() { return pinnedOnly; }
-
-    public void setPinnedOnly(boolean pinnedOnly) { this.pinnedOnly = pinnedOnly; }
-
     /** Whether anything other than the default ordering is narrowing the list — which is what
      *  decides whether the bar shows its chip row at all. */
     public boolean isActive() {
-        return !tagIds.isEmpty() || pinnedOnly || sort != Sort.RECENT;
+        return !tagIds.isEmpty() || sort != Sort.RECENT;
     }
 
     public void clear() {
         tagIds.clear();
-        pinnedOnly = false;
         sort = Sort.RECENT;
     }
 
     // ── Applying ───────────────────────────────────────────────────────────
 
-    /** Notes matching the query, the selected tags and the pinned switch, in the chosen order. */
+    /**
+     * Notes matching the query and the selected tags, in the chosen order.
+     *
+     * <p>There was a "pinned only" switch here too. It was dropped because pinning is capped at
+     * {@code NoteRepository.MAX_PINNED_NOTES} — three — and those three already have a band of
+     * their own at the top of Home. A filter that narrows a list to something permanently on
+     * screen a few centimetres above it is a control with nothing to do.
+     */
     public List<Note> apply(List<Note> notes) {
         List<Note> result = new ArrayList<>();
         for (Note note : notes) {
-            if (pinnedOnly && note.pinnedAt == null) continue;
             if (!matchesTags(note)) continue;
             if (!matchesQuery(note)) continue;
             result.add(note);
@@ -99,9 +99,8 @@ public final class NoteFilter {
     /**
      * Collections matching the query, in the chosen order.
      *
-     * <p>Tags and the pinned switch are deliberately ignored: they are properties of a note, and a
-     * collection that vanished because none of its notes carried a tag would look like it had been
-     * deleted. Sorting still applies, so the two lists don't disagree about what "oldest" means.
+     * <p>Tags are deliberately ignored: they are a property of a note, and a collection that
+     * vanished because none of its notes carried a tag would look like it had been deleted. Sorting still applies, so the two lists don't disagree about what "oldest" means.
      */
     public List<Collection> applyToCollections(List<Collection> collections) {
         List<Collection> result = new ArrayList<>();
@@ -115,8 +114,8 @@ public final class NoteFilter {
     /**
      * Whiteboards matching the query, in the chosen order.
      *
-     * <p>Tags and the pinned switch are ignored for the same reason collections ignore them: a
-     * board can carry neither, so filtering by one would empty the section rather than narrow it.
+     * <p>Tags are ignored for the same reason collections ignore them: a board cannot carry one,
+     * so filtering by tag would empty the section rather than narrow it.
      *
      * @param titleOf resolves a board's displayed name — boards are often untitled, and the
      *                fallback name is built from a Context this class deliberately doesn't hold.

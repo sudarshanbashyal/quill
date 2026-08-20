@@ -44,6 +44,8 @@ import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
 import mse.quill.ui.whiteboard.WhiteboardFragment;
+import mse.quill.collab.CollabPermissions;
+import mse.quill.collab.SessionScanner;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.WindowInsetsUtils;
@@ -121,6 +123,12 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         collectionImporter = new mse.quill.data.CollectionImporter(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
+            @Override public void onCreateCollectionRequested() { createCollection(); }
+
+            @Override public void onCreateNoteRequested() { createNote(); }
+
+            @Override public void onCreateWhiteboardRequested() { createWhiteboard(); }
+
             @Override public void onCollectionClicked(String collectionId, String displayName) {
                 // Gated here rather than on the collection screen itself: opening the screen and
                 // then covering it means the destination has already queried its notes, and a
@@ -222,14 +230,12 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
         fabOptionNote.setOnClickListener(v -> {
             collapseFabOptions(fabOptions, sweepDistance);
-            NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment);
+            createNote();
         });
 
         fabOptionCollection.setOnClickListener(v -> {
             collapseFabOptions(fabOptions, sweepDistance);
-            CollectionDialogs.showCreateDialog(requireContext(), name ->
-                    collectionRepository.createCollection(
-                            name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
+            createCollection();
         });
 
         View fabOptionImport = view.findViewById(R.id.fab_option_import);
@@ -247,13 +253,114 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         // backs out without drawing anything.
         fabOptionWhiteboard.setOnClickListener(v -> {
             collapseFabOptions(fabOptions, sweepDistance);
-            // Straight to the canvas, untitled — the board is named from its own toolbar the way a
-            // note is named in its editor. Asking for a name before there is anything to name is
-            // the wrong order, and an empty dialog field was the common answer anyway.
-            whiteboardRepository.createWhiteboard(null, null,
-                    mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
-                    whiteboardId -> openWhiteboard(whiteboardId, null));
+            createWhiteboard();
         });
+
+        view.findViewById(R.id.fab_option_join).setOnClickListener(v -> {
+            collapseFabOptions(fabOptions, sweepDistance);
+            joinWhiteboardSession();
+        });
+    }
+
+    // ── Joining someone else's whiteboard ────────────────────────────────
+
+    /** Set while the permission prompt is up, so a grant can carry on where it left off. */
+    private final ActivityResultLauncher<String[]> joinPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
+                    result -> {
+                        boolean granted = !result.containsValue(false);
+                        if (granted) {
+                            scanAndJoin();
+                        } else {
+                            Toast.makeText(requireContext(), R.string.collab_permission_denied,
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    });
+
+    /**
+     * Scans a host's code and opens a board already joined to their session.
+     *
+     * <p>Permissions first, then the scan, then the board — in that order because each step is a
+     * chance for the user to back out, and the board is the only one of the three that leaves
+     * anything behind. It is created with {@code created_now}, so a join that is refused or fails
+     * takes the empty board with it (see {@code WhiteboardFragment.discardIfNeverUsed}).
+     */
+    private void joinWhiteboardSession() {
+        String[] missing = CollabPermissions.missing(requireContext());
+        if (missing.length > 0) {
+            joinPermissionLauncher.launch(missing);
+            return;
+        }
+        scanAndJoin();
+    }
+
+    private void scanAndJoin() {
+        SessionScanner.scan(requireContext(), new SessionScanner.Listener() {
+            @Override public void onToken(String token) {
+                if (!isAdded()) return;
+                openJoinedWhiteboard(token);
+            }
+
+            @Override public void onCancelled() {
+                // Backing out of the scanner is an answer, not a fault. Nothing was started.
+            }
+
+            @Override public void onFailed(boolean notASession) {
+                if (!isAdded()) return;
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.collab_error_title)
+                        .setMessage(notASession
+                                ? R.string.collab_error_not_a_session
+                                : R.string.collab_error_scanner)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+            }
+        });
+    }
+
+    /** A fresh board for the session to fill: the host sends everything it holds on connect. */
+    private void openJoinedWhiteboard(String token) {
+        whiteboardRepository.createWhiteboard(null, null,
+                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
+                whiteboardId -> {
+                    if (!isAdded()) return;
+                    Bundle args = new Bundle();
+                    args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
+                    args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, true);
+                    args.putString(WhiteboardFragment.ARG_JOIN_TOKEN, token);
+                    NavHostFragment.findNavController(this)
+                            .navigate(R.id.whiteboardFragment, args);
+                });
+    }
+
+    // ── The three things Home can add ────────────────────────────────────
+    //
+    // Methods rather than listener bodies because there are now two ways to reach each: the FAB's
+    // options, and tapping the section header the new thing would land in.
+
+    private void createNote() {
+        NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment);
+    }
+
+    private void createCollection() {
+        CollectionDialogs.showCreateDialog(requireContext(), name ->
+                collectionRepository.createCollection(
+                        name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
+    }
+
+    /**
+     * A board created here is standalone (no parent note) — it's owned by Home's Whiteboards
+     * section. The row is inserted up front so the board exists in that list even if the user backs
+     * out without drawing anything.
+     *
+     * <p>Straight to the canvas, untitled — the board is named from its own toolbar the way a note
+     * is named in its editor. Asking for a name before there is anything to name is the wrong
+     * order, and an empty dialog field was the common answer anyway.
+     */
+    private void createWhiteboard() {
+        whiteboardRepository.createWhiteboard(null, null,
+                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
+                whiteboardId -> openWhiteboard(whiteboardId, null, true));
     }
 
     /**
@@ -407,10 +514,17 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     private void openWhiteboard(String whiteboardId, String noteId) {
+        openWhiteboard(whiteboardId, noteId, false);
+    }
+
+    /** @param createdNow true when the row was made a moment ago by the caller, which is what lets
+     *                    the board screen discard it again if nothing is drawn on it. */
+    private void openWhiteboard(String whiteboardId, String noteId, boolean createdNow) {
         if (!isAdded()) return;
         Bundle args = new Bundle();
         args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
         args.putString(WhiteboardFragment.ARG_NOTE_ID, noteId);
+        args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, createdNow);
         NavHostFragment.findNavController(this).navigate(R.id.whiteboardFragment, args);
     }
 

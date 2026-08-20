@@ -179,7 +179,13 @@ final class NoteCrypto {
     static String decryptTitleOrNull(String collectionId, String stored) {
         try {
             return decryptTitle(collectionId, stored);
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
+            // RuntimeException alongside the checked one: Base64.decode throws
+            // IllegalArgumentException on anything that isn't validly-encoded ciphertext, which a
+            // caller that wrote a locked collection's title in plaintext by mistake can trigger.
+            // This method's whole contract is "never throw, return null instead" — narrowing that
+            // to only the checked exception left exactly the malformed-input case able to crash
+            // the caller instead of being treated as an unreadable row like any other.
             Log.w(TAG, "could not decrypt title; re-locking " + collectionId, e);
             CollectionLock.relock(collectionId);
             return null;
@@ -202,7 +208,8 @@ final class NoteCrypto {
     static String decryptBodyOrNull(String collectionId, byte[] stored) {
         try {
             return decryptBody(collectionId, stored);
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
+            // See decryptTitleOrNull for why RuntimeException is caught here too.
             Log.w(TAG, "could not decrypt body; re-locking " + collectionId, e);
             CollectionLock.relock(collectionId);
             return null;

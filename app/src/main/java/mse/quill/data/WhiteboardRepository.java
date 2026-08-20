@@ -27,14 +27,24 @@ public class WhiteboardRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
+    /** Null for the {@link #WhiteboardRepository(AppDatabase)} form — those callers (the
+     *  whiteboard screen, the thumbnailer) already run far more often than a widget needs to
+     *  refresh, so only the id-mutating methods below, reached through the Context constructor,
+     *  push a widget update. */
+    private final Context appContext;
 
     public WhiteboardRepository(Context context) {
-        this(AppDatabase.getInstance(context.getApplicationContext()));
+        this(AppDatabase.getInstance(context.getApplicationContext()), context.getApplicationContext());
     }
 
     /** For callers already holding the database — the whiteboard screen and the thumbnailer. */
     public WhiteboardRepository(AppDatabase appDatabase) {
+        this(appDatabase, null);
+    }
+
+    private WhiteboardRepository(AppDatabase appDatabase, Context appContext) {
         this.appDatabase = appDatabase;
+        this.appContext = appContext;
         this.executors = AppExecutors.getInstance();
     }
 
@@ -58,6 +68,7 @@ public class WhiteboardRepository {
             cv.put("updated_at", now);
             cv.put("background", background);
             appDatabase.getWritableDatabase().insert("whiteboards", null, cv);
+            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
 
             if (cb != null) executors.mainThread(() -> cb.onCreated(id));
         });
@@ -68,6 +79,7 @@ public class WhiteboardRepository {
             ContentValues cv = new ContentValues();
             cv.put("title", newTitle);
             appDatabase.getWritableDatabase().update("whiteboards", cv, "id = ?", new String[]{id});
+            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -102,6 +114,7 @@ public class WhiteboardRepository {
             } finally {
                 db.endTransaction();
             }
+            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -136,40 +149,65 @@ public class WhiteboardRepository {
      */
     public void loadWhiteboards(OnWhiteboardsLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
-            Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
-
-            List<String> args = new ArrayList<>(hidden);
-            args.addAll(hidden);
-
-            Cursor c = db.rawQuery(
-                    "SELECT w.id, w.note_id, w.title, w.created_at, w.updated_at, w.background, " +
-                            "(SELECT COUNT(*) FROM strokes s WHERE s.whiteboard_id = w.id) AS stroke_count " +
-                            "FROM whiteboards w LEFT JOIN notes n ON n.id = w.note_id " +
-                            // hiddenClause passes rows whose n.collection_id is null, which an
-                            // unowned board's outer join gives it for free.
-                            "WHERE 1 = 1 " + NoteCrypto.hiddenClause(hidden) +
-                            WhiteboardLinks.hiddenClause(hidden) +
-                            "ORDER BY w.updated_at DESC, w.created_at DESC",
-                    args.toArray(new String[0]));
-            List<Whiteboard> whiteboards = new ArrayList<>();
-            try {
-                while (c.moveToNext()) {
-                    Whiteboard wb = new Whiteboard();
-                    wb.id = c.getString(0);
-                    wb.noteId = c.getString(1);
-                    wb.title = c.getString(2);
-                    wb.createdAt = c.getLong(3);
-                    wb.updatedAt = c.isNull(4) ? wb.createdAt : c.getLong(4);
-                    wb.background = c.getInt(5);
-                    wb.strokeCount = c.getInt(6);
-                    whiteboards.add(wb);
-                }
-            } finally {
-                c.close();
-            }
+            List<Whiteboard> whiteboards = loadWhiteboardsSync();
             if (cb != null) executors.mainThread(() -> cb.onLoaded(whiteboards));
         });
+    }
+
+    /** Synchronous form of {@link #loadWhiteboards}, for callers already off the main thread. */
+    public List<Whiteboard> loadWhiteboardsSync() {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        return loadWhiteboardsSync(db, NoteCrypto.hiddenCollectionIds(db));
+    }
+
+    /**
+     * The boards a home-screen widget is allowed to show — <b>every locked collection is excluded,
+     * open or not</b>, unlike {@link #loadWhiteboardsSync}, which hides only the collections that
+     * are shut this session.
+     *
+     * <p>See {@code NoteRepository.loadPinnedNotesForWidgetSync} for why the widget asks the
+     * stricter question. It matters more here than anywhere: a board's strokes are never encrypted
+     * by the lock — this filter is the whole of what keeps a locked note's drawing off the home
+     * screen, thumbnail and all.
+     */
+    public List<Whiteboard> loadWhiteboardsForWidgetSync() {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        return loadWhiteboardsSync(db, NoteCrypto.lockedCollectionIds(db));
+    }
+
+    /** @param excluded the collections whose boards drop out — shut this session, or locked at
+     *      rest, depending on which of the two callers above asked. */
+    private List<Whiteboard> loadWhiteboardsSync(SQLiteDatabase db, Set<String> excluded) {
+        List<String> args = new ArrayList<>(excluded);
+        args.addAll(excluded);
+
+        Cursor c = db.rawQuery(
+                "SELECT w.id, w.note_id, w.title, w.created_at, w.updated_at, w.background, " +
+                        "(SELECT COUNT(*) FROM strokes s WHERE s.whiteboard_id = w.id) AS stroke_count " +
+                        "FROM whiteboards w LEFT JOIN notes n ON n.id = w.note_id " +
+                        // The clause passes rows whose n.collection_id is null, which an
+                        // unowned board's outer join gives it for free.
+                        "WHERE 1 = 1 " + NoteCrypto.excludeCollectionsClause(excluded) +
+                        WhiteboardLinks.hiddenClause(excluded) +
+                        "ORDER BY w.updated_at DESC, w.created_at DESC",
+                args.toArray(new String[0]));
+        List<Whiteboard> whiteboards = new ArrayList<>();
+        try {
+            while (c.moveToNext()) {
+                Whiteboard wb = new Whiteboard();
+                wb.id = c.getString(0);
+                wb.noteId = c.getString(1);
+                wb.title = c.getString(2);
+                wb.createdAt = c.getLong(3);
+                wb.updatedAt = c.isNull(4) ? wb.createdAt : c.getLong(4);
+                wb.background = c.getInt(5);
+                wb.strokeCount = c.getInt(6);
+                whiteboards.add(wb);
+            }
+        } finally {
+            c.close();
+        }
+        return whiteboards;
     }
 
     // ── Synchronous access ───────────────────────────────────────────────────

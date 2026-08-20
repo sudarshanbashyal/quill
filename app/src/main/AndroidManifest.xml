@@ -62,6 +62,15 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Quill">
+        <!-- Shown once, on a Quill with nothing in it: see Onboarding. Not exported — the splash
+             is the only thing that opens it, and it is not a place to come back to, which is why
+             it finishes itself on the way to MainActivity. -->
+        <activity
+            android:name=".ui.welcome.WelcomeActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:exported="false"
+            android:theme="@style/Theme.Quill.Welcome" />
+
         <!-- The launcher entry point is the splash, which finishes itself into MainActivity once
              its animation minimum and StartupTasks are both done. It carries its own theme so the
              window the system draws before the first frame is already the splash's lavender. -->
@@ -113,6 +122,24 @@
                 <data android:scheme="file" android:mimeType="application/json" />
                 <data android:scheme="file" android:mimeType="application/octet-stream" />
             </intent-filter>
+
+            <!-- A whiteboard session's QR code, which encodes quill://whiteboard/join/v1/<TOKEN>
+                 (see collab/SessionCode). Its own filter rather than another <data> in the one
+                 above, because data elements there combine as a cross-product with those mime
+                 types — a scheme added to that list would be matched only alongside them.
+
+                 What this buys: the phone's own camera, or Lens, can offer to open the host's code
+                 directly, so joining does not need Quill to be open and pointed at its own scanner
+                 first. BROWSABLE is what lets a non-app scanner start it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="quill"
+                    android:host="whiteboard"
+                    android:pathPrefix="/join" />
+            </intent-filter>
         </activity>
 
         <!-- Not exported: nothing outside the app has any business starting playback. Its actions
@@ -121,6 +148,65 @@
             android:name=".audio.AudioPlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Home-screen widgets. exported="true" is required for a launcher widget: the widget
+             host lives in the launcher's own process/UID, so the receiver has to be reachable
+             from outside the app. -->
+        <receiver
+            android:name=".widget.CollectionsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_collections_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.WhiteboardsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_whiteboards_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.FlashcardsWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_flashcards_info" />
+        </receiver>
+
+        <!-- Not exported beyond BIND_REMOTEVIEWS: only the widget host (the launcher, holding
+             that permission) is allowed to bind these to fetch each row's RemoteViews. -->
+        <service
+            android:name=".widget.PinnedNotesRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.CollectionsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.WhiteboardsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.DueCardsRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name=".widget.FlashcardDecksRemoteViewsService"
+            android:exported="true"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
 
         <!-- Answers coming back from the watch. Exported, and it has to be: the caller is Play
              Services delivering on behalf of the watch app, which is a different process. The

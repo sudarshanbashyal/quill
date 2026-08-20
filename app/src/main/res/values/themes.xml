@@ -47,4 +47,15 @@
             @drawable/splash_system_icon
         </item>
     </style>
+
+    <!-- The welcome screen. Its own status/navigation bar colours because the screen is a flat
+         white field with no header: Theme.Quill's dark purple status bar belongs over Home's
+         coloured hero, and above this it would read as a stripe left over from another screen.
+         Ignored from API 35, where the platform forces edge-to-edge and the screen insets itself
+         (see WelcomeActivity) — these are for the platforms below it. -->
+    <style name="Theme.Quill.Welcome" parent="Theme.Quill">
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
 </resources>

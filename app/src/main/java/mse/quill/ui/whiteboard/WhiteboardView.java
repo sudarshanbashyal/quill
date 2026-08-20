@@ -458,7 +458,17 @@ public class WhiteboardView extends View {
                     }
                     return true;
                 }
-                finishStroke(worldX(event.getX()), worldY(event.getY()));
+                if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    // The gesture was taken away rather than finished: a back-swipe from the edge,
+                    // the notification shade coming down, a parent view deciding the gesture was
+                    // its own. Grouped with ACTION_UP, this committed whatever the swipe had drawn
+                    // — so backing out of a board with the system gesture left a stray line on it,
+                    // and the board saved. A cancel means the stroke never happened, which is the
+                    // same conclusion the two-finger case above reaches by the same call.
+                    discardCurrentStroke();
+                } else {
+                    finishStroke(worldX(event.getX()), worldY(event.getY()));
+                }
                 return true;
         }
         return super.onTouchEvent(event);
@@ -485,6 +495,19 @@ public class WhiteboardView extends View {
         scrollTo(clamp(Math.round(getScrollX() + dx), maxScrollX()),
                  clamp(Math.round(getScrollY() + dy), maxScrollY()));
         awakenScrollBars();
+    }
+
+    /**
+     * Whether anything at all is on this board — committed strokes or text boxes.
+     *
+     * <p>Answered from what this view holds rather than from the database, and that is the point:
+     * strokes are written on their own unordered threads, so a caller leaving the screen a moment
+     * after the last one was drawn could ask the database and be told the board is empty while the
+     * insert is still in flight. This can't be wrong that way — a stroke reaches
+     * {@link #committedStrokes} before anyone is told to save it.
+     */
+    public boolean hasContent() {
+        return !committedStrokes.isEmpty() || !texts.isEmpty();
     }
 
     private void discardCurrentStroke() {

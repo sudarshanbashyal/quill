@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The trailing "+" on Home's section headers. Same size-pinning wrapper as ic_section_note.xml,
+     so it lines up with the icon at the other end of the row. ic_add is a vector, so this is only
+     about matching that size — see ic_section_note.xml for the case where it is also about not
+     drawing a 512px bitmap. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="@dimen/section_header_icon"
+        android:height="@dimen/section_header_icon"
+        android:drawable="@drawable/ic_add"
+        android:gravity="center" />
+</layer-list>

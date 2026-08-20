@@ -10,7 +10,6 @@ import android.widget.RadioGroup;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.textview.MaterialTextView;
 
 import java.util.List;
@@ -57,12 +56,6 @@ public final class SearchFilterDialog {
             content.addView(tagGroup);
         }
 
-        content.addView(sectionLabel(context, R.string.filter_other, true));
-        MaterialSwitch pinnedSwitch = new MaterialSwitch(context);
-        pinnedSwitch.setText(R.string.filter_pinned_only);
-        pinnedSwitch.setChecked(filter.pinnedOnly());
-        content.addView(pinnedSwitch);
-
         // Scrolls once there are enough tags to outgrow the screen, and only then — see
         // MaxHeightScrollView for why a plain fixed height is wrong here.
         MaxHeightScrollView scroll = new MaxHeightScrollView(context);
@@ -73,7 +66,7 @@ public final class SearchFilterDialog {
         new MaterialAlertDialogBuilder(context)
                 .setView(scroll)
                 .setPositiveButton(R.string.action_apply, (dialog, which) -> {
-                    commit(filter, sortGroup, tags, pinnedSwitch.isChecked());
+                    commit(filter, sortGroup, tags);
                     listener.onFilterApplied();
                 })
                 .setNeutralButton(R.string.action_clear_filters, (dialog, which) -> {
@@ -84,8 +77,7 @@ public final class SearchFilterDialog {
                 .show();
     }
 
-    private static void commit(NoteFilter filter, RadioGroup sortGroup, ChipGroup tagGroup,
-                               boolean pinnedOnly) {
+    private static void commit(NoteFilter filter, RadioGroup sortGroup, ChipGroup tagGroup) {
         NoteFilter.Sort[] sorts = NoteFilter.Sort.values();
         int checked = sortGroup.getCheckedRadioButtonId();
         if (checked >= 0 && checked < sorts.length) filter.setSort(sorts[checked]);
@@ -98,7 +90,6 @@ public final class SearchFilterDialog {
                 if (wanted != filter.hasTag(tagId)) filter.toggleTag(tagId);
             }
         }
-        filter.setPinnedOnly(pinnedOnly);
     }
 
     private static RadioGroup buildSortGroup(Context context, NoteFilter filter) {

@@ -1,4 +1,4 @@
-# Quill — Conversation Log
+﻿# Quill — Conversation Log
 
 A running record of the sessions that shaped this project: what was asked, what options were
 weighed, and what got decided. Kept alongside [note.md](note.md) (how the code is built) and
@@ -2857,6 +2857,150 @@ a new board, the tighter sheet, and the pinned band already at full height on th
 from a note. Undo confirmed by the user. Test artifacts (seeded board, renamed collection, pinned
 note, scratch whiteboard) cleaned out of the emulator DB afterwards.
 
+## 2026-08-14 — Feature implementation: home-screen App Widgets
+
+**Asked:** widget ideas, narrowed to two — a widget for collections/important notes, and one for
+whiteboards — then clarified as genuine Android launcher widgets ("like a weather widget"), not
+new in-app screens.
+
+**Built:** `CollectionsWidgetProvider` (stacked pinned-notes + collections lists) and
+`WhiteboardsWidgetProvider` (thumbnail grid of recent boards), both under `mse.quill.widget`.
+Full design and the reasoning behind each piece — the two-`RemoteViewsService` requirement, the
+new `WidgetThumbnailCache` bridging `WhiteboardThumbnails`' async-only rendering, the
+`WidgetUpdater` push-refresh hooks — now live in [note.md](note.md)'s "Home-screen App Widgets"
+section; the checklist is Epic K in [requirements.md](requirements.md) (not originally scoped in
+the one-pager, built opportunistically).
+
+**No `adb` in this environment.** Every bug in this feature was reported by the user from a real
+device, by symptom only ("doesn't load", "just opens the app"), and diagnosed from code review
+rather than logcat. Three real bugs, each confirmed by the user after a code-review fix:
+
+1. **"Problem loading widget"** on the collections widget — a plain `<View>` divider isn't in
+   RemoteViews' inflatable-class allowlist. Swapped for a 1dp `TextView`.
+2. **Tapping a whiteboard/note/collection opened the app but landed on whatever screen was last
+   open**, not the tapped item. Two stacked causes, found one after the other: first,
+   `runWhenNavHostReady` waited for `HomeFragment` to resume but nothing was driving the nav host
+   back to Home (fixed by forcing `popBackStack(R.id.homeFragment, false)`, matching
+   `handleViewIntent`'s existing pattern) — this alone didn't fix it. Second (found after the user
+   reported the bug *persisted*): the collection-widget `PendingIntent` templates were
+   `FLAG_IMMUTABLE`, which silently blocks the template+`fillInIntent` merge that hands each row's
+   tapped-item extras to `MainActivity` — needed `FLAG_MUTABLE` instead.
+3. Also fixed on request, unrelated to the widgets: the in-app pinned-notes strip
+   (`PinnedNoteCardView`) felt oversized — shrunk `pinned_card_width`/`_height` (164×148dp →
+   140×108dp), tighter padding, 1-line title.
+
+**Process note worth keeping**: when the user reports "issue 1 solved, issue 2 still persists"
+after a fix was applied, that's a signal there may be a *second*, independent cause behind the
+same symptom — don't assume the first fix was wrong, look for what else could produce the same
+observed behavior. That's exactly what happened with bug 2 above.
+
+**Verified working end-to-end by the user on-device**, including the pinned-card resize. Not
+committed as of end of session — check `git status` before assuming this has landed.
+
+## 2026-08-15 — Feature implementation: widget previews, third widget for flashcards
+
+**Asked:** add real widget-picker previews to the two existing widgets, and build a third
+widget for flashcards "in a list way." Clarified before building: the flashcards widget should
+show **both** a due-now card list and a deck list stacked (mirroring how the Collections widget
+stacks pinned notes + collections), and due cards should show **front text only** — revealing
+the answer defeats active recall.
+
+**Previews:** `android:previewLayout` (API 31+, renders the actual widget layout in the picker)
+added to all three widgets' `res/xml/widget_*_info.xml`, `previewImage="@mipmap/ic_launcher"`
+kept as the fallback below 31 since there's no screenshot asset in the repo to use instead.
+
+**Built:** `FlashcardsWidgetProvider` + `DueCardsRemoteViewsService` +
+`FlashcardDecksRemoteViewsService`, following the Collections widget's established shape
+exactly (two `ListView`s, two services, one mutable `PendingIntent` template, a `TextView`
+divider not a `View`). `FlashcardRepository` gained `loadDecksSync()` (sync twin of the
+existing `loadDecks`) and a new `loadDueCardsSync(now, limit)` — there was no prior query
+returning individual due cards, only `countDueSync`'s counts, so this is genuinely new query
+logic, not an extraction. Both follow `countDueSync`'s locked-collection exclusion pattern.
+Tap deep-links via a new `EXTRA_OPEN_FLASHCARD_NOTE_ID`, kept deliberately separate from the
+existing `EXTRA_OPEN_NOTE_ID` (opens the note *editor*) since this one opens the flashcard
+*review* screen for the same note id — same key name would have collided semantically even
+though the extra names differ.
+
+**Follow-up tweak:** due-now vs. decks was initially a fixed-96dp block + weighted remainder
+(matching the Collections widget's pinned-notes reasoning — a short, capped list next to a
+scrollable one). Asked to change to a 60/40 proportional split instead; swapped both sections
+to `layout_weight` (3 and 2) rather than fixed-height + weight-1.
+
+Full design detail lives in [note.md](note.md)'s "Home-screen App Widgets" section (updated
+this session); checklist is Epic K in [requirements.md](requirements.md) (also updated).
+
+**Verified:** clean `assembleDebug`, `compileDebugAndroidTestJavaWithJavac`, and
+`testDebugUnitTest` all pass — same no-`adb`-in-this-environment constraint as the first two
+widgets, so on-device confirmation (previews rendering, due/deck taps landing on the review
+screen, the 60/40 split reading right) is the user's to do, not verified here.
+
+**Not committed as of end of session** — check `git status` before assuming any of the widget
+work (this session's or 2026-08-14's) has landed.
+
+## 2026-08-16 — Bug fix: widgets vs. collection locking, a four-bug chain
+
+**Reported, in stages, as the repro was narrowed down:** pin a note in a collection, add the
+widget, lock the collection — the collection correctly vanished from the widget, but (1) its
+pinned note stayed visible and tapping it silently deleted the real note and opened what looked
+like a new one, (2) creating a new note while inside a locked collection crashed the app, and
+crucially — the app then kept crashing on **every subsequent launch**, widget untouched. Full
+technical writeup in [note.md](note.md)'s "Widgets vs. collection locking" subsection; this
+entry is the narrative of how it was chased down without `adb` access for most of the session.
+
+**Bug 1, applied defensively but wasn't the actual cause:** none of the six widget
+`RemoteViewsFactory` implementations caught exceptions. Those run on a binder thread *inside the
+app's own process* — unlike almost anywhere else in Android widget code, an uncaught exception
+there crashes the whole app, not just the widget. Added `RuntimeException` guards to all six.
+Crash persisted — which was itself useful information: it ruled out the widget rendering path.
+
+**Bug 2, the actual "kept crashing on plain app open" cause:** `MainActivity.onCreate` calls
+three Wear OS publishers unconditionally on every launch (`WearProjectionPublisher`,
+`WearNoteListPublisher`, `WearReadStatePublisher` — merged in from the parallel watch-companion
+branch). Both `publishSync` methods only wrapped their *final* network call in a try/catch; the
+DB query and title-resolution code above it, which runs every time regardless of the widget,
+was unguarded. Widened both to wrap the whole method, plus the DB-touching lambda in the read
+state publisher. This is what actually stopped the repeated crash-on-launch.
+
+**Bugs 3 and 4, found by reading code once the crash was contained, not from a stack trace:**
+traced `autoSave()`'s delete-on-empty branch and `NoteRepository.createNote()`'s plaintext write
+by hand. `createNote` never encrypted a new note's title even for a locked collection target —
+only the *next* `saveNote` call did — so the immediate follow-up autosave's "did this change"
+check tried to Base64-decode plaintext as ciphertext and threw an uncaught
+`IllegalArgumentException` (`NoteCrypto`'s `decryptTitleOrNull`/`decryptBodyOrNull` only caught
+the checked `GeneralSecurityException`, despite both claiming "never throw, return null" as
+their whole contract). Separately, `NoteEditorFragment` couldn't tell "note doesn't exist" from
+"note exists but its collection is locked" — both came back `null` from `loadNote`, and either
+way the fragment marked itself ready to autosave, so a real encrypted note reachable only
+because its `note == null` case was mishandled got deleted by the same "empty note, clean it
+up" logic that's supposed to only ever fire on genuinely blank notes.
+
+**Bug 5, reported last, after everything above stopped crashing:** the pinned note *still*
+stayed visible in the widget after locking (no crash this time, just wrong). Root cause: the
+collections list already excluded a `biometricLocked` collection unconditionally, but the
+pinned-notes list relied on `NoteRepository.loadPinnedNotesSync`'s normal in-app hiding rule,
+which only hides a locked collection if it isn't unlocked *this session* — and `lock()` itself
+calls `CollectionLock.markUnlocked` right after locking, by design, so the app doesn't
+immediately re-prompt. That's correct for the app (you just authenticated), wrong for a widget
+(no session of its own). Fixed by having `PinnedNotesRemoteViewsService` cross-check each note's
+collection against the `biometricLocked` flag directly, same as the collections list already
+did — a pattern `FlashcardRepository.dueProjectionSync` (the Wear watch projection) had already
+gotten right independently, worth checking against next time before re-deriving it.
+
+**Process note, reinforcing the one from 2026-08-14:** "still crashing" after a fix (bug 1 →
+still crashed) again meant a second independent cause, not a wrong fix — same lesson, worth
+actually internalizing this time. Also: the two most serious bugs here (3 and 4) were real,
+previously-undiscovered issues in `NoteRepository`/`NoteEditorFragment` unrelated to the widget
+feature itself — the widget was just the first code path to reach a locked-collection note
+through a route the in-app screens don't normally allow (a direct id-based deep link, bypassing
+the authenticate-before-entering-a-locked-collection flow every other entry point goes through).
+Worth remembering if another deep-link-style entry point gets added later: it needs the same
+"does this note/collection actually resolve" check before navigating, not after.
+
+**Verified:** clean builds throughout; each fix confirmed by the user on-device in turn, ending
+with full end-to-end confirmation ("done") after bug 5's fix. Landed in commit `95859d5`
+("Fixing bugs for widget") except for the bug 5 fix (`PinnedNotesRemoteViewsService`), which was
+still uncommitted as of this entry — check `git status` before assuming otherwise.
+
 ## 2026-08-16 — Read-aloud plays the note's recordings too
 
 **The ask**: reading a note aloud should play its voice recordings as well. They were being
@@ -2919,3 +3063,329 @@ three selected columns qualified to match.
 **Verified**: relaunched with the same seeded DB — no crash buffer entries, the same PID alive
 across 15 seconds (it was cycling 5282 → 5755 → 5841 before), and the app now reaches its own
 biometric "Unlock Quill" prompt. The black screenshots are `FLAG_SECURE`, not a broken screen.
+
+## 2026-08-20 — The widgets were late, and a locked collection could still be on the home screen
+
+**Two complaints, one root**: widgets didn't update when a note was added or a collection's lock was
+turned on or off, and locked material could still be showing. `updatePeriodMillis` is 0 for all
+three widgets, so a change that isn't pushed is a change that never arrives — "not quick enough"
+was, in most of these paths, "not ever".
+
+**What was missing.** `NoteRepository` pushed a refresh only from `pinNote`/`unpinNote`. Creating,
+saving, deleting and moving a note all changed something a widget row shows — a collection's note
+count, a pinned note's title and preview, whether a pinned note is still allowed to appear — and
+said nothing. `CollectionLockRepository` told the collections and flashcards widgets about a lock
+but never the whiteboards one. `WhiteboardThumbnails` wrote a fresh thumbnail to
+`WidgetThumbnailCache` and left the widget showing the old picture.
+
+**The leak was the more interesting half.** Three of the five factories asked
+`hiddenCollectionIds` — locked *and* not opened this session — which is the right question for an
+in-app screen and the wrong one for a widget. A widget has no session and no way to ask for one, so
+its contents must be a function of the database alone. Locking a collection deliberately leaves it
+open in-session (the user just authenticated), so under the old rule a locked collection's
+whiteboards, decks and due cards stayed on the home screen until the app was next backgrounded —
+and the boards are the sharp case, because the lock migration encrypts note text and nothing else:
+the query is the whole of what keeps a private drawing off the launcher. Each of those queries now
+has a `*ForWidgetSync` sibling that excludes every collection encrypted at rest, the same stricter
+rule `dueProjectionSync` already used for the watch, and for the same reason. The pinned-notes
+factory was already doing this correctly but in Java, after the fact — it now happens in SQL, so an
+open collection's titles aren't decrypted on the way to being thrown away.
+
+**One backstop**: `MainActivity.onStop` refreshes all three. Leaving the app is the moment the home
+screen is about to be looked at, and it is where `CollectionLock.relockAll()` already runs. It is a
+net, not the mechanism — every repository still pushes its own change.
+
+**Verified on the emulator**, against the seeded DB (locked "Private", open "Coursework"): both
+widgets dragged onto the launcher show only Coursework and only the boards outside the locked
+collection — "Private sketch" is gone, the unowned "Scratch pad" stays. A temporary probe in two
+factories (removed afterwards) showed both requerying ~1.5s after the app was backgrounded, which
+is the push path end to end. The in-app half of the loop — add a note, watch the count move — could
+not be driven here: the emulator's app lock wants a PIN, and disabling it was refused. The four
+widget queries were also run, old rule against new, over a copy of the emulator's own database:
+each strict variant drops exactly the locked collection's rows and nothing else.
+
+## 2026-08-20 (same session) — Deleting a note: the one delete that pushed nothing
+
+**The report**, after the above landed: in the widget, a deleted pinned note stays, but deleting a
+collection works fine. That asymmetry is the diagnosis. Both lists live in one widget and are
+refreshed by the same call, so the collections half updating proves the push reaches the launcher —
+what differed was the sender. `deleteCollection` always pushed; `deleteNote` never did, and it is
+the single place that sets `deleted_at`, so all three delete surfaces (Home's note dialog, the
+pinned card's dialog, the editor) were silent. Also added: a delete now tells the flashcards widget,
+since a trashed note's cards stay in the table and drop out of the deck and due-now queries by
+their note's `deleted_at` alone.
+
+**Verified end to end on the emulator**, with the app lock's PIN (1234, from the user): pin a note →
+it appears in the widget; delete it → two seconds later the row is gone and the collection reads
+"0 notes". Then the other half of the original complaint: a note created inside Coursework took the
+count to "2 notes" without leaving the app for anything.
+
+**How to drive the app despite `FLAG_SECURE`**: screenshots of Quill are black, but
+`uiautomator dump` gives the full tree, text and bounds included — and the launcher isn't secure, so
+the *widget's* contents can be read straight out of the launcher's own accessibility tree. That is a
+better check than a screenshot anyway: it reads the strings the widget is actually showing.
+
+**Cleanup**: the deleted note had nowhere to come back from — Quill has no trash surface, so a soft
+delete is unrecoverable through the UI. The emulator DB was pulled before any of this and pushed
+back afterwards (`run-as mse.quill cp`, journal removed, app force-stopped first), leaving the seed
+exactly as it was. Worth knowing for next time: **pull the DB before touching data on the emulator**.
+Restoring it also demonstrated the `MainActivity.onStop` backstop — the database changed underneath
+the app with no repository push at all, and backgrounding it brought the widget back in step.
+
+**Left on the emulator**: the Collections and Whiteboards widgets are still on the home screen,
+deliberately.
+
+## 2026-08-20 (later) — A first screen, and an app with something in it
+
+**The ask**: a new install opens on an empty Home with four tabs and no clue what any of them are
+for. So: a welcome screen offering sample content or a way past it, and — if they take it — a
+proper account of what was created.
+
+**What it does.** `SplashActivity` now hands off to `WelcomeActivity` instead of `MainActivity` when
+this looks like a first install. The screen names the four features (that is the actual complaint —
+four things arriving at once with nothing to explain them) and offers "Start with sample content"
+or "Start empty". Taking the sample writes a collection, three notes with one pinned, five
+flashcards, a quiz and a whiteboard, then swaps the same screen for a report of what landed and
+where to find it. Every count in that report comes from the repository callbacks, not from what the
+seeder meant to write, so a step that wrote nothing has no row.
+
+**Three decisions worth keeping.**
+
+*The sample is ordinary content, not a demo mode.* It goes in through the repositories, so it is
+encrypted if it lands in a locked collection, indexed for search, linked in the whiteboard table,
+and pushed to the widgets and the watch — none of which a private INSERT would have done, and all
+of which it would keep not doing as features are added. Nothing anywhere else knows the rows came
+from here; they are edited, pinned and deleted like anything else.
+
+*Ordering is the disk thread's, not a chain of callbacks.* `AppExecutors.diskIO` is one thread, so
+calls issued in order run in order — the note row exists before the save that fills it, the board
+before the note that embeds it, and a final marker task cannot run until the rest has. Only the
+collection needs a callback, because its id is minted inside the insert.
+
+*"First install" is two questions.* The stored flag says whether this was asked before; the database
+says whether anything is here already (`AppDatabase.hasAnyContentSync`). Without the second, every
+existing user updating into this build would be greeted with "Welcome to Quill" over their own
+notebook. `DataWipe` clears the flag, so a wiped Quill is greeted like a new one.
+
+**The sample content itself** is in `SampleContent`, deliberately not in `strings.xml`: the moment
+it is written it is the user's note, and a string resource cannot retranslate a row someone has
+since edited. It is also chosen to be worth keeping — the five cards are real study advice, and the
+whiteboard is a drawn forgetting curve, which is the subject of the note it is embedded in.
+
+**Verified on a second emulator** (`Quill_Phone_4k`, booted for this and shut down afterwards),
+because the first one has content and would correctly refuse to show the screen — which was itself
+the first confirmation that the upgrade guard works. Its database was moved aside rather than
+`pm clear`ed, so nothing of the user's was destroyed and the original was moved back afterwards.
+Both paths run: sample content produces the reported 1/3/5/1/1 and Home shows the pinned welcome
+note, the Study Skills collection reading "2 notes · 5 flashcards · 1 quiz", the deck due on the
+Flashcards tab, the quiz on Quizzes, and the sketch rendering both in Home's whiteboard row and
+inside the note. "Start empty" lands on an empty Home, and a relaunch after either answer goes
+straight to the app.
+
+## 2026-08-20 (later still) — "Open with Quill" crashed on launch
+
+**The report**: exported `.quill` and `.quillpack` files import fine from inside the app, but not
+when tapped in a file manager. The distinction that mattered turned out to be a different one:
+whether Quill was **already running**. With the app alive it worked; with it closed, Quill started,
+died, and dropped the user back in the file manager with nothing imported.
+
+**The crash**, from the crash buffer on a cold start:
+
+```
+IllegalStateException: Fragment HomeFragment did not return a View from onCreateView()
+  at HomeFragment.importBundle(HomeFragment.java:289)      ← Snackbar.make(requireView(), …)
+  at MainActivity.deliverPendingImportIfReady(MainActivity.java:279)
+  at MainActivity.handleViewIntent(MainActivity.java:251)
+  at MainActivity.onCreate(MainActivity.java:87)
+```
+
+`deliverPendingImportIfReady` handed the file to Home as soon as a HomeFragment *existed*. On a cold
+start the FragmentManager restores that fragment during `onCreate`, so the `instanceof` check passed
+while `onCreateView` was still ahead of it — and the first thing Home does with a file is show a
+Snackbar, which needs the view it did not yet have. Thrown out of `onCreate`, which is to say the
+app crashed on launch. Warm, Home already had a view, so the same code worked, which is exactly the
+shape of the user's report.
+
+**The fix is one condition**: wait for `isResumed()`, not for existence. The sibling path for widget
+taps (`runWhenNavHostReady`) already did this — its comment even claims it is "the point
+deliverPendingImportIfReady already waits for", which was the thing that wasn't true. Nothing is
+lost by waiting: `deliverSharedFileWhenHomeIsReady` is registered before the intent is read and
+calls back the moment Home resumes.
+
+**A second bug found while there**: the activity's intent outlives the activity, so a rotation
+re-ran `handleViewIntent(getIntent())` and imported the same file again — two copies of a note
+opened once. Now consumed per intent (`viewIntentConsumed`, reset in `onNewIntent` because a new
+intent is a new request) and carried across recreation in `onSaveInstanceState` along with the
+pending uri, so an import that arrives in the moment before Home is ready isn't dropped either.
+
+**Verified on the emulator**: exported a note and a collection to Downloads/Quill, then opened each
+from the Files app with Quill force-stopped. Before: crash, no import. After: no crash buffer entry,
+the note and the collection both land (the app-lock gate comes up first, and the import completes
+behind it once unlocked). Rotating after an import leaves the counts unchanged — 8 notes and 3
+collections before and after. The seeded database was restored afterwards and the two exported files
+deleted.
+
+**Noticed in passing, not fixed**: this emulator's database has no `notes_fts` table, so every
+import logs `no such table: notes_fts` from `NoteImporter.indexNoteSync`. It is noise rather than a
+failure — `SQLiteDatabase.insert()` swallows the exception and returns -1 — but it means imported
+notes on that database are not searchable, and it is worth knowing why the table is missing.
+
+## 2026-08-20 (later still) — Four small things about adding things
+
+**All four are the same complaint in different places**: it isn't obvious how to put something into
+an empty Quill.
+
+- **Home's Collections section had no empty state.** Notes and Whiteboards each fall back to a
+  message; Collections showed a header with nothing under it, which reads as a section that failed
+  to load rather than one waiting to be filled. `collectionsCount()` is now
+  `collectionsSectionCount()` like its two siblings, and the empty row's text is picked by a
+  three-way rather than the old notes-or-whiteboards two-way.
+- **Section headers now add to their own section.** Each carries a trailing "+" (the same
+  size-pinning layer-list trick the leading icons use) and a ripple, because a header that does
+  something has to look like it does. The three creation actions moved out of the FAB's listener
+  bodies into methods, since there are now two ways to reach each.
+- **The FAB's options are named after what you get**: Note, Collection, Whiteboard, Import — was
+  "Create Note", "Collection", "New Whiteboard", "Import" — each with its icon, Import with the
+  download one.
+- **The collection screen's split button is gone.** Its two halves ("+" and "▾") were two different
+  ways of adding a note dressed as one widget, and the caret read as a menu of the "+" rather than a
+  second action. Both now live behind a single "+" that opens a chooser naming them: "New note" and
+  "Add existing note". An empty collection gets the same chooser from a button in the middle of the
+  screen — and only when it is genuinely empty, not when a filter happens to match nothing, because
+  the notes are there and "Add a note" is not the way to see them.
+
+**Verified on the emulator**: all three empty messages (forced by searching for a string that
+matches nothing), the Collections header opening the New collection dialog, the four renamed FAB
+options with their icons, the collection screen's single "+" and its chooser, and an empty
+collection's centred "Add a note" opening the same chooser. The test collection was removed by
+restoring the seeded database afterwards.
+
+**Left alone, worth knowing**: those empty messages still say "No notes yet — tap + to create one"
+when it is a *search* that matched nothing rather than an empty app. That was already true of notes
+and whiteboards; collections now joins them. A filter-aware message would be a separate change.
+
+## 2026-08-20 (later still) — Filters, a hint, and the stroke a back-swipe drew
+
+**"Pinned only" is gone from the filter.** Pinning is capped at three and those three already have a
+band of their own at the top of Home, so the filter narrowed the list to something permanently on
+screen a few centimetres above it. Out of `NoteFilter`, the dialog and the chip row; the "Other"
+section it lived under went too, being empty without it.
+
+**The wrong hint** was the "Add existing notes" picker using the generic `search_hint` ("Search
+notes, whiteboards or collections…") for a field that searches notes and nothing else. Now
+`search_hint_notes`.
+
+**The back-swipe stroke was a real bug, not gesture tuning.** `WhiteboardView.onTouchEvent` grouped
+`ACTION_CANCEL` with `ACTION_UP`:
+
+```java
+case MotionEvent.ACTION_UP:
+case MotionEvent.ACTION_CANCEL:
+    ...
+    finishStroke(...);   // commits, and the fragment writes it to the database
+```
+
+`ACTION_CANCEL` is exactly what Android sends when the system takes a gesture over — an edge
+back-swipe, the shade coming down, a parent view intercepting. Quill read "this gesture is no longer
+yours" as "the user lifted their finger" and saved the line the swipe drew. The class already had
+`discardCurrentStroke()` for the two-finger case; cancel now goes there too.
+
+**Options considered and declined** (the user asked for suggestions first): claiming the edges with
+`setSystemGestureExclusionRects` — costs the back gesture on those strips, and the platform caps
+exclusions at 200dp anyway; and discarding very short strokes — a heuristic that would also throw
+away deliberate dots, and it ignores the signal the system is already sending.
+
+**And the empty board it left behind.** The row exists from the moment the canvas opens (strokes
+carry a foreign key onto it), so every glance at a new board left a blank rectangle on Home.
+`WhiteboardFragment.discardIfNeverUsed` now deletes it on the way out — but only a board created for
+this visit, and only when nothing was drawn or typed on it, it has no title, and no note points at
+it. "Created for this visit" needed a new nav argument (`created_now`, defaulting to false) because
+Home's FAB creates the row before navigating, so the screen otherwise cannot tell a board a second
+old from one made last week.
+
+**Verified on the emulator, before and after**: with the old build, an edge back-swipe out of
+"Sensor diagram" took it from 1 stroke to 2; with the fix it stays at 1. A board created from the
+Whiteboards header and immediately swiped away goes 6 → 7 → 6. An *existing* empty board opened and
+left stays at 6, which is the scoping doing its job.
+
+**Also**: the centre button now says "Whiteboard centred", because its usual outcome is that nothing
+moves and a button that appears to do nothing is one nobody presses twice. Both this and "Nothing to
+undo" go through one `showTransientMessage` holding a single Toast it cancels before reshowing —
+Android queues toasts, so without it three taps meant three messages waiting each other out. One
+field rather than two, so the two messages don't stack against each other either.
+
+## 2026-08-20 (later still) — Joining a session: every failure now says something
+
+**What was wrong.** The joiner took `barcode.getRawValue()` as the session token, unchecked. Any QR
+code in the world — a poster, a Wi-Fi card, a vCard — was therefore a valid session to go looking
+for, and Nearby's discovery has no deadline of its own, so the search ran until the user gave up
+staring at "Connecting…". Every other failure arrived as `onError(String)` carrying whatever Play
+Services had said, which is how "Bluetooth is off" and "nobody is hosting that code" ended up
+looking identical and equally unactionable.
+
+**Three changes.**
+
+- **`SessionCode`**: the QR now carries `quill://whiteboard/join/v1/<TOKEN>` and a scan is parsed
+  before anything is started for it. A bare token still parses, so a phone on this build can join a
+  host on an older one, but it has to match the token pattern exactly. Shaped as a URI because that
+  is the thing a phone's own camera app could be taught to open later — a naked token offers it
+  nothing.
+- **A 20-second deadline on joining**, armed before discovery starts and covering the connection
+  too: from the outside, finding the host and connecting to it are one act, and a connect that
+  stalls half way is no more use than a search that finds nothing.
+- **`CollabSession.Failure`** replaces the prose string: RADIO_UNAVAILABLE, CANNOT_HOST,
+  CANNOT_SEARCH, SESSION_NOT_FOUND, CONNECT_FAILED. The fragment maps each to its own copy and shows
+  a *dialog* rather than a toast — each of these is a dead end the user has to decide something
+  about — with "Scan again" offered where retrying is the obvious move. `STATUS_RADIO_ERROR` is
+  singled out because it is the one failure the user can go and fix.
+
+Failures now also report **once**: `fail()` is a no-op after `stop()`, so a timeout firing as a
+connection result comes back can't produce a second error about a session that no longer exists. And
+a failed *incoming* connection no longer ends the host's session — one joiner failing is no reason
+to take the QR code away from whoever tries next.
+
+**Verified**: five JVM tests over `SessionCode.parse` (URLs, Wi-Fi payloads, vCards, wrong lengths,
+non-hex, a prefix with rubbish after it — all rejected; own code, bare token, lowercase and
+whitespace — all accepted). On the emulator: hosting still advertises and shows the QR; and with the
+scanner temporarily bypassed (probe removed afterwards) a join against a token nobody advertises
+fails at exactly 20s — `join timed out after 20000ms` → `SESSION_NOT_FOUND` → the "Couldn't join"
+dialog with "Scan again".
+
+**Still open**: the UX of reaching Join at all — it lives inside a whiteboard, so joining someone
+else's board means opening one of your own first. Suggestions given, awaiting a decision.
+
+## 2026-08-20 (later still) — Joining moved out of the whiteboard
+
+Options 1 and 2 of the four suggested, chosen by the user.
+
+**Join is now on Home.** A fifth option on the expanding FAB, "Join session" (ic_scan), which scans
+and then opens a *new* board already joined. It was inside the whiteboard screen, which meant
+joining someone else's board began by opening one of your own — a session is not something you do to
+a board, it is a way of getting one. Order is permissions → scan → board, because each step is a
+chance to back out and the board is the only one that leaves anything behind; it is created with
+`created_now`, so a refused or failed join takes the empty board with it.
+
+**The QR is a real link now.** `quill://whiteboard/join/v1/<TOKEN>` has its own intent filter, so the
+phone's own camera or Lens can open the host's code directly — no in-app scanner, no menu. Its own
+`<intent-filter>` rather than another `<data>` in the import one, because data elements there
+combine as a cross-product with those mime types. `handleViewIntent` branches on the scheme before
+either path is attempted: a quill:// link handed to the importers would be opened, found to contain
+no bundle, and reported as a broken file.
+
+**The app lock was the interesting part.** The gate is a view over the window, not a screen of its
+own, so Home goes on resuming behind it — a link scanned while Quill was locked would have created a
+board, joined a stranger's session and drawn it onto the screen underneath the words "Quill is
+locked". The token now waits in `pendingJoinToken` until the gate comes down, delivered from both
+`hideLockGate()` and `onResume` (biometric success dismisses a dialog and never resumes the
+Activity; the device-credential fallback runs in its own Activity and does), and carried across a
+rotation in `onSaveInstanceState`. If the user walks away from the gate, nothing has happened at all.
+
+**Shared rather than copied**: `CollabPermissions` (the version-gated Bluetooth/location/Wi-Fi
+ladder) and `SessionScanner` (scan + validate), both now used by Home and the whiteboard screen. Two
+copies of a permission list is two chances to update one and not the other.
+
+**Verified on the emulator**: a `quill://whiteboard/join/v1/A1B2C3D4` link fired at a locked Quill
+stops at the gate; unlocking opens a fresh board with "Connecting…"; twenty seconds later the
+"Couldn't join" dialog; and backing out leaves the board count at 6, unchanged. Home's FAB shows all
+five options and "Join session" opens Play Services' scanner. The one thing not verifiable here is
+two devices actually drawing together — that needs the second phone.

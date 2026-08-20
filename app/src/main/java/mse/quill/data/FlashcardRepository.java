@@ -119,6 +119,7 @@ public class FlashcardRepository {
             } finally {
                 db.endTransaction();
             }
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
 
             if (cb != null) executors.mainThread(() -> cb.onLoaded(deck));
 
@@ -145,6 +146,27 @@ public class FlashcardRepository {
      */
     public void loadDecks(OnDecksLoaded cb) {
         executors.diskIO(() -> {
+            List<FlashcardDeck> decks = loadDecksSync();
+            if (cb != null) executors.mainThread(() -> cb.onLoaded(decks));
+        });
+    }
+
+    /** Synchronous form of {@link #loadDecks}, for callers already off the main thread. */
+    public List<FlashcardDeck> loadDecksSync() {
+        return loadDecksSync(false);
+    }
+
+    /**
+     * The decks a home-screen widget is allowed to show — <b>every locked collection is excluded,
+     * open or not</b>. See {@code NoteRepository.loadPinnedNotesForWidgetSync} for the reasoning;
+     * a deck is titled with its note's title, so this is what keeps those titles off the home
+     * screen for any collection the user encrypted.
+     */
+    public List<FlashcardDeck> loadDecksForWidgetSync() {
+        return loadDecksSync(true);
+    }
+
+    private List<FlashcardDeck> loadDecksSync(boolean excludeAllLocked) {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             long now = System.currentTimeMillis();
             List<FlashcardDeck> decks = new ArrayList<>();
@@ -156,10 +178,12 @@ public class FlashcardRepository {
             // An open collection is still encrypted at rest, so its titles come back as ciphertext
             // and are decrypted below — hiding the shut ones is only half the job.
             Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
-            Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
+            // Either the collections shut right now, or — for the widget — every one that is
+            // encrypted at rest. Which of the two is the only difference between the two callers.
+            Set<String> excluded = excludeAllLocked ? lockedIds : NoteCrypto.hiddenOf(lockedIds);
             List<String> args = new ArrayList<>();
             args.add(String.valueOf(now));
-            args.addAll(hidden);
+            args.addAll(excluded);
             args.add(String.valueOf(now));
 
             Cursor c = db.rawQuery(
@@ -172,7 +196,7 @@ public class FlashcardRepository {
                             "n.created_at " +
                             "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
                             "WHERE n.deleted_at IS NULL " +
-                            NoteCrypto.hiddenClause(hidden) +
+                            NoteCrypto.excludeCollectionsClause(excluded) +
                             "GROUP BY n.id, n.title, n.collection_id, n.created_at " +
                             // Decks with something to do come first; among the rest, whichever comes
                             // back soonest.
@@ -203,8 +227,7 @@ public class FlashcardRepository {
                 c.close();
             }
 
-            if (cb != null) executors.mainThread(() -> cb.onLoaded(decks));
-        });
+            return decks;
     }
 
     /** How many cards a note has — what decides whether it offers "turn into" or "review". */
@@ -269,6 +292,66 @@ public class FlashcardRepository {
             if (!c.moveToFirst()) return new DueSummary(0, 0);
             return new DueSummary(c.getInt(0), c.getInt(1));
         }
+    }
+
+    /** A due card's front, for the flashcards widget's due-now list — just enough to render a
+     *  row and navigate to its note's deck on tap. Markdown, same as {@link Flashcard#front};
+     *  the widget converts it to plain text at render time. */
+    public static final class DueCardPreview {
+        public final String id;
+        public final String noteId;
+        public final String front;
+
+        DueCardPreview(String id, String noteId, String front) {
+            this.id = id;
+            this.noteId = noteId;
+            this.front = front;
+        }
+    }
+
+    /**
+     * The next {@code limit} cards due at {@code now}, soonest first — for the flashcards
+     * widget's due-now list, which (like {@link #countDueSync}) has to run synchronously from a
+     * {@code RemoteViewsFactory} rather than through {@link AppExecutors}. Locked collections are
+     * excluded the same way {@link #countDueSync} excludes them.
+     */
+    public List<DueCardPreview> loadDueCardsSync(long now, int limit) {
+        return loadDueCardsSync(now, limit, false);
+    }
+
+    /**
+     * The due cards a home-screen widget is allowed to show — <b>every locked collection is
+     * excluded, open or not</b>, the same rule {@link #dueProjectionSync} applies for the watch
+     * and for the same reason: neither surface has a session or a gate.
+     */
+    public List<DueCardPreview> loadDueCardsForWidgetSync(long now, int limit) {
+        return loadDueCardsSync(now, limit, true);
+    }
+
+    private List<DueCardPreview> loadDueCardsSync(long now, int limit, boolean excludeAllLocked) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        Set<String> excluded = excludeAllLocked
+                ? NoteCrypto.lockedCollectionIds(db) : NoteCrypto.hiddenCollectionIds(db);
+
+        List<String> args = new ArrayList<>();
+        args.add(String.valueOf(now));
+        args.addAll(excluded);
+        args.add(String.valueOf(limit));
+
+        List<DueCardPreview> cards = new ArrayList<>();
+        try (Cursor c = db.rawQuery(
+                "SELECT f.id, f.note_id, f.front " +
+                        "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
+                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
+                        NoteCrypto.excludeCollectionsClause(excluded) +
+                        "ORDER BY f.next_review ASC LIMIT ?",
+                args.toArray(new String[0]))) {
+            while (c.moveToNext()) {
+                cards.add(new DueCardPreview(c.getString(0), c.getString(1),
+                        c.isNull(2) ? "" : c.getString(2)));
+            }
+        }
+        return cards;
     }
 
     /**
@@ -344,6 +427,7 @@ public class FlashcardRepository {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             int deleted = db.delete("flashcards", "note_id = ?", new String[]{noteId});
+            if (deleted > 0) mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
             if (onDeleted != null) executors.mainThread(onDeleted);
 
             // The mirror of the publish in syncFromNote, and the more visible of the two if it is
@@ -379,6 +463,7 @@ public class FlashcardRepository {
             cv.put("next_review", card.nextReview);
             cv.put("last_reviewed_at", card.lastReviewedAt);
             db.update("flashcards", cv, "id = ?", new String[]{card.id});
+            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
             if (onDone != null) executors.mainThread(onDone);
 
             // After the callback, not before: the review screen should advance at the speed of the
