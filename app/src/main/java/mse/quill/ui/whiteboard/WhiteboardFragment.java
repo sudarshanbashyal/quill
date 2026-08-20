@@ -821,7 +821,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private final CollabSession.Listener collabListener = new CollabSession.Listener() {
         @Override
         public void onPeerConnected() {
+            if (!isAdded()) return;
             requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
                 if (collabStatusDialog != null) {
                     collabStatusDialog.setStatus(getString(R.string.collab_connected));
                     collabStatusDialog.dialog.dismiss();
@@ -846,7 +848,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         @Override
         public void onPeerDisconnected() {
+            if (!isAdded()) return;
             requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
                 Toast.makeText(requireContext(), R.string.collab_disconnected, Toast.LENGTH_SHORT).show();
                 endCollabSession();
             });
@@ -854,12 +858,18 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         @Override
         public void onMessage(CollabMessage message) {
-            requireActivity().runOnUiThread(() -> applyIncoming(message));
+            if (!isAdded()) return;
+            requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
+                applyIncoming(message);
+            });
         }
 
         @Override
         public void onError(String reason) {
+            if (!isAdded()) return;
             requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
                 Toast.makeText(requireContext(), reason, Toast.LENGTH_SHORT).show();
                 endCollabSession();
             });
