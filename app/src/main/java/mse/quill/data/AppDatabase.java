@@ -21,7 +21,7 @@ public class AppDatabase extends SQLiteOpenHelper {
      * different things, so the next number has to clear the highest either of them used. See
      * {@link #ensureAdditiveSchema} for why the migration doesn't trust this number alone.
      */
-    private static final int DATABASE_VERSION = 9;
+    private static final int DATABASE_VERSION = 10;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -160,6 +160,11 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "easiness REAL DEFAULT 2.5, " +
                 "next_review INTEGER, " +
                 "last_reviewed_at INTEGER, " +
+                // Stamped when the note stops being able to produce this card — the Q&A block was
+                // deleted, or one of its halves was emptied. The row stays, so refilling the half
+                // brings the card back with its schedule intact; every count of "what is there to
+                // review" leaves stamped rows out. See FlashcardRepository.markOrphansSync.
+                "orphaned_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
         // A quiz is a *marker*, not a question set: it records that a note was turned into one.
@@ -308,6 +313,9 @@ public class AppDatabase extends SQLiteOpenHelper {
         // Links a flashcard back to the Q&A block it came from, and records when it was last seen.
         addColumnIfMissing(db, "flashcards", "source_segment_id", "TEXT");
         addColumnIfMissing(db, "flashcards", "last_reviewed_at", "INTEGER");
+        // Left null on existing rows, which is the right default: nothing is orphaned until the
+        // next sync of its note looks at the blocks and decides otherwise.
+        addColumnIfMissing(db, "flashcards", "orphaned_at", "INTEGER");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_flashcards_source_segment_id " +
                 "ON flashcards(source_segment_id)");
 

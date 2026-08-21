@@ -123,6 +123,20 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private int whiteboardsSectionCount() { return whiteboards.isEmpty() ? 1 : whiteboards.size(); }
 
+    /**
+     * The note at a list position, or null if that position isn't a note row.
+     *
+     * <p>What the swipe handler asks, and the reason it can ask rather than being told: this list
+     * interleaves headers, a grid of collection cards and a grid of whiteboard cards with the note
+     * rows, and only the last of those is a full-width row that can slide away. Everything else
+     * answers null and stays put.
+     */
+    public Note noteAt(int position) {
+        if (getItemViewType(position) != TYPE_NOTE) return null;
+        int index = position - notesStart();
+        return index < 0 || index >= notes.size() ? null : notes.get(index);
+    }
+
     @Override
     public int getItemCount() {
         return whiteboardsStart() + whiteboardsSectionCount();

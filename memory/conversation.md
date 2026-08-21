@@ -3389,3 +3389,184 @@ stops at the gate; unlocking opens a fresh board with "Connecting…"; twenty se
 "Couldn't join" dialog; and backing out leaves the board count at 6, unchanged. Home's FAB shows all
 five options and "Join session" opens Play Services' scanner. The one thing not verifiable here is
 two devices actually drawing together — that needs the second phone.
+
+## 2026-08-21 — "Not enough Q&A blocks" became a picture (Feature implementation)
+
+**The complaint**: choosing "Turn into flashcards" or "Make quiz" on a note without enough Q&A
+blocks showed a Snackbar naming the rule, and the rule was never the hard part. It only helps
+someone who already knows a Q&A block is a thing you insert, and where from — and the control that
+inserts one lives in the formatting bar, which is *not on screen* at that moment: the bar exists
+only while the keyboard is up, and both actions are reached from the options menu with the keyboard
+down. The message pointed at nothing, for a few seconds, and then took itself away.
+
+**Options weighed**: a screenshot/PNG of the toolbar in a dialog (the user's first suggestion), a
+spotlight overlay on the real bar, or a live replica built from the app's own widgets. Chose the
+replica. A screenshot would be another asset to re-cut whenever the bar changes, at a fixed density,
+frozen at whatever the bar looked like the day it was taken; a spotlight would have to raise the
+keyboard first just to have something to point at.
+
+**What was built**: `QaBlockHintDialog` — an M3 dialog with the rule in one short paragraph (plus
+"This note has 2 of 5." for the quiz case, because a count is different help from "not enough"), a
+card holding a replica of the formatting bar, and a looping zoom: the strip scales 1× → 1.9× about
+the Q&A slot's centre while the other icons fade to 20% and slide off the clipped edges. Rest wide,
+ease in, hold zoomed — a camera move, not a swelling button. The highlighted icon gets a
+`brand_purple` ring; a filled pill alone was invisible against a dialog that is itself faintly
+purple (seen on the device, not guessed).
+
+**The decision that keeps it honest**: the bar's items moved into a shared
+`FormattingToolbarController.Item` enum, and both the real toolbar and the illustration are built
+from it. An item added or reordered moves in the picture too — the illustration cannot go stale.
+
+**"Add a Q&A block"** on the dialog inserts one rather than making the user go hunting for the icon
+they were just shown. Two things had to be got right for that: the insert runs from the dialog's
+*dismiss*, not its button (`showSoftInput` is discarded while a window that isn't the editor's holds
+focus), and `NoteEditorFragment.showKeyboardOnceWindowFocused()` re-asks when window focus actually
+arrives. Without both, the block appeared focused, with a caret, and no keyboard — so no formatting
+bar, which is the one thing the dialog had spent its whole life pointing at.
+
+**Also**: Import is now the last option on Home's FAB, after "Join session" — it is the only option
+there that doesn't bring something into being, so it sits at the bottom of the list.
+
+**Verified on the emulator**: both variants of the dialog, the zoom at rest and at full zoom, and
+the add-block path ending with the keyboard up and the real bar showing the Q&A icon in the position
+the illustration pointed at. Scratch notes made for the test were deleted afterwards.
+
+## 2026-08-21 (later) — Decks and quizzes can be made from their own tabs (Feature implementation)
+
+**The complaint**: the Flashcards and Quizzes tabs were read-only views of what the note editor had
+produced. The screen whose entire subject is flashcards was the one place you couldn't make any —
+its empty state described a menu item on another screen and left you to go and find it.
+
+**What was built**: a "+" in each tab's header and a button in each empty state, both opening a note
+picker. Rows carry the note's Q&A count ("4 Q&A blocks"), which is the number the question turns on
+and also quietly teaches the rule — a note sitting at 4 in a picker that wants 5 explains the minimum
+better than a sentence would. Notes that already have a deck/quiz are filtered out rather than shown
+and refused. Picking runs the same call the editor runs (`syncFromNote` / `ensureForNote`), so a deck
+made here is indistinguishable from one made there.
+
+**Nothing to offer** is three different situations and they are answered differently: no note has a
+usable block at all, or none has enough → the Q&A hint dialog with its zooming toolbar picture,
+since both end in "write more blocks"; every candidate already has one → a Snackbar, since that ends
+in nothing. The dialog grew a teach-only mode (one "Got it", no add button) because no note is open
+there. The Quizzes tab gets quiz-worded copy rather than borrowing the flashcards title — a dialog
+on that tab announcing that flashcards come from Q&A blocks answers a question nobody asked.
+
+**New**: `NoteRepository.loadQaCandidates` (parses every note's Markdown, off the main thread, only
+when a picker opens) and `NoteQaPickerDialog`, following the `WhiteboardPickerDialog` idiom rather
+than inventing a fourth picker shape.
+
+## 2026-08-21 (later) — Stale "x due" on the decks list (Bug fix)
+
+**The bug**: add a Q&A block, make flashcards, then empty one half. The review screen correctly said
+"No cards yet"; the decks list still said "1 due". Two halves of the app disagreeing about the same
+deck.
+
+**The cause**: "a card whose block is gone stops appearing" was implemented as an absence from one
+query — `syncFromNote` returns only cards it can match to a live block — while every count was a
+`COUNT(*)` over the rows. Nothing recorded the distinction, so nothing else could honour it.
+
+**Options weighed**: delete the orphaned cards (rejected — the repository deliberately keeps review
+history, and this case is exactly "the answer field was blank for a minute while I rewrote it"), or
+work it out in SQL (impossible — whether a block is usable is a fact about the note's Markdown).
+Chose a third: stamp it. New `flashcards.orphaned_at` column (schema v10, additive), set when a note
+can no longer produce the card and cleared the moment it can again, schedule untouched. Every count
+of "what is there to review" filters on it — decks list, `countForNote`, the reminder's due summary,
+the widget, the Wear projection, the collection card's badge. Only `loadBySegmentIdSync` ignores it,
+since that is what has to find an orphaned card in order to revive it.
+
+**The part that mattered for the symptom**: the stamp is refreshed from `NoteRepository.saveNote`,
+not only from `syncFromNote`. Deliberately *not* by calling `syncFromNote` there — that is the thing
+that makes a deck, so running it on every save would turn writing a Q&A block into silently
+generating flashcards nobody asked for. `markOrphansOnSaveSync` only ever moves the stamp on rows
+that already exist.
+
+**Free side effect**: pre-`source_segment_id` rows (from before that column existed) are stamped too.
+They could never be matched to a block, so they were already invisible for review while still being
+counted — the same lie by a different route.
+
+**Verified on the emulator**: made a deck from the Flashcards tab's picker; emptied the answer and
+backed out — the row vanished from the list without the deck screen ever being reopened; refilled it
+— the row came back with its schedule intact. Existing decks survived the v9→v10 migration.
+
+## 2026-08-21 (later still) — Swipe to delete, undo, and swipe between tabs (Feature implementation)
+
+Three quality-of-life asks in one pass.
+
+**Swipe to delete** on full-width rows: notes (Home and inside a collection), flashcard decks, and
+quizzes. Not on collection or whiteboard cards — those sit in a 2-column grid in the same list on
+Home, and a card sliding out from under a full-width red panel would promise a gesture the layout
+doesn't have. The panel and its bin icon are drawn in `onChildDraw` rather than laid out: it
+decorates the *gap* the row leaves, nothing can interact with it, and giving every row a
+permanently-hidden background view would double the item count for something on screen for a third
+of a second. Threshold raised to 70% of the row's width with the escape velocity multiplied by 8 —
+the user asked for "more bite" after a small fast flick was enough; raising the distance alone
+wouldn't have done it, since ItemTouchHelper also dismisses anything thrown hard enough regardless
+of distance.
+
+**Undo** on every delete reachable from a list — note, deck, quiz, whiteboard, collection.
+Implemented as *deferred* deletion (`UndoDelete`): the row leaves the list at once, the database is
+not touched until the Snackbar goes away. Chosen over delete-then-restore because only notes are
+soft-deleted; a quiz takes its attempt history with it and a board takes every stroke, so restoring
+would mean capturing and replaying all of that. Deferring fails in the safe direction — if the
+process dies mid-window the delete simply never happened. The Snackbar *is* the timer, so there is
+no second clock to keep in step; leaving the screen detaches it, which dismisses it, which commits.
+The hidden-key set is static, because a rotation rebuilds the list from a database that still holds
+the row. Bar is anchored above the bottom nav: Undo sits at the same end as the last tab, so an
+overlapping bar meant a tap aimed at Undo a moment too late landed on Profile (hit twice while
+testing).
+
+**Swipe between tabs**, decided by the user: the row wins wherever there is a row, the tab gesture
+takes everywhere else — headers, the greeting, the card grids, empty space. Watched in
+`MainActivity.dispatchTouchEvent` and never consuming the event, so it reads the gesture alongside
+whatever the screen is already doing rather than fighting for interception. It stands down when
+`SwipeToDelete.isSwipeInProgress()`, and needs a third of the screen's width — several times a
+row's commit distance, so by the time it qualifies any row that was going to claim the drag already
+has. No wrap-around at the ends.
+
+**Not covered, deliberately**: the two detail screens that delete and immediately navigate away
+(the flashcard review screen, quiz detail). They keep their confirmation dialogs; an undo bar on a
+screen being left isn't read.
+
+**Verified on the emulator**: 230px flick and 450px drag leave the row; 900px deletes; Undo restores
+it; swiping a note row does not change tab; swiping the greeting moves Home → Flashcards and back.
+Two rows were lost to timed-out undo bars during testing and were restored from a pulled copy of the
+database.
+
+## 2026-08-21 (later still) — Home's header changes with the hour (Feature implementation)
+
+**The ask**: message and colour theme for Home's top bar depending on time of day, from the
+`home_morning` / `home_day` / `home_night` frames in the MSE Figma file, with better wording than
+the placeholders.
+
+**Taken from Figma** (gradients read top → bottom, ink from the text nodes):
+morning `#8E9DCD → #FCB9A3` on `#2D2E37`; day `#FE6C54 → #F5A188` on `#2D2E37`; night
+`#0B5786 → #001D2C` on `#B9E8E7`, plus the sparkle in the corner (`ic_stars.png`, which was already
+in the repo at exactly the frame's 58×62).
+
+**The decision worth recording**: the look and the words don't divide the day the same way, so they
+are two types. `TimeOfDay.Sky` is the three palettes the design actually draws; `TimeOfDay` is five
+periods — small hours (0–5), morning (5–12), afternoon (12–17), evening (17–21), night (21–24) —
+each pointing at a sky. Prompted by the user seeing "Good evening" at 2am. Evening shares the day
+sky deliberately: that coral is a sunset already. Splitting the two is what lets the wording get
+more specific without asking the designer for more palettes.
+
+Each period has a greetings array and a subtitles array, picked independently and re-drawn on every
+fresh visit to Home (not on resume — a greeting that reshuffled when you closed a note would read as
+a glitch). Greetings carry no name; `home_greeting_with_name` appends it, so every line has to work
+both ways.
+
+**Two things that were easy to get wrong**: the status-bar scrim is painted with the gradient's *top*
+stop (the drawable's `angle=90` puts `startColor` at the bottom, so the colour names say top/bottom
+rather than start/end), and the night sky is dark enough that the system's status-bar icons have to
+flip pale — set on resume and put back in `onPause`, since the window belongs to the activity and
+every other screen wants dark icons.
+
+**A bug introduced and fixed in the same pass**: turning the header row horizontal to make room for
+the stars left it `center_vertical`, which centres the text in the full 176dp gradient — but the
+content sheet covers its bottom 56dp, so the subtitle ended up pressed against the sheet. Now
+`gravity="top"` with a 36dp top pad, which puts the greeting where Figma has it, and the two lines
+sit 2dp apart because in the design they are one text block.
+
+**Verified on the emulator**: all three skies, by temporarily pinning `TimeOfDay.now()` for the
+screenshots (the emulator is a production image, so `adb` cannot set its clock — `adb root` is
+refused). Status-bar glyphs sampled as pure white on `#0B5786` to confirm the flip.

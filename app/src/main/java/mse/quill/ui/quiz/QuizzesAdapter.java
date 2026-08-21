@@ -32,6 +32,12 @@ public class QuizzesAdapter extends RecyclerView.Adapter<QuizzesAdapter.QuizHold
         this.listener = listener;
     }
 
+    /** The row at a position, for the swipe handler — null for a stale position, which is what
+     *  a holder detached between the swipe finishing and this being asked reports. */
+    public Quiz quizAt(int position) {
+        return position < 0 || position >= quizzes.size() ? null : quizzes.get(position);
+    }
+
     public void submit(List<Quiz> quizzes) {
         this.quizzes = quizzes;
         notifyDataSetChanged();

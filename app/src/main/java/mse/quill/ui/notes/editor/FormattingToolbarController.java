@@ -1,5 +1,6 @@
 package mse.quill.ui.notes.editor;
 
+import android.content.Context;
 import android.widget.LinearLayout;
 
 import mse.quill.R;
@@ -19,6 +20,40 @@ public class FormattingToolbarController {
         void onWhiteboardRequested();
     }
 
+    /**
+     * The bar's items, in the order they sit in it.
+     *
+     * <p>The list lives here rather than inline in the constructor because it has a second reader:
+     * {@link mse.quill.ui.notes.QaBlockHintDialog} draws a replica of this bar to point at the Q&amp;A
+     * control. Sharing one declaration is what keeps that illustration honest — an item added,
+     * removed or reordered here moves in the picture too, instead of the picture quietly becoming
+     * a drawing of a toolbar that no longer exists.
+     */
+    public enum Item {
+        BOLD(R.drawable.ic_bold, R.string.action_bold),
+        ITALIC(R.drawable.ic_italic, R.string.action_italic),
+        UNDERLINE(R.drawable.ic_underline, R.string.action_underline),
+        HEADING_1(R.drawable.ic_h1, R.string.action_heading_1),
+        HEADING_2(R.drawable.ic_h2, R.string.action_heading_2),
+        BULLET_LIST(R.drawable.ic_list, R.string.action_bullet_list),
+        IMAGE(R.drawable.ic_image, R.string.action_insert_image),
+        AUDIO(R.drawable.ic_mic, R.string.action_record_audio),
+        QA_BLOCK(R.drawable.ic_question, R.string.action_qa_block),
+        WHITEBOARD(R.drawable.ic_whiteboard, R.string.action_attach_whiteboard);
+
+        public final int iconRes;
+        public final int descriptionRes;
+
+        Item(int iconRes, int descriptionRes) {
+            this.iconRes = iconRes;
+            this.descriptionRes = descriptionRes;
+        }
+
+        public FormattingButtonView newButton(Context context) {
+            return new FormattingButtonView(context, iconRes, context.getString(descriptionRes));
+        }
+    }
+
     private final FormattingButtonView boldButton;
     private final FormattingButtonView italicButton;
     private final FormattingButtonView underlineButton;
@@ -31,26 +66,16 @@ public class FormattingToolbarController {
     private final FormattingButtonView whiteboardButton;
 
     public FormattingToolbarController(LinearLayout container, FormatListener listener) {
-        boldButton = addButton(container, R.drawable.ic_bold,
-                R.string.action_bold, listener::onBoldToggled);
-        italicButton = addButton(container, R.drawable.ic_italic,
-                R.string.action_italic, listener::onItalicToggled);
-        underlineButton = addButton(container, R.drawable.ic_underline,
-                R.string.action_underline, listener::onUnderlineToggled);
-        heading1Button = addButton(container, R.drawable.ic_h1,
-                R.string.action_heading_1, listener::onHeading1Toggled);
-        heading2Button = addButton(container, R.drawable.ic_h2,
-                R.string.action_heading_2, listener::onHeading2Toggled);
-        bulletButton = addButton(container, R.drawable.ic_list,
-                R.string.action_bullet_list, listener::onBulletListToggled);
-        imageButton = addButton(container, R.drawable.ic_image,
-                R.string.action_insert_image, listener::onImageRequested);
-        micButton = addButton(container, R.drawable.ic_mic,
-                R.string.action_record_audio, listener::onAudioRequested);
-        qaButton = addButton(container, R.drawable.ic_question,
-                R.string.action_qa_block, listener::onQaBlockRequested);
-        whiteboardButton = addButton(container, R.drawable.ic_whiteboard,
-                R.string.action_attach_whiteboard, listener::onWhiteboardRequested);
+        boldButton = addButton(container, Item.BOLD, listener::onBoldToggled);
+        italicButton = addButton(container, Item.ITALIC, listener::onItalicToggled);
+        underlineButton = addButton(container, Item.UNDERLINE, listener::onUnderlineToggled);
+        heading1Button = addButton(container, Item.HEADING_1, listener::onHeading1Toggled);
+        heading2Button = addButton(container, Item.HEADING_2, listener::onHeading2Toggled);
+        bulletButton = addButton(container, Item.BULLET_LIST, listener::onBulletListToggled);
+        imageButton = addButton(container, Item.IMAGE, listener::onImageRequested);
+        micButton = addButton(container, Item.AUDIO, listener::onAudioRequested);
+        qaButton = addButton(container, Item.QA_BLOCK, listener::onQaBlockRequested);
+        whiteboardButton = addButton(container, Item.WHITEBOARD, listener::onWhiteboardRequested);
     }
 
     /**
@@ -87,10 +112,8 @@ public class FormattingToolbarController {
         micButton.setActive(recording);
     }
 
-    private FormattingButtonView addButton(LinearLayout container, int iconRes,
-                                           int contentDescriptionRes, Runnable action) {
-        FormattingButtonView button = new FormattingButtonView(
-                container.getContext(), iconRes, container.getContext().getString(contentDescriptionRes));
+    private FormattingButtonView addButton(LinearLayout container, Item item, Runnable action) {
+        FormattingButtonView button = item.newButton(container.getContext());
         button.setOnClickListener(v -> action.run());
         // Equal weights, so the row divides the bar's full width however many items it holds.
         container.addView(button, new LinearLayout.LayoutParams(

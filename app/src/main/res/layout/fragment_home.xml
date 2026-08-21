@@ -33,39 +33,68 @@
                  margin on the sheet itself. LinearLayout.measureVertical accumulates with
                  totalLength = max(totalLength, totalLength + childHeight + margins), and that max
                  swallows a negative margin on the following child. -->
+            <!-- gravity="top", not centre: the minimum height here is the whole 176dp gradient,
+                 but the content sheet is pulled up over its bottom 56dp, so centring the text in
+                 the header sinks it towards an edge that isn't there and leaves the subtitle
+                 pressed against the sheet. -->
             <LinearLayout
                 android:id="@+id/home_header"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="@dimen/content_sheet_overlap"
-                android:orientation="vertical"
+                android:orientation="horizontal"
+                android:gravity="top"
                 android:minHeight="@dimen/header_min_height"
                 android:paddingHorizontal="@dimen/spacing_lg"
-                android:paddingTop="@dimen/spacing_lg"
+                android:paddingTop="@dimen/home_header_text_top"
                 android:paddingBottom="@dimen/spacing_lg">
 
-                <!-- Playfair Display, the display serif from the MSE Figma file. Its font-family
-                     ships real italic and bold cuts (see font/playfair_display.xml), so the
-                     textStyle below selects them rather than synthesising a slant. -->
-                <!-- Text set in code: it gains the display name once Profile has one (see
-                     HomeFragment.renderGreeting), and falls back to this. -->
-                <TextView
-                    android:id="@+id/home_greeting"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="@string/home_greeting"
-                    android:fontFamily="@font/playfair_display"
-                    android:textSize="24sp"
-                    android:textStyle="italic|bold"
-                    android:textColor="@color/text_primary" />
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_sm"
-                    android:text="@string/home_greeting_subtitle"
-                    android:textSize="14sp"
-                    android:textColor="@color/text_secondary" />
+                    <!-- Playfair Display, the display serif from the MSE Figma file. Its
+                         font-family ships real italic and bold cuts (see
+                         font/playfair_display.xml), so the textStyle below selects them rather
+                         than synthesising a slant. -->
+                    <!-- Both lines, and both their colours, are set in code: which greeting
+                         appears depends on the hour and on whether Profile has a display name.
+                         See HomeFragment.renderHeader. The text here is the fallback the layout
+                         preview shows. -->
+                    <TextView
+                        android:id="@+id/home_greeting"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/home_greeting"
+                        android:fontFamily="@font/playfair_display"
+                        android:textSize="24sp"
+                        android:textStyle="italic|bold"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:id="@+id/home_greeting_subtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/home_header_line_gap"
+                        android:text="@string/home_greeting_subtitle"
+                        android:textSize="14sp"
+                        android:textColor="@color/text_secondary" />
+
+                </LinearLayout>
+
+                <!-- Night only. Decoration, so it is hidden from accessibility rather than
+                     described to someone who cannot see the sky it is sitting in anyway — the
+                     greeting beside it already says what time of day it is. -->
+                <ImageView
+                    android:id="@+id/home_header_stars"
+                    android:layout_width="@dimen/home_header_stars_size"
+                    android:layout_height="@dimen/home_header_stars_size"
+                    android:layout_marginStart="@dimen/spacing_md"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_stars"
+                    android:visibility="gone" />
 
             </LinearLayout>
 
@@ -208,26 +237,6 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <!-- Last, and the only option here that doesn't create something from scratch — a note
-             someone else wrote arrives through the same control that makes new ones, because to
-             the user both end in "a note on Home that wasn't there before". -->
-        <TextView
-            android:id="@+id/fab_option_import"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:drawableStart="@drawable/ic_option_import"
-            android:drawablePadding="@dimen/spacing_sm"
-            android:drawableTint="@color/text_on_brand"
-            android:gravity="center_vertical"
-            android:layout_marginTop="@dimen/spacing_sm"
-            android:background="@drawable/bg_fab_option"
-            android:paddingHorizontal="@dimen/spacing_md"
-            android:paddingVertical="@dimen/spacing_sm"
-            android:text="@string/action_import_note"
-            android:textColor="@color/text_on_brand"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
         <!-- Joining someone else's whiteboard used to live inside a whiteboard: you opened one of
              your own boards to get at the button that joined a different one. It belongs here, with
              the other ways a thing arrives on Home — a session is not something you do *to* a
@@ -245,6 +254,28 @@
             android:paddingHorizontal="@dimen/spacing_md"
             android:paddingVertical="@dimen/spacing_sm"
             android:text="@string/action_join_session"
+            android:textColor="@color/text_on_brand"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- Last, and the only option here that doesn't bring something into being — a note
+             someone else wrote arrives through the same control that makes new ones, because to
+             the user both end in "a note on Home that wasn't there before". It sits at the bottom
+             of the list, nearest the FAB: the three "make one" options are what the button is for,
+             and this is the exception you reach past them for. -->
+        <TextView
+            android:id="@+id/fab_option_import"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawableStart="@drawable/ic_option_import"
+            android:drawablePadding="@dimen/spacing_sm"
+            android:drawableTint="@color/text_on_brand"
+            android:gravity="center_vertical"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:background="@drawable/bg_fab_option"
+            android:paddingHorizontal="@dimen/spacing_md"
+            android:paddingVertical="@dimen/spacing_sm"
+            android:text="@string/action_import_note"
             android:textColor="@color/text_on_brand"
             android:textSize="14sp"
             android:textStyle="bold" />

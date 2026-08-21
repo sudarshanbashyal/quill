@@ -167,6 +167,8 @@ public class NoteRepository {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             Set<String> orphanedMediaPaths;
+            // Whether this save changed which of the note's cards are reviewable.
+            boolean flashcardsChanged;
 
             String markdown = NoteDocument.toMarkdown(segments);
 
@@ -228,6 +230,14 @@ public class NoteRepository {
                     indexNoteSync(db, noteId, title, markdown);
                 }
 
+                // Emptying half of a Q&A block takes its card out of review, and the decks list
+                // has to learn that from the save — waiting for the deck screen to be opened is
+                // what left a row reading "1 due" that opened onto "No cards yet". This only moves
+                // the stamp on cards that already exist; it never generates a deck, so writing a
+                // Q&A block into a note that has none stays exactly that.
+                flashcardsChanged =
+                        FlashcardRepository.markOrphansOnSaveSync(db, noteId, segments);
+
                 db.setTransactionSuccessful();
             } finally {
                 db.endTransaction();
@@ -245,12 +255,21 @@ public class NoteRepository {
             // Data Layer round trip — the widgets shouldn't wait behind the watch.
             mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
             mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            if (flashcardsChanged) {
+                mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            }
 
             // After the callback, matching recordReview and syncFromNote: the editor returns at
             // the speed of the database write, not of a Data Layer round trip. A title can change
             // on any save, and the watch's pickers are the only thing that reads this — without
             // it they would show yesterday's names until the app was next launched cold.
             WearNoteListPublisher.publishSync(appContext);
+            // Only when the answer actually changed: a card leaving review (or coming back to it)
+            // makes the watch's copy of what's due wrong, and it has no other way to find out
+            // until its next cold start.
+            if (flashcardsChanged) {
+                WearProjectionPublisher.publishAfterScheduleChange(appContext);
+            }
         });
     }
 
@@ -505,6 +524,53 @@ public class NoteRepository {
      */
     public List<Note> loadPinnedNotesForWidgetSync() {
         return getAllNotesSync(appDatabase.getWritableDatabase(), null, true, true);
+    }
+
+    /** A note, paired with how many of its Q&amp;A blocks could become cards right now. */
+    public static final class QaCandidate {
+        public final Note note;
+        public final int usableQa;
+
+        QaCandidate(Note note, int usableQa) {
+            this.note = note;
+            this.usableQa = usableQa;
+        }
+    }
+
+    public interface OnQaCandidatesLoaded { void onLoaded(List<QaCandidate> candidates); }
+
+    /**
+     * Every note that could produce at least one card, most recently updated first — what the
+     * Flashcards and Quizzes tabs offer when you ask them to make something.
+     *
+     * <p>The count comes back with the note rather than being left to the caller, because the two
+     * tabs want different amounts of it: one card is enough for a deck, a quiz needs five, and
+     * showing the number in the picker is also how a note that <em>nearly</em> qualifies explains
+     * itself. Filtering to "more than none" happens here so neither caller has to know that a
+     * half-filled block isn't a card.
+     *
+     * <p>Every note's body is parsed, which is the cost of the question: whether a note has usable
+     * Q&amp;A blocks is a fact about its Markdown, not something the notes table records. Acceptable
+     * because this runs once, off the main thread, when a picker is opened — not on any list path.
+     */
+    public void loadQaCandidates(OnQaCandidatesLoaded cb) {
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            List<QaCandidate> candidates = new ArrayList<>();
+            // getAllNotesSync rather than a query of its own: it is what already knows to leave
+            // shut collections out and to decrypt the open ones, and a picker that offered a note
+            // the rest of the app is hiding would be a hole in the lock.
+            for (Note note : getAllNotesSync(db, null, false)) {
+                // The media map is empty on purpose. It only matters for image and audio segments,
+                // and nothing here looks at those — a Q&A block is carried entirely by the
+                // Markdown.
+                List<NoteSegment> segments =
+                        NoteDocument.fromMarkdown(getMarkdownSync(db, note.id), new HashMap<>());
+                int usable = FlashcardRepository.reviewableQa(segments).size();
+                if (usable > 0) candidates.add(new QaCandidate(note, usable));
+            }
+            if (cb != null) executors.mainThread(() -> cb.onLoaded(candidates));
+        });
     }
 
     /** Everything a {@code .quill}/{@code .quillpack} bundle needs to carry for one note. */

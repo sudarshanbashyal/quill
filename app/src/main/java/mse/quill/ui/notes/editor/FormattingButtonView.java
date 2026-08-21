@@ -80,6 +80,15 @@ public class FormattingButtonView extends LinearLayout {
         ImageViewCompat.setImageTintList(icon, active ? activeTint : inactiveTint);
     }
 
+    /**
+     * Tints the icon like an active control but without lighting the dot — for the replica of this
+     * bar drawn by the Q&amp;A hint dialog, where the accent means "this is the one I'm pointing at",
+     * not "this format is currently on". The dot would say the second thing.
+     */
+    public void setHighlighted(boolean highlighted) {
+        ImageViewCompat.setImageTintList(icon, highlighted ? activeTint : inactiveTint);
+    }
+
     /** Whether the focused field offers this format at all. An unavailable control is dimmed and
      *  stops responding, rather than being hidden — the row keeps a stable shape, so the toolbar
      *  doesn't reflow every time the caret moves in or out of a Q&amp;A block. */

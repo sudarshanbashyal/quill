@@ -24,6 +24,10 @@
          plain greeting above is what an unnamed user gets, rather than a trailing comma. -->
     <string name="home_greeting_named">Welcome back, %1$s</string>
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
+    <!-- %1$s is one of the home_greetings_* lines, %2$s the display name. Kept as a format string
+         rather than concatenated so a translation can put the name first if its language does. -->
+    <string name="home_greeting_with_name">%1$s, %2$s</string>
+    <string name="home_header_stars_description">Night sky</string>
     <!-- Whiteboards joined the searchable set on master, so the hint names them too. -->
     <string name="search_hint">Search notes, whiteboards or collections…</string>
     <string name="search_hint_collection">Search notes in this collection…</string>
@@ -267,7 +271,7 @@
     <!-- Flashcards -->
     <string name="flashcards_title">Flashcards</string>
     <string name="flashcards_decks_subtitle">Decks made from your notes\' Q&amp;A blocks</string>
-    <string name="flashcards_decks_empty">No flashcards yet — open a note with Q&amp;A blocks and choose "Turn into flashcards".</string>
+    <string name="flashcards_decks_empty">No flashcards yet. Make a deck from any note that has Q&amp;A blocks with both halves filled in.</string>
     <string name="flashcards_deck_due_format">%1$d due now · %2$d cards</string>
     <string name="flashcards_deck_none_due_format">All caught up · %1$d cards</string>
     <string name="flashcards_deck_next_format">Next: %1$s</string>
@@ -279,7 +283,12 @@
     <string name="delete_flashcards_title_format">Delete flashcards for \"%1$s\"?</string>
     <string name="delete_flashcards_message">The cards and their review progress will be gone. The note\'s Q&amp;A blocks stay, so you can make them again later — starting from scratch.</string>
     <string name="flashcards_deleted">Flashcards deleted</string>
-    <string name="flashcards_no_qa_message">Add a question and answer block first — flashcards are made from Q&amp;A pairs that have both halves filled in.</string>
+    <!-- Undo. Every delete in a list defers the write for as long as this bar is up, so the word
+         is literal: nothing has been removed yet. -->
+    <string name="action_undo">Undo</string>
+    <string name="note_deleted">Note deleted</string>
+    <string name="whiteboard_deleted">Whiteboard deleted</string>
+    <string name="collection_deleted">Collection deleted</string>
     <string name="flashcard_label_question">QUESTION</string>
     <string name="flashcard_label_answer">ANSWER</string>
     <string name="flashcard_tap_to_reveal">Tap to reveal the answer</string>
@@ -300,10 +309,23 @@
     <string name="flashcards_action_review_anyway">Review anyway</string>
     <string name="flashcards_action_back">Back to note</string>
 
+    <!-- Making a deck or a quiz from the Flashcards / Quizzes tabs, rather than from inside a
+         note. The picker lists notes that could produce one and says how many blocks each has. -->
+    <string name="action_make_flashcards">Make flashcards</string>
+    <string name="qa_picker_flashcards_title">Make flashcards from</string>
+    <string name="qa_picker_quiz_title">Make a quiz from</string>
+    <string name="qa_picker_no_match">No note matches that.</string>
+    <plurals name="qa_picker_blocks">
+        <item quantity="one">%d Q&amp;A block</item>
+        <item quantity="other">%d Q&amp;A blocks</item>
+    </plurals>
+    <string name="qa_picker_all_have_flashcards">Every note with Q&amp;A blocks already has flashcards.</string>
+    <string name="qa_picker_all_have_quizzes">Every note with enough Q&amp;A blocks already has a quiz.</string>
+
     <!-- Quizzes -->
     <string name="quizzes_title">Quizzes</string>
     <string name="quizzes_subtitle">Multiple choice, built from your notes\' Q&amp;A blocks</string>
-    <string name="quizzes_empty">No quizzes yet — open a note with at least %1$d Q&amp;A blocks and choose "Make quiz".</string>
+    <string name="quizzes_empty">No quizzes yet. Make one from any note with at least %1$d Q&amp;A blocks.</string>
     <string name="quiz_row_never_taken">Not taken yet</string>
     <string name="quiz_row_best_format">Best %1$d%%</string>
     <string name="quiz_row_last_taken_format">Last taken %1$s</string>
@@ -317,8 +339,32 @@
     <string name="delete_quiz_title_format">Delete the quiz for \"%1$s\"?</string>
     <string name="delete_quiz_message">Every attempt and score will be gone. The note\'s Q&amp;A blocks stay, so you can make the quiz again later — with an empty history.</string>
     <string name="quiz_deleted">Quiz deleted</string>
-    <!-- Kept under ~100 characters: it is shown in a Snackbar, which ellipsises at two lines. -->
+    <!-- The quiz session\'s "can\'t build this" panel, for a note that has since lost blocks. The
+         same shortfall found before the quiz opens is explained by the Q&amp;A hint dialog instead,
+         which can show where the button is. -->
     <string name="quiz_not_enough_qa_message">A quiz needs %1$d Q&amp;A blocks with both halves filled in — wrong options come from the others.</string>
+
+    <!-- Q&A hint dialog: shown instead of a bare "not enough blocks" message when flashcards or a
+         quiz are asked for and the note can\'t supply them. The point of the dialog is the picture,
+         so the words stay short — they name the rule, and the toolbar replica shows the way out. -->
+    <string name="qa_hint_flashcards_title">Flashcards come from Q&amp;A blocks</string>
+    <string name="qa_hint_flashcards_message">This note doesn\'t have any yet. Add one, fill in both the question and the answer, and it becomes a card.</string>
+    <string name="qa_hint_quiz_title">A quiz needs %1$d Q&amp;A blocks</string>
+    <string name="qa_hint_quiz_message">Every wrong option in a quiz is another block\'s answer, so there have to be a few to draw from. Only blocks with both halves filled in count.</string>
+    <string name="qa_hint_quiz_progress_format">This note has %1$d of %2$d.</string>
+    <string name="qa_hint_caption">It\'s in the formatting bar that appears above the keyboard while you write.</string>
+    <string name="qa_hint_strip_description">The note\'s formatting bar, with the question and answer block button highlighted</string>
+    <string name="qa_hint_action_add">Add a Q&amp;A block</string>
+    <string name="qa_hint_action_dismiss">Not now</string>
+    <!-- The same dialog asked for from the Flashcards / Quizzes tabs, where no note is open, so
+         there is nothing to add a block to and it only teaches. -->
+    <string name="qa_hint_action_got_it">Got it</string>
+    <string name="qa_hint_no_notes_message">No note has a Q&amp;A block with both halves filled in yet. Add one while you\'re writing — the question and the answer both have to say something — and it becomes a card.</string>
+    <!-- Two different shortfalls on the Quizzes tab, and the difference is worth saying: a user
+         with no Q&amp;A blocks at all is being told what one is, a user with three is being told the
+         bar is five. -->
+    <string name="qa_hint_quiz_none_message">No note has a Q&amp;A block with both halves filled in yet. Add some while you\'re writing — every wrong option in a quiz is another block\'s answer, so it needs a few to draw from.</string>
+    <string name="qa_hint_quiz_not_enough_message">No note has that many yet. Every wrong option in a quiz is another block\'s answer, so there have to be enough blocks to draw from — and only ones with both halves filled in count.</string>
 
     <!-- Quiz detail -->
     <!-- %2$s is the whole run's budget as m:ss — the same figure the session's clock counts down,
