@@ -139,6 +139,10 @@
     <dimen name="qa_rule_width">3dp</dimen>
     <dimen name="qa_rule_gap">12dp</dimen>
     <dimen name="qa_question_text_size">14sp</dimen>
+    <!-- The block's own delete control. The glyph is small so it doesn't compete with the
+         question, but the target around it is a full touch target. -->
+    <dimen name="qa_delete_icon">16dp</dimen>
+    <dimen name="qa_delete_touch_target">32dp</dimen>
 
     <!-- Popup menu items (see ic_menu_flashcard.xml). -->
     <dimen name="menu_icon_size">22dp</dimen>
@@ -222,4 +226,34 @@
          Quill does" look like the same list. -->
     <dimen name="welcome_row_icon">24dp</dimen>
     <dimen name="welcome_logo_size">44sp</dimen>
+
+    <!-- Q&A hint dialog (QaBlockHintDialog). The strip inside it is a replica of the formatting
+         toolbar, so it borrows that bar's own height rather than declaring a second one; only the
+         framing around it — the card's corner and the pill drawn behind the highlighted item — is
+         particular to the dialog. -->
+    <dimen name="qa_hint_dialog_padding">24dp</dimen>
+    <dimen name="qa_hint_dialog_padding_bottom">8dp</dimen>
+    <dimen name="qa_hint_gap">16dp</dimen>
+    <dimen name="qa_hint_gap_small">8dp</dimen>
+    <dimen name="qa_hint_strip_corner">12dp</dimen>
+    <dimen name="qa_hint_highlight_size">32dp</dimen>
+    <dimen name="qa_hint_highlight_stroke">2dp</dimen>
+    <dimen name="qa_hint_text_size">14sp</dimen>
+    <dimen name="qa_hint_caption_text_size">13sp</dimen>
+
+    <!-- Swipe-to-delete panel (SwipeToDelete). The inset matches the gap list rows already leave
+         between themselves, so the red shape is the row's shape rather than a band across the
+         screen; the corner matches the rows' own. -->
+    <dimen name="swipe_delete_icon">24dp</dimen>
+    <dimen name="swipe_delete_inset">6dp</dimen>
+    <dimen name="swipe_delete_corner">16dp</dimen>
+
+    <!-- The sparkle in Home's night header, at the size it sits at in the Figma frame. -->
+    <dimen name="home_header_stars_size">58dp</dimen>
+    <!-- Puts the greeting's first line about 60dp down the screen, where the Figma frames have it,
+         once the status bar inset the AppBarLayout adds is taken off. -->
+    <dimen name="home_header_text_top">36dp</dimen>
+    <!-- The two greeting lines are one text block in the design, so they sit almost touching; a
+         full spacing step between them read as two unrelated sentences. -->
+    <dimen name="home_header_line_gap">2dp</dimen>
 </resources>

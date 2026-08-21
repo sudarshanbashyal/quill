@@ -11,6 +11,9 @@ import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.view.KeyEvent;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputConnectionWrapper;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 
@@ -344,10 +347,53 @@ public class RichTextField extends EditText {
     private void setupKeyListener() {
         setOnKeyListener((v, keyCode, event) -> keyCode == KeyEvent.KEYCODE_DEL
                 && event.getAction() == KeyEvent.ACTION_DOWN
-                && getSelectionStart() == 0
-                && getSelectionEnd() == 0
-                && listener != null
-                && listener.onBackspaceAtStart());
+                && caretAtStart()
+                && fireBackspaceAtStart());
+    }
+
+    /**
+     * The same backspace, caught where soft keyboards actually deliver it.
+     *
+     * <p>{@link #setupKeyListener} only sees real key events, which is what a hardware keyboard
+     * sends. Most IMEs don't: with the caret at 0 and nothing to delete they call
+     * {@code deleteSurroundingText} — or route a synthetic DEL through {@code sendKeyEvent}, which
+     * also bypasses the view's key listener. Backspacing out of a block therefore worked on a
+     * laptop and did nothing at all on a phone, which is the only place it matters.
+     */
+    @Override
+    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        InputConnection connection = super.onCreateInputConnection(outAttrs);
+        if (connection == null) return null;
+        return new InputConnectionWrapper(connection, true) {
+            @Override
+            public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+                if (beforeLength == 1 && afterLength == 0
+                        && caretAtStart() && fireBackspaceAtStart()) {
+                    return true;
+                }
+                return super.deleteSurroundingText(beforeLength, afterLength);
+            }
+
+            @Override
+            public boolean sendKeyEvent(KeyEvent event) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN
+                        && event.getKeyCode() == KeyEvent.KEYCODE_DEL
+                        && caretAtStart() && fireBackspaceAtStart()) {
+                    return true;
+                }
+                return super.sendKeyEvent(event);
+            }
+        };
+    }
+
+    /** Caret collapsed at the very start — the only position a backspace has nothing of its own
+     *  to delete, and so the only one the host gets asked about. */
+    private boolean caretAtStart() {
+        return getSelectionStart() == 0 && getSelectionEnd() == 0;
+    }
+
+    private boolean fireBackspaceAtStart() {
+        return listener != null && listener.onBackspaceAtStart();
     }
 
     private void setupTextWatcher() {

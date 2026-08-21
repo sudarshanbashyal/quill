@@ -122,8 +122,13 @@ there's a window where "locked" content leaves the device unencrypted.
         `setUserAuthenticationValidityDurationSeconds` below). Time-bound rather than per-use
         `CryptoObject`, or reading a collection would cost one prompt per note
   - [x] `notes.title` (Base64'd, TEXT column) and `notes.content_blob` (raw) encrypted at rest
-  - [ ] **Media files (`note_segments.file_path`) are still plaintext on disk** — see the
-        deferral note below. This is the one part of the epic not delivered
+  - [x] **Media files (`note_segments.file_path`) are encrypted** *(2026-08-21)* — `MediaFiles`
+        gives each file a `QLM1` header carrying its collection id, so it is self-describing and no
+        decode site needs a lookup. Converted on lock, unlock, move, and on saving media into an
+        already-shut collection. Decrypt-on-demand at all four sites the deferral note listed, with
+        no temp file anywhere: images decode from a byte array, audio and the waveform read through
+        a `MediaDataSource` over the plaintext in memory. Exports (bundle, save-to-Photos) decrypt
+        on the way out
   - [x] Key invalidation handled: `KeyGoneException` surfaces a dialog offering to keep or
         delete the unreadable notes, rather than silently eating the collection
 - [x] **Migration cases**
@@ -159,7 +164,8 @@ there's a window where "locked" content leaves the device unencrypted.
         `onViewCreated` already knows is a real pre-existing `note_id` now shows "locked" and
         backs out without ever marking itself save-ready
 
-> **Deferred — media encryption.** Images and recordings referenced by `note_segments.file_path`
+> **Done 2026-08-21 — media encryption.** *(Kept for the reasoning; the constraint it names is
+> what the implementation is shaped around.)* Images and recordings referenced by `note_segments.file_path`
 > are unreachable through the UI while a collection is shut, but the files themselves are still
 > unencrypted in `filesDir`. Doing this properly means a decrypt-on-demand path through all four
 > decode sites (`BitmapUtils`, `PdfExporter`, `AudioPlayback`, `WaveformCache`); audio in
@@ -373,7 +379,11 @@ done; Q&A segments, flashcards and the whiteboard embed are still outstanding.
         totals and next-review time
   - [ ] Per-card management (inspect/edit/delete an individual card, rather than a note's
         whole deck)
-  - [ ] Global review session screen — today's due cards across *all* notes
+  - [x] Global review session screen — today's due cards across *all* notes *(2026-08-21)* —
+        the same `FlashcardsFragment` with no note id, since flipping and grading don't care which
+        note a card came from; what the note id also buys (deleting the deck, reconciling blocks on
+        the way in) is switched off rather than reimplemented. Reached from a "Review N cards due
+        now" button on the decks list, shown only when something is due
 - [x] **Reminders (background infrastructure, reusable beyond flashcards) — done 2026-08-13**
   - [x] Notification channel (`quill_study_reminders`, IMPORTANCE_DEFAULT, VISIBILITY_PRIVATE)
   - [x] WorkManager job to notify when cards are due (`reminders/StudyReminderWorker`)
@@ -422,9 +432,10 @@ note's Q&A blocks directly rather than the `flashcards` table — see [note.md](
   - [x] Attempt opened at start, not on completion, so walking out is recorded rather
         than rewarded. A killed process leaves it in progress; a sweep on next load retires
         it, using the quiz's own time budget as the staleness rule
-  - [ ] `quiz_attempt_answers(attempt_id, …)` — still not built, and not wanted until a
-        screen reopens a past attempt's answers. The marked paper is shown from the live
-        session at the end of a run
+  - [x] `quiz_attempt_answers(attempt_id, …)` *(2026-08-21, schema v12)* — built now that a
+        screen reopens them. Stores the options **as they were shown**: the generator shuffles per
+        attempt, so a paper rebuilt from the note would put the same answers under different
+        letters and stop being the paper that was sat. Written for abandoned attempts too
 - [ ] **Question generation** (all local, no AI, no free-text matching)
   - [x] MCQ via cross-block distractors (`QuizGenerator`): the correct answer plus 3 real
         answers from *other* Q&A blocks in the same note, deduplicated case- and
@@ -451,7 +462,10 @@ note's Q&A blocks directly rather than the `flashcards` table — see [note.md](
   - [x] Quizzes tab (`QuizzesFragment`) as a third top-level destination, and per-quiz
         history (`QuizDetailFragment`): every attempt with its score, date and whether it
         was completed or abandoned, plus delete-with-confirmation
-  - [ ] Reopening a past attempt to see its questions again (needs the answers table above)
+  - [x] Reopening a past attempt to see its questions again *(2026-08-21)* — tap any row in the
+        history for its marked paper, in a dialog reusing `QuizResultsAdapter` so an old paper and
+        a just-finished one are the same view. Attempts sat before this say so rather than
+        appearing empty
 
 ---
 
@@ -461,15 +475,21 @@ note's Q&A blocks directly rather than the `flashcards` table — see [note.md](
 and what the UI surfaces. None blocks or is blocked by another epic; good filler work
 or a second-contributor track alongside Epic D.
 
-- [ ] **Wire up full-text search**
+- [x] **Wire up full-text search** *(2026-08-21)*
   - [x] Keep `notes_fts` populated — done 2026-07-28, as a side effect of the Markdown
         migration giving the body a single source. The table was also **fixed**: it was
         declared `content='notes'` with a `body` column that doesn't exist on `notes`, so
         it could never have been populated by triggers or otherwise. Now standalone
         `fts5(note_id UNINDEXED, title, body)`, written by `NoteRepository` in the same
         transaction as the save (and cleared on delete), guarded for FTS5-less builds
-  - [ ] Replace `HomeFragment`'s in-memory list filter with an FTS5 `MATCH` query — the
-        index is ready and unused; this is the only remaining piece
+  - [x] Replace `HomeFragment`'s in-memory list filter with an FTS5 `MATCH` query
+        *(2026-08-21)* — `NoteRepository.searchNoteIds` feeds the ids to `NoteFilter`, which keeps
+        its title match as the fallback for notes the index doesn't have. Two things had to be
+        fixed to make it real: `notes_fts` was only ever created in `onCreate`, so every database
+        that upgraded from v3 had none (now created and backfilled on the upgrade path, schema
+        v11); and the emulator's SQLite has no FTS5 module at all, so there is a body-scan
+        fallback — otherwise the feature silently does nothing on those builds. Search now reaches
+        past the first line, which is what it was for
 - [ ] **Trash / recover UI**
   - [ ] "Recently deleted" screen listing notes with `deleted_at IS NOT NULL`
   - [ ] Restore and permanently-delete actions
@@ -513,8 +533,8 @@ gap; what's left is the link back to notes, which overlaps Epic D's whiteboard e
       note.md for what made it affordable
 - [ ] **Make board text searchable** — Home matches whiteboards on title only, and text items are
       now the first real content a board has. Search-side change, not a whiteboard one
-- [ ] **Visual QA** — nothing here has been seen running; the section, the create/rename dialogs
-      and the FAB path are all build-unverified as of 2026-08-03
+- [x] **Visual QA** *(2026-08-21)* — the section, the create/rename dialogs and the FAB path have
+      all been seen running
 - [x] **Open a note's whiteboard from the note** *(2026-08-07)* — done with the Epic D embed, as
       intended: the embed's sheet navigates to the board
 - [ ] **Port `WhiteboardFragment`/`StrokeDao` onto `AppExecutors`** (also listed under Epic A).
@@ -564,10 +584,9 @@ worth following". The items below are the migration itself; the convention outli
 - [x] **Visual QA** — home, collection detail, note editor, FAB + expanding menu, tag
       picker dialog. Caught a real runtime crash (`TextInputLayout` child needs
       `LinearLayout.LayoutParams`) that the build had not
-- [ ] **Finish visual QA on the untouched-by-eye screens** — create/rename-collection
-      dialogs (incl. the new `CollectionDialogs.inset()` wrapper), `AddExistingNotesDialog`,
-      `RecordingDialog`, whiteboard dialogs, image/audio source pickers. All build clean and
-      share the now-fixed `TextFieldUtils` path, but none have been seen running
+- [x] **Finish visual QA on the untouched-by-eye screens** *(2026-08-21)* — create/rename-collection
+      dialogs (incl. the `CollectionDialogs.inset()` wrapper), `AddExistingNotesDialog`,
+      `RecordingDialog`, whiteboard dialogs, image/audio source pickers. All seen running
 - [x] **Home header gradient** — root cause was a silent XML namespace typo in
       `bg_home_header.xml` (`.../res/android`, missing `apk/`), which made the shape paint
       nothing at all; the gradient had never rendered. Fixed, colours re-sampled from the

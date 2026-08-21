@@ -10,4 +10,84 @@
         <item>0xFF81C784</item>
         <item>0xFFFFB74D</item>
     </integer-array>
+
+    <!-- Home's greeting, one pair of arrays per period (see TimeOfDay). A line is drawn from each
+         on every fresh visit to Home, so the screen isn't reciting the same sentence at you
+         forever; the two are picked independently because a salutation and a mood line don't have
+         to be written as a pair to read like one — which does mean every subtitle has to sit under
+         every greeting in its own set.
+
+         The greetings carry no name and no trailing punctuation: home_greeting_with_name appends
+         the display name when Profile has one, so each line has to work both ways ("Night owl" and
+         "Night owl, Sam"). -->
+
+    <!-- Midnight to 5am. Deliberately not "evening" — the whole reason this period exists. -->
+    <string-array name="home_greetings_small_hours">
+        <item>Still up</item>
+        <item>Night owl</item>
+        <item>Small hours</item>
+        <item>Late one</item>
+    </string-array>
+    <string-array name="home_subtitles_small_hours">
+        <item>Whatever it is, it will still be here tomorrow.</item>
+        <item>One more card, then sleep.</item>
+        <item>Quiet enough to actually think.</item>
+        <item>Nobody is marking you on this at 3am.</item>
+    </string-array>
+
+    <!-- 5am to noon. -->
+    <string-array name="home_greetings_morning">
+        <item>Good morning</item>
+        <item>Morning</item>
+        <item>Rise and shine</item>
+        <item>Early start</item>
+    </string-array>
+    <string-array name="home_subtitles_morning">
+        <item>A fresh page is waiting.</item>
+        <item>Whatever you write now, you\'ll thank yourself for later.</item>
+        <item>The quiet hours are the good ones.</item>
+        <item>Nothing on the page yet. That\'s the fun part.</item>
+    </string-array>
+
+    <!-- Noon to 5pm. -->
+    <string-array name="home_greetings_afternoon">
+        <item>Good afternoon</item>
+        <item>Hey there</item>
+        <item>Afternoon</item>
+        <item>Back at it</item>
+    </string-array>
+    <string-array name="home_subtitles_afternoon">
+        <item>How\'s it going?</item>
+        <item>Pick up where you left off.</item>
+        <item>There are probably a few cards due.</item>
+        <item>Wishing you a productive day…</item>
+    </string-array>
+
+    <!-- 5pm to 9pm. -->
+    <string-array name="home_greetings_evening">
+        <item>Good evening</item>
+        <item>Evening</item>
+        <item>Hey there</item>
+        <item>Winding down</item>
+    </string-array>
+    <string-array name="home_subtitles_evening">
+        <item>A good hour to review what you wrote earlier.</item>
+        <item>Still time for a few cards.</item>
+        <item>How did today go?</item>
+        <item>Nearly done for the day.</item>
+    </string-array>
+
+    <!-- 9pm to midnight. -->
+    <string-array name="home_greetings_night">
+        <item>Still going</item>
+        <item>Late session</item>
+        <item>Up late</item>
+        <item>Burning the midnight oil</item>
+    </string-array>
+    <string-array name="home_subtitles_night">
+        <item>One more review before bed?</item>
+        <item>Hope you get some good sleep afterwards.</item>
+        <item>Wind down whenever — this will keep.</item>
+        <item>Tomorrow-you will be glad you did this.</item>
+    </string-array>
 </resources>

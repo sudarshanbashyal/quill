@@ -15,7 +15,8 @@
         android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingHorizontal="@dimen/spacing_md"
         android:paddingTop="@dimen/spacing_lg"
         android:paddingBottom="@dimen/spacing_sm"
@@ -23,21 +24,41 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="@string/quizzes_title"
-            android:textColor="@color/text_primary"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <TextView
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/quizzes_title"
+                android:textColor="@color/text_primary"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="@string/quizzes_subtitle"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+        </LinearLayout>
+
+        <!-- The same action as the empty state's button, kept reachable once the list has rows in
+             it: a deck or a quiz is made from a note, and until now the only way in was to open
+             that note and find the menu item. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/create_quiz"
+            style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_xs"
-            android:text="@string/quizzes_subtitle"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            android:contentDescription="@string/action_make_quiz"
+            app:icon="@drawable/ic_add"
+            app:iconTint="@color/text_primary" />
 
     </LinearLayout>
 
@@ -53,19 +74,37 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <TextView
+    <LinearLayout
         android:id="@+id/empty_quizzes"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="@dimen/spacing_lg"
-        android:gravity="center"
-        android:textColor="@color/text_secondary"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
         android:visibility="gone"
         app:layout_constraintTop_toBottomOf="@id/header"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        tools:text="No quizzes yet"
-        tools:visibility="visible" />
+        tools:visibility="visible">
+
+        <TextView
+            android:id="@+id/empty_quizzes_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textColor="@color/text_secondary" />
+
+        <!-- Nothing here is the moment the offer is most useful, so the empty state carries the
+             action rather than only describing where it lives. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/create_quiz_empty"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:text="@string/action_make_quiz" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

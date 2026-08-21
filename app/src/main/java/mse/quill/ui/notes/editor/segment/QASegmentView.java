@@ -2,11 +2,16 @@ package mse.quill.ui.notes.editor.segment;
 
 import android.content.Context;
 import android.text.Spannable;
+import android.text.TextUtils;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.ImageViewCompat;
 
 import mse.quill.R;
 import mse.quill.ui.notes.editor.RichTextField;
@@ -43,13 +48,23 @@ public class QASegmentView extends BaseSegmentView {
         params.bottomMargin = spacing;
         setLayoutParams(params);
 
+        // The question shares its line with the block's delete control. Top-aligned rather than
+        // centred so the cross stays level with the first line of a question that wraps.
+        LinearLayout questionRow = new LinearLayout(context);
+        questionRow.setOrientation(HORIZONTAL);
+        questionRow.setGravity(Gravity.TOP);
+        addView(questionRow, new LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         questionField = buildField(context);
         questionField.setHint(R.string.qa_question_hint);
         questionField.setTextSize(
-                android.util.TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.qa_question_text_size));
+                TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.qa_question_text_size));
         questionField.setTextColor(ContextCompat.getColor(context, R.color.qa_question_text));
-        addView(questionField, new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        questionRow.addView(questionField, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        questionRow.addView(buildDeleteButton(context));
 
         // The rule is MATCH_PARENT inside a wrap_content row, so it always spans exactly the
         // answer's height however many lines it grows to.
@@ -70,16 +85,51 @@ public class QASegmentView extends BaseSegmentView {
         answerRow.addView(answerField, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        // Long-press the card itself — its padding, the rule gutter, the space beside the text —
-        // rather than the fields, whose own long-press has to stay text selection (selecting is
-        // how bold and italic get applied to part of an answer).
-        setOnLongClickListener(v -> {
-            showDeleteConfirmation();
-            return true;
-        });
     }
 
-    private void showDeleteConfirmation() {
+    /**
+     * The cross in the block's corner.
+     *
+     * <p>This used to be a long-press on the card, and in practice you could hardly ever land it:
+     * the card is almost entirely covered by two {@code EditText}s whose own long-press is text
+     * selection, so the gesture nearly always produced a copy/paste menu instead. A visible control
+     * of its own is both easier to hit and easier to find.
+     */
+    private ImageView buildDeleteButton(Context context) {
+        ImageView delete = new ImageView(context);
+        int size = dimen(R.dimen.qa_delete_touch_target);
+        int padding = (size - dimen(R.dimen.qa_delete_icon)) / 2;
+        delete.setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        delete.setPadding(padding, padding, padding, padding);
+        delete.setImageResource(R.drawable.ic_clear);
+        ImageViewCompat.setImageTintList(delete, android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(context, R.color.qa_question_text)));
+        delete.setContentDescription(context.getString(R.string.action_delete_qa_block));
+        delete.setBackground(borderlessRipple(context));
+        delete.setOnClickListener(v -> requestDelete());
+        return delete;
+    }
+
+    private static android.graphics.drawable.Drawable borderlessRipple(Context context) {
+        TypedValue value = new TypedValue();
+        context.getTheme().resolveAttribute(
+                android.R.attr.selectableItemBackgroundBorderless, value, true);
+        return ContextCompat.getDrawable(context, value.resourceId);
+    }
+
+    /**
+     * Removes the block, asking first only when there is something to lose.
+     *
+     * <p>An empty block is nearly always one that was just inserted by mistake, and putting a
+     * dialog in front of undoing that mistake is the sort of confirmation nobody reads. A block
+     * with a question or an answer in it gets the dialog, because deleting it is the only way the
+     * note loses that text.
+     */
+    private void requestDelete() {
+        if (isEmpty()) {
+            if (callback != null) callback.onRequestDelete(this);
+            return;
+        }
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(getContext())
                 .setTitle(R.string.delete_qa_title)
                 .setMessage(R.string.delete_qa_message)
@@ -88,6 +138,11 @@ public class QASegmentView extends BaseSegmentView {
                 })
                 .setNegativeButton(R.string.action_cancel, null)
                 .show();
+    }
+
+    private boolean isEmpty() {
+        return TextUtils.isEmpty(questionField.getText().toString().trim())
+                && TextUtils.isEmpty(answerField.getText().toString().trim());
     }
 
     private RichTextField buildField(Context context) {
@@ -101,12 +156,30 @@ public class QASegmentView extends BaseSegmentView {
                 if (callback != null) callback.onSelectionChanged();
             }
             @Override public boolean onBackspaceAtStart() {
-                // Deliberately not a merge-with-previous: backspacing out of a question would
-                // dissolve the block into the prose above it, losing the answer's association.
-                return false;
+                return onBackspaceAtStartOf(field);
             }
         });
         return field;
+    }
+
+    /**
+     * Backspace with the caret at the very start of one of the two fields.
+     *
+     * <p>From the answer it steps back into the question, so the block behaves like the one field
+     * it looks like rather than trapping the caret behind an invisible boundary.
+     *
+     * <p>From the question it deletes the block — the same route as the cross, confirmation and
+     * all. Still deliberately not a merge-with-previous: dissolving a question into the prose above
+     * it would leave the answer stranded, so the choice is "this block or nothing", and backspace
+     * at the top of it can only mean the former.
+     */
+    private boolean onBackspaceAtStartOf(RichTextField field) {
+        if (field == answerField) {
+            questionField.focusAtEnd();
+            return true;
+        }
+        requestDelete();
+        return true;
     }
 
     private int dimen(int res) {

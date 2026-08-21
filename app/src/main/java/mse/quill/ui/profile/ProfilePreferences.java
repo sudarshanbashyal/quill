@@ -4,6 +4,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.text.TextUtils;
 
+import java.util.Locale;
+import java.util.Random;
+
 /**
  * Who the user is to Quill: a display name, and whether they want reminders.
  *
@@ -21,6 +24,10 @@ public final class ProfilePreferences {
     private static final String KEY_REMINDER_HOUR = "reminder_hour";
     private static final String KEY_REMINDER_MINUTE = "reminder_minute";
 
+    /** What a generated name looks like: this, then four digits — {@code quill_4821}. Every
+     *  character of it is one {@link DisplayName} allows, so it survives its own sanitizer. */
+    private static final String GENERATED_NAME_PREFIX = "quill_";
+
     private static final int DEFAULT_REMINDER_HOUR = 20;
     private static final int DEFAULT_REMINDER_MINUTE = 0;
 
@@ -37,6 +44,34 @@ public final class ProfilePreferences {
         // bring it into line without a migration.
         String name = DisplayName.sanitize(prefs(context).getString(KEY_DISPLAY_NAME, null));
         return TextUtils.isEmpty(name) ? null : name;
+    }
+
+    /**
+     * Gives a brand-new install a name of its own, and returns whatever the name now is.
+     *
+     * <p>A generated name beats no name for the same reason a new document is called "Untitled" and
+     * not left blank: Home's greeting has a shape, and the version without a name is the lesser
+     * half of it. It is a starting point, not an identity — the Profile screen's field shows it
+     * from the first visit, so changing it is one tap and obviously allowed.
+     *
+     * <p>Only when nothing is set, and only called from the welcome screen — an existing notebook
+     * whose owner never filled the field in has deliberately been greeted plainly for weeks, and
+     * an update that started calling them {@code quill_4821} would be an odd thing to do to them.
+     *
+     * <p>Four digits, from an ordinary {@link Random}: this is a label on one device, not a
+     * username anything checks for collisions, so uniqueness costs nothing and buys nothing.
+     */
+    public static String ensureDefaultName(Context context) {
+        String existing = displayName(context);
+        if (existing != null) return existing;
+
+        // Locale.US so the digits are always ASCII. Character.isLetterOrDigit would accept
+        // Arabic-Indic ones too, but a name meant to read as a handle should look the same
+        // whatever the device's locale is set to.
+        String generated = GENERATED_NAME_PREFIX
+                + String.format(Locale.US, "%04d", new Random().nextInt(10_000));
+        setDisplayName(context, generated);
+        return generated;
     }
 
     /**

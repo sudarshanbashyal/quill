@@ -92,7 +92,11 @@ public final class WaveformCache {
         MediaExtractor extractor = new MediaExtractor();
         MediaCodec codec = null;
         try {
-            extractor.setDataSource(filePath);
+            // See AudioPlayback: MediaExtractor takes the same in-memory source for an encrypted
+            // clip, so drawing a waveform never writes the audio out in the clear.
+            android.media.MediaDataSource source = mse.quill.security.MediaFiles.source(filePath);
+            if (source != null) extractor.setDataSource(source);
+            else extractor.setDataSource(filePath);
             int track = selectAudioTrack(extractor);
             if (track < 0) return null;
 

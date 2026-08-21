@@ -36,6 +36,24 @@
     <color name="header_gradient_start">#EFECFD</color>
     <color name="header_gradient_end">#CAC3FA</color>
 
+    <!-- Home's three headers, one per part of the day (see home_morning / home_day / home_night in
+         the MSE Figma file). Named _top and _bottom by where the colour actually appears, not by
+         the gradient's start/end: bg_home_header draws at angle=90, which puts startColor at the
+         BOTTOM, and two of these palettes are dark at the top — mixing the two namings up would
+         invert the sky. -->
+    <color name="header_morning_top">#8E9DCD</color>
+    <color name="header_morning_bottom">#FCB9A3</color>
+    <color name="header_day_top">#FE6C54</color>
+    <color name="header_day_bottom">#F5A188</color>
+    <color name="header_night_top">#0B5786</color>
+    <color name="header_night_bottom">#001D2C</color>
+
+    <!-- Ink for the headers above. Morning and day are light enough for the app's near-black;
+         night is not, so it takes the design's pale mint instead of white — white on that navy is
+         harsher than the rest of Quill's type ever is. -->
+    <color name="header_ink_dark">#2D2E37</color>
+    <color name="header_ink_light">#B9E8E7</color>
+
     <!-- Q&A blocks. The rule beside an answer is sampled from the MSE Figma's QA frame; the
          question colour is that frame's 59%-black, deliberately not text_secondary (which is a
          purple-grey tuned for note metadata, and reads as a different kind of text here). -->

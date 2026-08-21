@@ -99,13 +99,15 @@ public final class BundleWriter {
         if (source == null || !source.isFile()) return null;
 
         String entryName = QuillBundle.MEDIA_DIR + segment.id + extensionOf(source.getName());
+        // A bundle is plaintext by definition — the receiving copy of Quill has no key of ours —
+        // so the media goes in readable rather than as ciphertext nothing on the other side could
+        // open. Sharing a locked collection's note is refused before this point; what this covers
+        // is a note whose media is still encrypted at rest while the collection is open.
+        byte[] plaintext = mse.quill.security.MediaFiles.readPlaintext(source.getAbsolutePath());
+        if (plaintext == null) return null;
+
         zip.putNextEntry(new ZipEntry(entryName));
-        try (InputStream in = new FileInputStream(source)) {
-            byte[] buffer = new byte[COPY_BUFFER];
-            for (int read; (read = in.read(buffer)) != -1; ) {
-                zip.write(buffer, 0, read);
-            }
-        }
+        zip.write(plaintext);
         zip.closeEntry();
 
         try {
