@@ -139,6 +139,10 @@
     <dimen name="qa_rule_width">3dp</dimen>
     <dimen name="qa_rule_gap">12dp</dimen>
     <dimen name="qa_question_text_size">14sp</dimen>
+    <!-- The block's own delete control. The glyph is small so it doesn't compete with the
+         question, but the target around it is a full touch target. -->
+    <dimen name="qa_delete_icon">16dp</dimen>
+    <dimen name="qa_delete_touch_target">32dp</dimen>
 
     <!-- Popup menu items (see ic_menu_flashcard.xml). -->
     <dimen name="menu_icon_size">22dp</dimen>

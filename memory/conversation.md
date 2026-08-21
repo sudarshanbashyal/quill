@@ -3570,3 +3570,42 @@ sit 2dp apart because in the design they are one text block.
 **Verified on the emulator**: all three skies, by temporarily pinning `TimeOfDay.now()` for the
 screenshots (the emulator is a production image, so `adb` cannot set its clock — `adb root` is
 refused). Status-bar glyphs sampled as pure white on `#0B5786` to confirm the flip.
+
+## 2026-08-21 (later still) — Editing Q&A blocks (Feature implementation / Bug fix)
+
+Three complaints about what it's like to work with a Q&A block, all of them about the block being
+harder to get rid of or add to than it looks.
+
+**Deleting it.** The only route was a long-press on the card, which you could hardly ever land: the
+card is almost entirely covered by two EditTexts whose own long-press is text selection, so the
+gesture nearly always produced a copy/paste menu. There is now a cross in the block's corner, and
+backspace at the start of the question does the same thing. Both go through one path that asks first
+only when there is something to lose — an empty block is nearly always one just inserted by mistake,
+and a dialog in front of undoing that is the sort of confirmation nobody reads. Backspace at the
+start of the *answer* steps back into the question instead, so the block behaves like the one field
+it looks like. Still deliberately not a merge-with-previous: dissolving a question into the prose
+above it would strand the answer.
+
+**Backspace needed catching somewhere else.** `setOnKeyListener` only sees real key events, which is
+a hardware keyboard. Most IMEs call `deleteSurroundingText`, or route a synthetic DEL through
+`sendKeyEvent` — both bypass the view's key listener. `RichTextField` now wraps its InputConnection
+and catches all three, which also fixes the pre-existing backspace-to-merge between text segments on
+a phone.
+
+**Inserting from inside a block.** The Q&A, image, audio and whiteboard controls used to grey out
+whenever the caret was in a Q&A field — a rule about *nesting* stated as if it were a rule about the
+caret. A block can't go inside a Q&A block, but it can go after one, so
+`splitFocusedTextForBlockInsert` now puts it directly after the block being edited (reusing the text
+segment that follows, if there is one, rather than stacking empty paragraphs), and `embedsAllowed`
+is simply true wherever the caret is.
+
+**Dimmed controls now answer back.** Only headings are ever unavailable now. `setAvailable(false)`
+used to call `setEnabled(false)`, so the tap vanished and the user pressed harder; the button stays
+clickable and the toolbar routes those taps to "Heading 1 isn't available inside a Q&A block",
+named from the control's own label so the sentence can't drift from the button.
+
+**Verified on the emulator**: the cross deletes; hardware backspace in an empty question deletes the
+block; tapping the Q&A control from inside a block produces a second block after it; tapping the
+dimmed H1 shows the message. **Not verified on device**: the soft-keyboard `deleteSurroundingText`
+path — repeated `adb input keyevent` puts the emulator into hardware-keyboard mode and Gboard stops
+rendering, so there was no on-screen backspace left to press.

@@ -31,6 +31,8 @@ public class FormattingButtonView extends LinearLayout {
 
     private static final float DISABLED_ALPHA = 0.3f;
 
+    private boolean available = true;
+
     private final ImageView icon;
     private final View activeDot;
     private final ColorStateList inactiveTint;
@@ -89,13 +91,22 @@ public class FormattingButtonView extends LinearLayout {
         ImageViewCompat.setImageTintList(icon, highlighted ? activeTint : inactiveTint);
     }
 
-    /** Whether the focused field offers this format at all. An unavailable control is dimmed and
-     *  stops responding, rather than being hidden — the row keeps a stable shape, so the toolbar
-     *  doesn't reflow every time the caret moves in or out of a Q&amp;A block. */
+    /**
+     * Whether the focused field offers this format at all. An unavailable control is dimmed rather
+     * than hidden — the row keeps a stable shape, so the toolbar doesn't reflow every time the
+     * caret moves in or out of a Q&amp;A block.
+     *
+     * <p>It stays clickable, though, which is the point: a dimmed control that swallows taps leaves
+     * the user pressing it harder. The toolbar routes those taps to a message saying why instead.
+     */
     public void setAvailable(boolean available) {
-        setEnabled(available);
+        this.available = available;
         setAlpha(available ? 1f : DISABLED_ALPHA);
         if (!available) setActive(false);
+    }
+
+    public boolean isAvailable() {
+        return available;
     }
 
     public void setIcon(int iconRes) {

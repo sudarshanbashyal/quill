@@ -362,6 +362,18 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
                     @Override public void onWhiteboardRequested() {
                         showWhiteboardSourceDialog();
                     }
+
+                    /** Only headings reach this: everything else in the bar works everywhere the
+                     *  caret can go. Named from the control's own label so the sentence can't drift
+                     *  from the button that produced it. */
+                    @Override public void onUnavailableRequested(
+                            FormattingToolbarController.Item item) {
+                        Snackbar.make(requireView(),
+                                        getString(R.string.formatting_unavailable_in_qa,
+                                                getString(item.descriptionRes)),
+                                        Snackbar.LENGTH_SHORT)
+                                .show();
+                    }
                 }
         );
 

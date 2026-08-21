@@ -18,6 +18,9 @@ public class FormattingToolbarController {
         void onAudioRequested();
         void onQaBlockRequested();
         void onWhiteboardRequested();
+        /** A dimmed control was tapped. The tap does nothing, but saying nothing back is what
+         *  makes a greyed-out button feel broken rather than unavailable. */
+        void onUnavailableRequested(Item item);
     }
 
     /**
@@ -65,7 +68,10 @@ public class FormattingToolbarController {
     private final FormattingButtonView qaButton;
     private final FormattingButtonView whiteboardButton;
 
+    private final FormatListener listener;
+
     public FormattingToolbarController(LinearLayout container, FormatListener listener) {
+        this.listener = listener;
         boldButton = addButton(container, Item.BOLD, listener::onBoldToggled);
         italicButton = addButton(container, Item.ITALIC, listener::onItalicToggled);
         underlineButton = addButton(container, Item.UNDERLINE, listener::onUnderlineToggled);
@@ -82,14 +88,17 @@ public class FormattingToolbarController {
      * Availability is applied before active state, and {@link FormattingButtonView#setAvailable}
      * clears the marker when a control goes away — so a heading marker can't be left lit after the
      * caret moves into a Q&amp;A field where headings don't exist.
+     *
+     * <p>Only headings are ever unavailable now. The block controls used to grey out inside a
+     * Q&amp;A block too, which was a rule about nesting stated as if it were a rule about the
+     * caret: a block can't go <em>inside</em> a Q&amp;A, but it can perfectly well go after one,
+     * and making the user tap out of the block first to say so was busywork.
      */
     public void updateState(FormattingState state) {
         heading1Button.setAvailable(state.headingsAllowed);
         heading2Button.setAvailable(state.headingsAllowed);
         imageButton.setAvailable(state.embedsAllowed);
         micButton.setAvailable(state.embedsAllowed);
-        // A Q&A block is itself a block, so it's offered exactly where other blocks are — which
-        // also stops one being nested inside another.
         qaButton.setAvailable(state.embedsAllowed);
         whiteboardButton.setAvailable(state.embedsAllowed);
 
@@ -114,7 +123,13 @@ public class FormattingToolbarController {
 
     private FormattingButtonView addButton(LinearLayout container, Item item, Runnable action) {
         FormattingButtonView button = item.newButton(container.getContext());
-        button.setOnClickListener(v -> action.run());
+        button.setOnClickListener(v -> {
+            if (!button.isAvailable()) {
+                listener.onUnavailableRequested(item);
+                return;
+            }
+            action.run();
+        });
         // Equal weights, so the row divides the bar's full width however many items it holds.
         container.addView(button, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
