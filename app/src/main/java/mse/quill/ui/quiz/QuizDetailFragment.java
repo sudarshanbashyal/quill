@@ -18,6 +18,8 @@ import com.google.android.material.button.MaterialButton;
 
 import java.util.List;
 
+import com.google.android.material.snackbar.Snackbar;
+
 import mse.quill.R;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.QuizRepository;
@@ -71,7 +73,7 @@ public class QuizDetailFragment extends Fragment {
         startButton = view.findViewById(R.id.start_button);
         deleteButton = view.findViewById(R.id.delete_quiz_button);
 
-        adapter = new QuizAttemptsAdapter();
+        adapter = new QuizAttemptsAdapter(this::showMarkedPaper);
         recyclerView = view.findViewById(R.id.recycler_attempts);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
         recyclerView.setAdapter(adapter);
@@ -134,6 +136,28 @@ public class QuizDetailFragment extends Fragment {
     private String formatBudget(long millis) {
         long seconds = millis / 1000;
         return getString(R.string.quiz_timer_format, seconds / 60, seconds % 60);
+    }
+
+    /**
+     * Reopens a past sitting's paper — every question as it was asked, with what was chosen.
+     *
+     * <p>A dialog rather than a screen of its own: it is a thing you glance back at from the
+     * history you are already looking at, and a destination would put it behind a navigation the
+     * back stack then has to carry. It reuses the same row view the end of a live run shows, so a
+     * paper looks identical whether it is two seconds or two weeks old.
+     */
+    private void showMarkedPaper(QuizAttempt attempt) {
+        quizRepository.loadAttemptAnswers(attempt.id, results -> {
+            if (!isAdded()) return;
+            if (results.isEmpty()) {
+                // Attempts sat before answers were stored. The score beside it is still true, so
+                // this says what is missing rather than pretending the attempt was empty.
+                Snackbar.make(requireView(), R.string.quiz_attempt_not_kept, Snackbar.LENGTH_LONG)
+                        .show();
+                return;
+            }
+            MarkedPaperDialog.show(requireContext(), attempt, results);
+        });
     }
 
     private void renderAttempts(List<QuizAttempt> attempts) {

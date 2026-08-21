@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.widget.Toast;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -138,7 +139,22 @@ public final class AudioPlayback {
         try {
             player = new MediaPlayer();
             player.setAudioAttributes(AudioFocus.speechAttributes());
-            player.setDataSource(path);
+            // A recording in a locked collection is encrypted on disk, and MediaPlayer needs
+            // random access — so it gets a MediaDataSource over the plaintext in memory rather
+            // than a decrypted temp file that would have to be cleaned up. Plaintext clips keep
+            // streaming straight from disk.
+            android.media.MediaDataSource source = mse.quill.security.MediaFiles.source(path);
+            if (source != null) {
+                player.setDataSource(source);
+            } else if (mse.quill.security.MediaFiles.isEncrypted(path)) {
+                // Encrypted and it would not open. Handing MediaPlayer the path here would give it
+                // the ciphertext, which it reports as an unhelpful native decoder error; the real
+                // cause is almost always the collection key's authentication window having closed
+                // since the note was opened, and the answer is to unlock it again.
+                throw new IOException("locked media: " + path);
+            } else {
+                player.setDataSource(path);
+            }
             player.prepare();
             player.setOnCompletionListener(mp -> {
                 // A finished clip closes itself, bar and notification with it — the same end state
@@ -164,6 +180,14 @@ public final class AudioPlayback {
         } catch (IOException | IllegalStateException e) {
             release();
             notifyStateChanged();
+            // Said out loud rather than logged. A play button that does nothing is the one outcome
+            // the user cannot diagnose, and "nothing happened" is what a lapsed key looks like from
+            // the outside.
+            Toast.makeText(appContext,
+                    appContext.getString(mse.quill.security.MediaFiles.isEncrypted(path)
+                            ? mse.quill.R.string.audio_locked_needs_unlock
+                            : mse.quill.R.string.audio_playback_failed),
+                    Toast.LENGTH_LONG).show();
             return;
         }
         if (!requestFocus()) {

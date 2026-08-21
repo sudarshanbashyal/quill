@@ -34,7 +34,15 @@ import mse.quill.util.CardStyles;
  */
 public class QuizAttemptsAdapter extends RecyclerView.Adapter<QuizAttemptsAdapter.AttemptHolder> {
 
+    /** Tapping a row reopens that sitting's marked paper. */
+    public interface Listener { void onAttemptClicked(QuizAttempt attempt); }
+
+    private final Listener listener;
     private List<QuizAttempt> attempts = new ArrayList<>();
+
+    public QuizAttemptsAdapter(Listener listener) {
+        this.listener = listener;
+    }
 
     public void submit(List<QuizAttempt> attempts) {
         this.attempts = attempts;
@@ -49,7 +57,9 @@ public class QuizAttemptsAdapter extends RecyclerView.Adapter<QuizAttemptsAdapte
 
     @Override
     public void onBindViewHolder(@NonNull AttemptHolder holder, int position) {
-        holder.bind(attempts.get(position));
+        QuizAttempt attempt = attempts.get(position);
+        holder.bind(attempt);
+        holder.itemView.setOnClickListener(v -> listener.onAttemptClicked(attempt));
     }
 
     @Override

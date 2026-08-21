@@ -213,7 +213,16 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         searchBar.setListener(new SearchFilterBar.Listener() {
             @Override public void onQueryChanged(String query) {
                 filter.setQuery(query);
+                // Drawn twice on purpose: once now from what is already in memory, so the list
+                // responds to the keystroke, and again when the index answers with the notes whose
+                // *body* matches. Waiting for the round trip would make typing feel laggy for the
+                // sake of results that mostly agree.
                 applyFilters();
+                noteRepository.searchNoteIds(query, ids -> {
+                    if (!isAdded()) return;
+                    filter.setFullTextMatches(query, ids);
+                    applyFilters();
+                });
             }
 
             @Override public void onFilterRequested() {

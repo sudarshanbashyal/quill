@@ -27,6 +27,7 @@ import java.util.List;
 
 import mse.quill.R;
 import mse.quill.util.RelativeTime;
+import mse.quill.util.UndoDelete;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Flashcard;
@@ -35,9 +36,15 @@ import mse.quill.data.serialization.MarkdownSerializer;
 /**
  * Reviews the flashcards generated from one note's Q&amp;A blocks.
  *
- * <p>The screen takes a note id and nothing else. It reads the note back from storage rather than
- * being handed the editor's live segments, because the cards have to be reconciled against what was
- * actually saved — the ids in the note's Markdown are what a card's review history hangs off.
+ * <p>With a note id it reads that note back from storage rather than being handed the editor's live
+ * segments, because the cards have to be reconciled against what was actually saved — the ids in
+ * the note's Markdown are what a card's review history hangs off.
+ *
+ * <p><b>Without one</b> it is the global session: everything due right now, across every note. The
+ * same screen deliberately, because flipping, grading and scheduling do not care which note a card
+ * came from — only the deck it is handed differs. What the note id also buys is the things that are
+ * about a note rather than a card: deleting the deck, and reconciling blocks on the way in. Both
+ * are switched off in global mode rather than reimplemented.
  */
 public class FlashcardsFragment extends Fragment {
 
@@ -60,6 +67,7 @@ public class FlashcardsFragment extends Fragment {
     private NoteRepository noteRepository;
     private FlashcardRepository flashcardRepository;
 
+    /** Null in global mode — see the class comment. */
     private String noteId;
     private String noteTitle;
     private View deleteButton;
@@ -139,7 +147,7 @@ public class FlashcardsFragment extends Fragment {
     private void loadDeck() {
         noteId = getArguments() != null ? getArguments().getString(ARG_NOTE_ID) : null;
         if (noteId == null) {
-            leave();
+            loadGlobalDeck();
             return;
         }
         noteRepository.loadNote(noteId, (note, segments) -> {
@@ -151,6 +159,31 @@ public class FlashcardsFragment extends Fragment {
                 deleteButton.setVisibility(deck.isEmpty() ? View.GONE : View.VISIBLE);
                 startSession(ReviewSession.due(deck, System.currentTimeMillis()));
             });
+        });
+    }
+
+    /**
+     * Everything due right now, from every note.
+     *
+     * <p>The deck handed to the session is the due list itself, so "review anyway" and the
+     * caught-up screen's next-card time both describe the same set the user asked for. There is
+     * nothing to delete here — a global deck isn't a thing that exists to be deleted, only a view
+     * of several that are — so the button stays hidden.
+     */
+    private void loadGlobalDeck() {
+        requireView().<TextView>findViewById(R.id.toolbar_title)
+                .setText(R.string.flashcards_due_title);
+        flashcardRepository.loadDueAcrossNotes(System.currentTimeMillis(), cards -> {
+            if (!isAdded()) return;
+            // A deck deleted on the list a moment ago is still in the database until its undo bar
+            // goes. It is gone as far as the user is concerned, so it is gone from here too.
+            deck = new ArrayList<>();
+            for (Flashcard card : cards) {
+                if (!UndoDelete.isHidden(FlashcardDecksFragment.deckUndoKey(card.noteId))) {
+                    deck.add(card);
+                }
+            }
+            startSession(new ArrayList<>(deck));
         });
     }
 
@@ -171,6 +204,14 @@ public class FlashcardsFragment extends Fragment {
 
     private void startSession(List<Flashcard> cards) {
         if (deck.isEmpty()) {
+            // In global mode an empty deck isn't "this note has no cards", it is "nothing in the
+            // app is due" — which is the caught-up state, not an error.
+            if (noteId == null) {
+                showMessage(R.string.flashcards_caught_up_title,
+                        getString(R.string.flashcards_caught_up_message),
+                        null, 0, R.string.flashcards_action_back);
+                return;
+            }
             showMessage(R.string.flashcards_empty_title, getString(R.string.flashcards_empty_message),
                     null, 0, R.string.flashcards_action_back);
             return;

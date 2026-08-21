@@ -26,6 +26,7 @@ import mse.quill.R;
 import mse.quill.data.AppExecutors;
 import mse.quill.onboarding.Onboarding;
 import mse.quill.onboarding.SampleData;
+import mse.quill.ui.profile.ProfilePreferences;
 
 /**
  * The first screen of a brand-new Quill: what the app is, and a choice between starting with
@@ -203,6 +204,11 @@ public class WelcomeActivity extends AppCompatActivity {
      * content in it, where "start empty" still does the right thing.
      */
     private void openMain() {
+        // Synchronously, unlike the flag below: Home reads the name as it draws its greeting, and
+        // a name still being written on the disk thread would leave the first screen of a brand-new
+        // install greeting nobody, then quietly gaining a name on the next resume. The write itself
+        // is a preference edit, so the value is readable in this process the moment it returns.
+        ProfilePreferences.ensureDefaultName(this);
         AppExecutors.getInstance().diskIO(() -> Onboarding.markWelcomeSeen(getApplicationContext()));
         startActivity(new Intent(this, MainActivity.class));
         finish();

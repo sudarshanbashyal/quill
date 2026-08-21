@@ -9,6 +9,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
+import mse.quill.security.MediaFiles;
+
 /** Decoding helpers shared by the image pipeline — capture, the inline segment, and the viewer. */
 public final class BitmapUtils {
 
@@ -23,9 +25,19 @@ public final class BitmapUtils {
      *  full resolution is tens of megabytes of heap for something being drawn a few hundred pixels
      *  wide. */
     public static Bitmap decodeSampled(String path, int maxWidth) {
+        // Through MediaFiles rather than BitmapFactory.decodeFile, so an image belonging to a
+        // locked collection decodes from its plaintext in memory. Nothing above this line knows
+        // whether a given file is encrypted, which is the point — see MediaFiles.
+        byte[] data = MediaFiles.readPlaintext(path);
+        if (data == null) return null;
+        return decodeSampled(data, maxWidth);
+    }
+
+    /** The same, for bytes already in hand. */
+    public static Bitmap decodeSampled(byte[] data, int maxWidth) {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, options);
+        BitmapFactory.decodeByteArray(data, 0, data.length, options);
 
         int sampleSize = 1;
         while (options.outWidth / sampleSize > maxWidth) {
@@ -34,7 +46,7 @@ public final class BitmapUtils {
 
         options.inJustDecodeBounds = false;
         options.inSampleSize = sampleSize;
-        return BitmapFactory.decodeFile(path, options);
+        return BitmapFactory.decodeByteArray(data, 0, data.length, options);
     }
 
     /**
@@ -53,15 +65,20 @@ public final class BitmapUtils {
      *         right outcome for an image that was already upright and small enough.
      */
     public static boolean normaliseStoredImage(String path) {
+        // Runs on the way in, before the file is ever encrypted, so this reads plaintext either
+        // way — but it goes through the same door as every other decode so there is only one.
+        byte[] data = MediaFiles.readPlaintext(path);
+        if (data == null) return false;
+
         int rotation = rotationDegrees(path);
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, bounds);
+        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
 
         boolean oversized = Math.max(bounds.outWidth, bounds.outHeight) > STORED_MAX_DIMENSION;
         if (rotation == 0 && !oversized) return false;
 
-        Bitmap decoded = decodeSampled(path, STORED_MAX_DIMENSION);
+        Bitmap decoded = decodeSampled(data, STORED_MAX_DIMENSION);
         if (decoded == null) return false;
 
         Bitmap upright = decoded;

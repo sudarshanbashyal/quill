@@ -3609,3 +3609,121 @@ block; tapping the Q&A control from inside a block produces a second block after
 dimmed H1 shows the message. **Not verified on device**: the soft-keyboard `deleteSurroundingText`
 path — repeated `adb input keyevent` puts the emulator into hardware-keyboard mode and Gboard stops
 rendering, so there was no on-screen backspace left to press.
+
+## 2026-08-21 (later still) — Four epic items: search, global review, media encryption, quiz answers
+
+**Full-text search (Epic F).** `notes_fts` had been kept current on every save for weeks and nothing
+ever asked it anything; Home matched a note's title and its *preview*, which is only the first
+non-empty line, so a word in the middle of a note could not be found. Two things had to be fixed
+before wiring the query was worth anything. The index was only ever created in `onCreate`, so every
+database that upgraded from v3 had none — silently, because both the reads and the writes are
+guarded for FTS5-less builds and a missing table looks exactly like a missing module. It is now
+created and backfilled on the upgrade path (schema v11). And this project's emulator image has no
+FTS5 module *at all*, so there is a body-scan fallback: slower, completely reliable, and the
+difference between a feature that works everywhere and one that quietly does nothing on some phones.
+
+**Global review session (Epic D).** The same `FlashcardsFragment` with no note id, because flipping,
+grading and scheduling don't care which note a card came from. What the note id also buys — deleting
+the deck, reconciling blocks on the way in — is switched off rather than reimplemented. Entry point
+is a "Review N cards due now" button on the decks list, shown only when something is due: a
+permanent button that mostly reports nothing is a button you learn not to read.
+
+**Media encryption (Epic B).** The one part of the security epic never delivered: note text was
+encrypted, the images and recordings behind it were not — unreachable through the UI while the
+collection was shut, which is not the same property. `MediaFiles` gives each file a `QLM1` header
+carrying its collection id, so the file is self-describing and no decode site needs a path → segment
+→ note → collection lookup or a `Context` threaded into `BitmapUtils`. Converted on lock, unlock,
+move, and on saving media into an already-shut collection. The deferral note's warning — that a
+version writing decrypted temp files and forgetting to clean them up would be worse than the current
+state — is honoured by there being no temp file at all: images decode from a byte array, audio and
+the waveform read through a `MediaDataSource` over plaintext in memory. Exports decrypt on the way
+out, since a bundle is plaintext by definition.
+
+*Found while testing*: a lapsed Keystore auth window makes media undecryptable while the app still
+considers the collection open (the note text is already in memory by then, so only media notices).
+The first version then handed the ciphertext to MediaPlayer, which reported a native decoder error.
+Now it refuses and says "Unlock this collection again to play its recordings".
+
+**Quiz attempt answers (Epic E, schema v12).** Built now that something reopens them. Stores the
+options **as they were shown**: the generator shuffles per attempt, so a paper rebuilt from the note
+would put the same answers under different letters and stop being the paper that was sat. Written
+for abandoned attempts too. Tapping any row in a quiz's history reopens its marked paper in a dialog
+reusing `QuizResultsAdapter`, so an old paper and a just-finished one are the same view.
+
+**Bug reported mid-session and fixed**: making flashcards then moving the note into a locked
+collection made the deck vanish with no warning. The deletion is deliberate and necessary — cards
+hold the question and answer as their own plaintext columns, so keeping them would leave a readable
+copy of an encrypted note in a table the lock doesn't reach, which is why locking a whole collection
+removes them too. But locking *says so* in its confirmation and moving did it in silence. The
+destination picker now labels locked collections ("Private · Locked") and confirms before moving
+into one, naming what is lost and that the Q&A blocks stay.
+
+**Verified on the emulator**: a word on the second line of a note is now findable; the global
+session opens "Due now" with 3 cards from three notes; two recordings went plaintext → `QLM1` on
+lock and back to a valid `ftypmp42` on unlock, with waveforms rendering from the encrypted files in
+between; a six-question quiz stored its paper (blanks as -1) and reopened it intact. Visual QA items
+in Epics H and I ticked off at the user's word.
+
+## 2026-08-21 (later still) — Stale due count, and keeping the review schedule through a lock (Bug fix / Architecture decision)
+
+**Stale "Review N cards due now".** Two decks of five, delete one, the button still said ten. The
+count came from its own SQL query, and a swipe-delete is *deferred* — the row leaves the list when
+the undo bar appears but nothing is written until the bar goes, so the query kept counting cards the
+user had already seen disappear. Now the total is summed from the decks actually rendered, which
+cannot disagree with what is on screen, and the commit callback reloads so the screen settles once
+the delete lands. The global session filters the same pending-delete keys, or the button and the
+session it opens would count differently. The separate `countDueAcrossNotes` query is gone.
+
+**Keeping the schedule through a lock.** User asked whether flashcards could be re-created after
+moving a note into a locked collection rather than just deleted. Re-creating was always possible —
+`syncFromNote` rebuilds every card from the note's Q&A blocks — so tracking a count would have added
+nothing. What the delete actually destroyed was the SM-2 schedule, the one part of a deck that
+cannot be regenerated from the note.
+
+The delete was half right. `front` and `back` are copies of the note's text in plaintext columns, so
+they genuinely cannot stay behind a locked collection. But `interval`, `repetitions`, `easiness` and
+`next_review` are not content: they say nothing about what the note contains. So the row now stays
+with its text blanked and `orphaned_at` stamped — which every "what is there to review" query
+already filters, since that column was added earlier the same day for the stale-deck bug. The next
+sync of the note refills the text from its blocks and clears the stamp, schedule untouched.
+
+One trap found while designing it: the save path also clears `orphaned_at` for live blocks, which
+would have brought a blanked card back as an empty one. The revive now requires non-empty text, so
+only a real sync — which refills the text first, in the same transaction — can restore a card.
+
+Both confirmation dialogs used to promise the schedule was lost and now say the opposite, correctly.
+
+**Verified on the emulator**: a card seeded at interval=30, repetitions=7, easiness=2.9 came through
+lock (text blanked, stamped, schedule intact) and unlock (text refilled, stamp cleared, schedule
+intact) — the deck screen showed "All caught up · Next card: in 23 hours" rather than a fresh card
+due now. Deleting a deck now drops the button from 3 to 2 immediately and it stays there after the
+undo window closes.
+
+## 2026-08-21 (later still) — A name on first launch (Feature implementation)
+
+New installs are given a name like `quill_7692` instead of being greeted by nobody. Home's greeting
+has a shape — "Good morning, <name>" — and the nameless version is the lesser half of it; a
+generated name is a starting point the same way a new document is called "Untitled", and the Profile
+field shows it from the first visit so changing it is one tap.
+
+**Where it happens matters more than what it generates.** `ProfilePreferences.ensureDefaultName` is
+called from `WelcomeActivity.openMain`, which both answers to the welcome screen pass through, so it
+runs exactly once on a genuinely fresh install. Deliberately *not* from `displayName()` (a getter
+that writes is a trap) and not from `Onboarding.markWelcomeSeen`, which also fires on the
+upgrade-shortcut path — an existing notebook whose owner never filled the field in has been greeted
+plainly for weeks, and an update that started calling them `quill_4821` would be an odd thing to do
+to them.
+
+Called synchronously rather than on the disk thread, unlike the welcome flag beside it: Home reads
+the name while drawing its greeting, and a name still in flight would leave the first screen of a
+new install greeting nobody and then quietly gaining a name on the next resume. Four ASCII digits
+via `Locale.US` — `Character.isLetterOrDigit` would accept Arabic-Indic digits too, and a handle
+should look the same whatever the device's locale is.
+
+**Verified on the emulator**: reaching the real welcome screen needed the database gone (the flag
+alone isn't enough — `shouldShowWelcome` also asks whether there is content) and `WelcomeActivity`
+is `exported="false"`, so it can't be launched from adb. Backed up every shared_prefs file and the
+database, removed the db and the onboarding flag, took the first run through "Start empty", saw
+`quill_7692` written and Home render "Hey there, quill_7692" immediately, then restored everything.
+`pm clear` was avoided on purpose: it may take the Keystore entries with it, and the locked
+collection's ciphertext would be scrap without its key.

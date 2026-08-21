@@ -48,6 +48,7 @@ public class FlashcardDecksFragment extends Fragment {
     private FlashcardDecksAdapter adapter;
     private RecyclerView recyclerView;
     private View emptyView;
+    private com.google.android.material.button.MaterialButton reviewAllButton;
     /** The notes already on this list, so the picker doesn't offer one whose deck exists. */
     private final Set<String> notesWithDecks = new HashSet<>();
 
@@ -90,6 +91,9 @@ public class FlashcardDecksFragment extends Fragment {
         });
         emptyView = view.findViewById(R.id.empty_decks);
 
+        reviewAllButton = view.findViewById(R.id.review_all_due);
+        reviewAllButton.setOnClickListener(v -> openGlobalSession());
+
         View.OnClickListener create = v -> startCreateFlow();
         view.findViewById(R.id.create_deck).setOnClickListener(create);
         view.findViewById(R.id.create_deck_empty).setOnClickListener(create);
@@ -108,6 +112,29 @@ public class FlashcardDecksFragment extends Fragment {
         });
     }
 
+    /**
+     * Sets the "review everything due" button from the rows actually on screen.
+     *
+     * <p>Summed from the visible decks rather than counted in SQL, which is what it used to do and
+     * what made it wrong: a deck waiting out its undo window is gone from the list but still in the
+     * database, so the query kept counting its cards and the button went on offering ten while nine
+     * were listed. Summing what is rendered cannot disagree with what is rendered.
+     */
+    private void renderDueTotal(List<FlashcardDeck> visibleDecks) {
+        int due = 0;
+        for (FlashcardDeck deck : visibleDecks) due += deck.due;
+        reviewAllButton.setVisibility(due > 0 ? View.VISIBLE : View.GONE);
+        if (due > 0) {
+            reviewAllButton.setText(getResources().getQuantityString(
+                    R.plurals.flashcards_review_all, due, due));
+        }
+    }
+
+    /** The same review screen, with no note id — see {@link FlashcardsFragment}. */
+    private void openGlobalSession() {
+        NavHostFragment.findNavController(this).navigate(R.id.flashcardsFragment);
+    }
+
     private void render(List<FlashcardDeck> decks) {
         // A deck waiting out its undo window is gone as far as the user is concerned, and this
         // list is rebuilt on every resume — without the filter it would come back up underneath
@@ -119,6 +146,7 @@ public class FlashcardDecksFragment extends Fragment {
         decks = visible;
 
         adapter.submit(decks);
+        renderDueTotal(decks);
         notesWithDecks.clear();
         for (FlashcardDeck deck : decks) notesWithDecks.add(deck.noteId);
         boolean empty = decks.isEmpty();
@@ -196,12 +224,23 @@ public class FlashcardDecksFragment extends Fragment {
     private void deleteWithUndo(FlashcardDeck deck) {
         UndoDelete.offer(requireView(), getString(R.string.flashcards_deleted), undoKey(deck),
                 this::reload,
-                () -> flashcardRepository.deleteForNote(deck.noteId, null));
+                // Reloaded on the way out too. The row left the list when the bar appeared, but
+                // nothing had actually been written yet — without this the screen keeps whatever it
+                // last read from the database until something else happens to reload it.
+                () -> flashcardRepository.deleteForNote(deck.noteId, () -> {
+                    if (isAdded()) reload();
+                }));
         reload();
     }
 
     /** A deck is identified by its note, which is also what the delete is keyed on. */
     private static String undoKey(FlashcardDeck deck) {
-        return "deck:" + deck.noteId;
+        return deckUndoKey(deck.noteId);
+    }
+
+    /** Shared with {@link FlashcardsFragment}, so the global session can leave out a deck that is
+     *  mid-undo here — the two would otherwise disagree about what is due. */
+    static String deckUndoKey(String noteId) {
+        return "deck:" + noteId;
     }
 }

@@ -27,6 +27,19 @@ public final class QuizQuestion {
         this.correctIndex = correctIndex;
     }
 
+    /**
+     * Rebuilds a question that was already asked, from what was stored with the attempt.
+     *
+     * <p>The normal constructor stays package-private because a question is generated, not made:
+     * everything about it — the distractors, the order — is the generator's decision. This is the
+     * one exception, and it is not generation but recall. The options come back exactly as they
+     * were shown, which is what makes a reopened attempt the same paper rather than a new one.
+     */
+    public static QuizQuestion restored(String sourceId, String prompt, List<String> options,
+                                        int correctIndex) {
+        return new QuizQuestion(sourceId, prompt, options, correctIndex);
+    }
+
     public String correctOption() {
         return options.get(correctIndex);
     }

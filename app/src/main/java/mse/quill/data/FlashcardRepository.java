@@ -196,7 +196,7 @@ public class FlashcardRepository {
         ContentValues revive = new ContentValues();
         revive.putNull("orphaned_at");
         int revived = db.update("flashcards", revive,
-                "note_id = ? AND orphaned_at IS NOT NULL "
+                "note_id = ? AND orphaned_at IS NOT NULL AND front <> '' "
                         + "AND source_segment_id IN (" + liveList + ")",
                 argArray);
 
@@ -210,6 +210,34 @@ public class FlashcardRepository {
             sb.append('?');
         }
         return sb.toString();
+    }
+
+    /**
+     * Takes a note's cards out of circulation for a lock, keeping everything that isn't its text.
+     *
+     * <p>This used to be a delete, and the delete was half right. {@code front} and {@code back} are
+     * copies of the note's Q&amp;A blocks in plaintext columns, so leaving them behind a locked
+     * collection would keep a readable copy of the note in a table the lock doesn't reach — that
+     * part was never negotiable. But the SM-2 columns are not content: an interval, a repetition
+     * count and an easiness factor say nothing about what the note contains, and throwing them away
+     * cost the user the only thing in a deck that can't be regenerated. Re-creating cards later was
+     * always possible — {@link #syncFromNote} rebuilds them from the blocks — what was lost was
+     * everything Quill knew about how well they were known.
+     *
+     * <p>So the row stays, its text is blanked, and it is stamped orphaned so every "what is there
+     * to review" query already leaves it out. The next sync of that note refills the text from its
+     * blocks and clears the stamp, with the schedule untouched.
+     *
+     * <p>The revive in {@link #markOrphansSync} requires non-empty text for exactly this reason: a
+     * plain save must not bring a blanked card back before something has put its question back in
+     * it.
+     */
+    static void suspendForLockSync(SQLiteDatabase db, String noteId) {
+        ContentValues cv = new ContentValues();
+        cv.put("front", "");
+        cv.put("back", "");
+        cv.put("orphaned_at", System.currentTimeMillis());
+        db.update("flashcards", cv, "note_id = ?", new String[]{noteId});
     }
 
     /**
@@ -325,6 +353,60 @@ public class FlashcardRepository {
             }
 
             return decks;
+    }
+
+    /**
+     * Every card due at {@code now}, across every note, soonest first — the global review session.
+     *
+     * <p>The same exclusions the decks list applies, for the same reasons: trashed notes, orphaned
+     * cards, and any collection that is shut. Full {@link Flashcard} rows rather than the previews
+     * {@link #loadDueCardsSync} hands the widget, because this deck gets graded and the SM-2
+     * columns have to make the round trip.
+     *
+     * <p>No syncing. A per-note session reconciles its note's blocks against its cards on the way
+     * in, which is right when you have arrived from that note; doing it here would mean reading and
+     * re-parsing every note in the app to open one review screen. The cards are already kept in
+     * step by every save.
+     */
+    public void loadDueAcrossNotes(long now, OnDeckLoaded cb) {
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
+
+            List<String> args = new ArrayList<>();
+            args.add(String.valueOf(now));
+            args.addAll(hidden);
+
+            List<Flashcard> due = new ArrayList<>();
+            try (Cursor c = db.rawQuery(
+                    "SELECT f.id, f.note_id, f.source_segment_id, f.front, f.back, f.interval, "
+                            + "f.repetitions, f.easiness, f.next_review, f.last_reviewed_at "
+                            + "FROM flashcards f JOIN notes n ON n.id = f.note_id "
+                            + "WHERE n.deleted_at IS NULL AND f.orphaned_at IS NULL "
+                            + "AND f.next_review <= ? "
+                            + NoteCrypto.hiddenClause(hidden)
+                            + "ORDER BY f.next_review ASC",
+                    args.toArray(new String[0]))) {
+                while (c.moveToNext()) due.add(readCard(c));
+            }
+            if (cb != null) executors.mainThread(() -> cb.onLoaded(due));
+        });
+    }
+
+    /** The ten columns every full-card read selects, in order. */
+    private static Flashcard readCard(Cursor c) {
+        Flashcard card = new Flashcard();
+        card.id = c.getString(0);
+        card.noteId = c.getString(1);
+        card.sourceSegmentId = c.getString(2);
+        card.front = c.isNull(3) ? "" : c.getString(3);
+        card.back = c.isNull(4) ? "" : c.getString(4);
+        card.interval = c.getInt(5);
+        card.repetitions = c.getInt(6);
+        card.easiness = c.getDouble(7);
+        card.nextReview = c.getLong(8);
+        card.lastReviewedAt = c.isNull(9) ? null : c.getLong(9);
+        return card;
     }
 
     /** How many cards a note has — what decides whether it offers "turn into" or "review". */

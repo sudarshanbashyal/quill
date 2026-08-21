@@ -16,12 +16,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 import mse.quill.data.model.Note;
 import mse.quill.security.CollectionLock;
+import mse.quill.security.MediaFiles;
 import mse.quill.data.model.Tag;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.ui.notes.editor.model.AudioSegment;
@@ -215,6 +217,10 @@ public class NoteRepository {
                 db.update("notes", cv, "id = ?", new String[]{noteId});
 
                 orphanedMediaPaths = replaceMediaAssetsSync(db, noteId, segments);
+                // A photo or recording added while the collection is already shut arrives in the
+                // clear — the picker and the recorder write ordinary files. Encrypting here is what
+                // stops it sitting that way until the collection happens to be locked again.
+                if (encrypted) convertNoteMediaSync(db, noteId, collectionId, true);
                 // From the markdown rather than the segments so that the rows say exactly what the
                 // stored document says — the two are built from the same list here, but the
                 // migration and the lock migrations have only the markdown to work from, and one
@@ -425,7 +431,9 @@ public class NoteRepository {
                 // leave notes_fts, and one moving out has to rejoin it or it stays unsearchable.
                 if (willBeEncrypted) {
                     deleteFromIndexSync(db, noteId);
-                    db.delete("flashcards", "note_id = ?", new String[]{noteId});
+                    // Same as locking a whole collection: the card text goes, the review schedule
+                    // does not. See FlashcardRepository.suspendForLockSync.
+                    FlashcardRepository.suspendForLockSync(db, noteId);
                 } else {
                     indexNoteSync(db, noteId, title, markdown);
                 }
@@ -433,6 +441,10 @@ public class NoteRepository {
             } finally {
                 db.endTransaction();
             }
+
+            // The note's media follows it across the boundary, or a photo would keep the format of
+            // the collection it came from and be readable by the wrong key — or by none.
+            convertNoteMediaSync(db, noteId, collectionId, willBeEncrypted);
 
             if (onDone != null) executors.mainThread(onDone);
 
@@ -812,6 +824,37 @@ public class NoteRepository {
     /** Rewrites the note's asset rows inside the caller's transaction to match what the document
      *  now references. Returns the files that were referenced before but aren't any more, so the
      *  caller can delete them once the transaction has committed. */
+    /**
+     * Brings a note's image and recording files into line with whether its collection is locked.
+     *
+     * <p>Called from every point the answer can change: locking a collection, unlocking it, moving
+     * a note across the boundary, and saving a note that added media while the collection was
+     * already shut. Both directions are idempotent — {@link MediaFiles} looks at the file rather
+     * than at what it was told — so running it twice, or over a note whose media is already in the
+     * right state, costs a header check per file and changes nothing.
+     *
+     * <p>Failures are logged and skipped rather than thrown. One unreadable file must not abandon
+     * the lock halfway: the note text is the greater part of what is being protected, and a
+     * half-converted collection is the state hardest to reason about afterwards.
+     */
+    static void convertNoteMediaSync(SQLiteDatabase db, String noteId, String collectionId,
+                                     boolean encrypt) {
+        List<String> paths = new ArrayList<>();
+        try (Cursor c = db.rawQuery(
+                "SELECT file_path FROM note_segments WHERE note_id = ? AND file_path IS NOT NULL",
+                new String[]{noteId})) {
+            while (c.moveToNext()) paths.add(c.getString(0));
+        }
+        for (String path : paths) {
+            try {
+                if (encrypt) MediaFiles.encrypt(path, collectionId);
+                else MediaFiles.decrypt(path);
+            } catch (GeneralSecurityException e) {
+                Log.w("NoteRepository", "could not convert media file " + path, e);
+            }
+        }
+    }
+
     private Set<String> replaceMediaAssetsSync(SQLiteDatabase db, String noteId, List<NoteSegment> segments) {
         Set<String> oldMediaPaths = new HashSet<>();
         Cursor c = db.rawQuery(
@@ -855,6 +898,131 @@ public class NoteRepository {
     // ── Search index ───────────────────────────────────────────────────────
     // Both helpers tolerate notes_fts being absent: AppDatabase skips creating it on SQLite
     // builds without FTS5, and search still works (in-memory filtering) without it.
+
+    public interface OnSearchMatches {
+        /** {@code null} means "no answer" — an unusable query, or a build without FTS5. Callers
+         *  fall back to matching what they already hold in memory rather than showing nothing. */
+        void onMatched(Set<String> noteIds);
+    }
+
+    /**
+     * The ids of every indexed note matching {@code rawQuery}, title or body.
+     *
+     * <p>This is what the search bar was missing. Home matched a note's title and its *preview* —
+     * the first line or two — so a word in the middle of a long note simply could not be found,
+     * which is the one thing a search box is for. {@code notes_fts} has been kept current on every
+     * save for a while; nothing ever asked it anything.
+     *
+     * <p>Locked collections stay out by construction: their notes are removed from the index when
+     * the collection is locked, because the index stores the body as plain text. A note in a
+     * collection that is open right now is therefore also unindexed until it is next saved — it
+     * still matches on title, which is the same fallback an unsaved note gets.
+     */
+    public void searchNoteIds(String rawQuery, OnSearchMatches cb) {
+        List<String> tokens = searchTokens(rawQuery);
+        if (tokens.isEmpty()) {
+            if (cb != null) executors.mainThread(() -> cb.onMatched(null));
+            return;
+        }
+        executors.diskIO(() -> {
+            Set<String> ids = searchNoteIdsSync(tokens);
+            if (cb != null) executors.mainThread(() -> cb.onMatched(ids));
+        });
+    }
+
+    /**
+     * Ids of notes matching every token, from the index if there is one and by reading the bodies
+     * if there isn't.
+     *
+     * <p>The scan is not a formality. FTS5 is a compile-time SQLite module and a fair number of
+     * builds — this project's own emulator image among them — ship without it, which is why every
+     * write to {@code notes_fts} is wrapped in a try/catch. Leaving the search to fall back on the
+     * in-memory <em>preview</em> match on those devices would mean the feature quietly does nothing
+     * exactly where it can't be noticed. Reading the bodies is slower and completely reliable, and
+     * a note collection is small enough that the difference is not worth a feature that only works
+     * on some phones.
+     */
+    private Set<String> searchNoteIdsSync(List<String> tokens) {
+        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        Set<String> ids = new HashSet<>();
+        try (Cursor c = db.rawQuery(
+                "SELECT note_id FROM notes_fts WHERE notes_fts MATCH ?",
+                new String[]{toFtsQuery(tokens)})) {
+            while (c.moveToNext()) ids.add(c.getString(0));
+            return ids;
+        } catch (SQLiteException e) {
+            Log.w("NoteRepository", "notes_fts unavailable; scanning bodies instead", e);
+        }
+        return scanBodiesSync(db, tokens);
+    }
+
+    /**
+     * The no-index path: every readable note's body, flattened and matched in Java.
+     *
+     * <p>Locked collections are skipped rather than decrypted, matching the index's own rule — a
+     * search that could reach into a shut collection would be a way to read it without unlocking
+     * it, one word at a time.
+     */
+    private Set<String> scanBodiesSync(SQLiteDatabase db, List<String> tokens) {
+        Set<String> ids = new HashSet<>();
+        try (Cursor c = db.rawQuery(
+                "SELECT n.id, n.title, n.content_blob FROM notes n "
+                        + "LEFT JOIN collections c ON c.id = n.collection_id "
+                        + "WHERE n.deleted_at IS NULL "
+                        + "AND (c.biometric_locked IS NULL OR c.biometric_locked = 0)", null)) {
+            while (c.moveToNext()) {
+                String markdown = c.isNull(2)
+                        ? "" : new String(c.getBlob(2), StandardCharsets.UTF_8);
+                String haystack = ((c.isNull(1) ? "" : c.getString(1))
+                        + "\n" + NoteDocument.toPlainText(markdown))
+                        .toLowerCase(Locale.getDefault());
+                boolean all = true;
+                for (String token : tokens) {
+                    if (!haystack.contains(token)) { all = false; break; }
+                }
+                if (all) ids.add(c.getString(0));
+            }
+        } catch (SQLiteException e) {
+            Log.w("NoteRepository", "note body scan failed", e);
+            return null;
+        }
+        return ids;
+    }
+
+    /**
+     * What the user typed, reduced to the words worth matching.
+     *
+     * <p>The tokenizer indexes letters and digits, so anything else in a token can only fail to
+     * match — stripping it is what stops "c++" becoming a syntax error rather than a search.
+     */
+    static List<String> searchTokens(String rawQuery) {
+        List<String> tokens = new ArrayList<>();
+        if (rawQuery == null) return tokens;
+        for (String token : rawQuery.trim().split("\\s+")) {
+            String cleaned = token.replaceAll("[^\\p{L}\\p{N}]", "")
+                    .toLowerCase(Locale.getDefault());
+            if (!cleaned.isEmpty()) tokens.add(cleaned);
+        }
+        return tokens;
+    }
+
+    /**
+     * The tokens as something FTS5 will accept.
+     *
+     * <p>Raw input cannot be handed to {@code MATCH}: quotes, colons, asterisks and the bare words
+     * AND/OR/NOT are all query syntax, so a stray quote throws rather than finding nothing. Each
+     * token goes in as a quoted phrase — which disarms all of it — with a trailing {@code *} so the
+     * search matches as you type rather than only on whole words. Tokens are ANDed, so a second
+     * word narrows, which is what the scan above does too.
+     */
+    static String toFtsQuery(List<String> tokens) {
+        StringBuilder match = new StringBuilder();
+        for (String token : tokens) {
+            if (match.length() > 0) match.append(' ');
+            match.append('"').append(token).append("\"*");
+        }
+        return match.toString();
+    }
 
     private void indexNoteSync(SQLiteDatabase db, String noteId, String title, String markdown) {
         try {

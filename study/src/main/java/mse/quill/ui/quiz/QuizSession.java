@@ -146,6 +146,11 @@ public class QuizSession {
         /** {@link #NO_SELECTION} if the question was left blank. */
         public final int selectedIndex;
 
+        /** A result read back from a finished attempt — see {@link QuizQuestion#restored}. */
+        public static Result restored(QuizQuestion question, int selectedIndex) {
+            return new Result(question, selectedIndex);
+        }
+
         Result(QuizQuestion question, int selectedIndex) {
             this.question = question;
             this.selectedIndex = selectedIndex;

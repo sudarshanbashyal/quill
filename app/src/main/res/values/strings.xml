@@ -99,6 +99,13 @@
     <string name="delete_note_title">Delete note?</string>
     <string name="delete_note_message">This note will be moved to trash.</string>
     <string name="delete_collection_title_format">Delete \"%s\"?</string>
+    <!-- Moving a note into a locked collection. It encrypts the note, which costs its flashcards
+         for the same reason locking a whole collection does — the cards hold the question and
+         answer as plaintext columns. Locking warns about this; moving used to do it silently. -->
+    <string name="collection_locked_option">%1$s · Locked</string>
+    <string name="move_into_locked_title">Move into \"%1$s\"?</string>
+    <string name="move_into_locked_message">This note will be encrypted, and will stop appearing on Home, in search and in quizzes until you unlock the collection.\n\nIts flashcards are emptied while it is locked — the cards store the question and answer in plain text. Your review progress is kept: re-open the note after unlocking and its deck comes back where you left it.</string>
+    <string name="action_move">Move</string>
     <string name="delete_collection_message">Notes in this collection will become Uncategorized.</string>
 
     <string name="action_rename">Rename</string>
@@ -141,6 +148,10 @@
 
     <!-- Error messages for media handling in the editor -->
     <string name="image_load_failed">Could not load image</string>
+    <!-- A recording in a locked collection whose key window has closed since the note was opened.
+         The note text is already in memory by then, so only the media notices. -->
+    <string name="audio_locked_needs_unlock">Unlock this collection again to play its recordings.</string>
+    <string name="audio_playback_failed">Couldn\'t play this recording.</string>
     <string name="record_audio_failed">Could not record audio</string>
     <string name="microphone_permission_required">Microphone permission is required to record audio</string>
 
@@ -270,6 +281,12 @@
 
     <!-- Flashcards -->
     <string name="flashcards_title">Flashcards</string>
+    <!-- The global session: every card due now, whichever note it came from. -->
+    <string name="flashcards_due_title">Due now</string>
+    <plurals name="flashcards_review_all">
+        <item quantity="one">Review %d card due now</item>
+        <item quantity="other">Review %d cards due now</item>
+    </plurals>
     <string name="flashcards_decks_subtitle">Decks made from your notes\' Q&amp;A blocks</string>
     <string name="flashcards_decks_empty">No flashcards yet. Make a deck from any note that has Q&amp;A blocks with both halves filled in.</string>
     <string name="flashcards_deck_due_format">%1$d due now · %2$d cards</string>
@@ -339,6 +356,10 @@
     <string name="delete_quiz_title_format">Delete the quiz for \"%1$s\"?</string>
     <string name="delete_quiz_message">Every attempt and score will be gone. The note\'s Q&amp;A blocks stay, so you can make the quiz again later — with an empty history.</string>
     <string name="quiz_deleted">Quiz deleted</string>
+    <!-- Reopening a past sitting. %1$d is the score it was recorded with, %2$d the number of
+         questions on the paper. -->
+    <string name="quiz_marked_paper_title">Scored %1$d of %2$d</string>
+    <string name="quiz_attempt_not_kept">This attempt was taken before Quill started keeping answers, so there\'s no paper to show.</string>
     <!-- The quiz session\'s "can\'t build this" panel, for a note that has since lost blocks. The
          same shortfall found before the quiz opens is explained by the Q&amp;A hint dialog instead,
          which can show where the button is. -->
@@ -532,7 +553,7 @@
     <string name="collection_lock_title_format">Lock \"%s\"?</string>
     <!-- Says what it does and what it costs, in that order. The flashcard sentence is here because
          losing a review schedule is the one consequence a user would not otherwise predict. -->
-    <string name="collection_lock_message">Notes in this collection will be encrypted with a key held by this device and unlocked with your fingerprint or screen lock.\n\nThey\'ll stop appearing on Home, in search, and in flashcards and quizzes until you unlock the collection.\n\nFlashcards made from these notes are removed — they store the question and answer in plain text. Re-open a note after unlocking to build its deck again.</string>
+    <string name="collection_lock_message">Notes in this collection will be encrypted with a key held by this device and unlocked with your fingerprint or screen lock.\n\nThey\'ll stop appearing on Home, in search, and in flashcards and quizzes until you unlock the collection.\n\nTheir flashcards are emptied while the collection is locked — the cards store the question and answer in plain text. Your review progress is kept: re-open a note after unlocking and its deck comes back where you left it.</string>
     <string name="collection_lock_confirm">Lock</string>
     <string name="collection_locking">Encrypting…</string>
     <string name="collection_locked">Collection locked</string>
