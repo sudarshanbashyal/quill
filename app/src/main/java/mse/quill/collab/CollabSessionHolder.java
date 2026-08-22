@@ -41,6 +41,7 @@ public final class CollabSessionHolder {
         void onPeerConnected(String peerId);
         void onPeerDisconnected(String peerId);
         void onPeerInfoUpdated(String peerId, String displayName);
+        void onPeerPresenceChanged(String peerId, boolean viewing);
         void onPeerLeft(String peerId);
         void onSessionEndedByHost();
         void onMessage(String peerId, CollabMessage message);
@@ -87,6 +88,12 @@ public final class CollabSessionHolder {
         return host;
     }
 
+    /** Whether the live session, if any, is the one being drawn on {@code whiteboardId}. A screen
+     *  showing any other board is a bystander to it, however alive it is. */
+    public static boolean isFor(String whiteboardId) {
+        return session != null && boardId != null && boardId.equals(whiteboardId);
+    }
+
     public static CollabSession session() {
         return session;
     }
@@ -114,9 +121,30 @@ public final class CollabSessionHolder {
         if (activeListener == listener) activeListener = null;
     }
 
+    /** Tells the session whether the whiteboard is currently on screen — see
+     *  {@link CollabSession#setViewing}. Safe to call with no session; it is then nothing to say. */
+    public static void setViewing(boolean viewing) {
+        if (session != null) session.setViewing(viewing);
+    }
+
+    /**
+     * Ends a session that is still running before a new one replaces it.
+     *
+     * <p>Sessions outlive the screen that started them, so by the time someone hosts or joins
+     * again there may well be one already up. Overwriting the field would have left it running
+     * with nothing referring to it: still advertising, still holding Nearby endpoints on the same
+     * client the new session is about to use, and with peers who were never told it was over.
+     */
+    private static void endAnyLiveSession() {
+        if (session == null) return;
+        Log.i(TAG, "ending the session already in progress before starting another");
+        if (host) end(); else leave();
+    }
+
     /** @param whiteboardId the board being shared — the host answers new joiners out of its own
      *                      copy of it, so the session has to know which one it is. */
     public static CollabSession host(Context context, String myDisplayName, String whiteboardId) {
+        endAnyLiveSession();
         appContext = context.getApplicationContext();
         boardId = whiteboardId;
         synchronized (pending) {
@@ -128,6 +156,7 @@ public final class CollabSessionHolder {
     }
 
     public static CollabSession join(Context context, String token, String myDisplayName, String whiteboardId) {
+        endAnyLiveSession();
         appContext = context.getApplicationContext();
         boardId = whiteboardId;
         synchronized (pending) {
@@ -219,6 +248,11 @@ public final class CollabSessionHolder {
         @Override
         public void onPeerInfoUpdated(String peerId, String displayName) {
             deliver(listener -> listener.onPeerInfoUpdated(peerId, displayName));
+        }
+
+        @Override
+        public void onPeerPresenceChanged(String peerId, boolean viewing) {
+            deliver(listener -> listener.onPeerPresenceChanged(peerId, viewing));
         }
 
         @Override

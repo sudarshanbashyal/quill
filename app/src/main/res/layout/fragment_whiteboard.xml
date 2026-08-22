@@ -18,12 +18,13 @@
     the tools sit under the thumb rather than at the far top of a tall screen. The eye toggle
     stays in the top bar because a control cannot be the thing it hides.
 
-    A bottom bar (collabBar) is now present, but only visible during a live collaboration
-    session — it lists every connected collaborator's display name.
+    During a live collaboration session the top bar gains a people count (collabPeople), which
+    opens the list of who is on the board. Nothing else about the screen changes.
 -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#F8F8F8">
@@ -69,6 +70,29 @@
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_secondary" />
 
+        <!-- Who else is on the board, as one control rather than a row of name chips: a count is
+             readable at a glance where a queue of names is a wall to read, and it does not grow
+             the further a session goes. Visible only during a live session; the names themselves
+             are one tap away. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/collabPeople"
+            style="@style/Widget.Material3.Button.TonalButton.Icon"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="4dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:textSize="13sp"
+            android:visibility="gone"
+            app:icon="@drawable/ic_user"
+            app:iconSize="16dp"
+            app:iconPadding="4dp"
+            tools:visibility="visible"
+            tools:text="3" />
+
         <ImageButton
             android:id="@+id/btnToggleTools"
             android:layout_width="40dp"
@@ -92,7 +116,7 @@
         android:scrollbars="horizontal|vertical"
         android:scrollbarStyle="insideOverlay"
         app:layout_constraintTop_toBottomOf="@id/topToolbar"
-        app:layout_constraintBottom_toTopOf="@id/collabBar"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
@@ -136,7 +160,7 @@
         app:strokeWidth="1dp"
         app:layout_constrainedHeight="true"
         app:layout_constraintTop_toBottomOf="@id/topToolbar"
-        app:layout_constraintBottom_toTopOf="@id/collabBar"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
         <ScrollView
@@ -399,32 +423,5 @@
         </ScrollView>
 
     </com.google.android.material.card.MaterialCardView>
-
-    <!-- ── Collaborator bar: who's connected, by name ─────────────────────────
-         Only visible while a live session has at least one collaborator (see
-         WhiteboardFragment#applyCollabRoleToUi); horizontally scrollable so it doesn't need to
-         know a cap on how many people can join. -->
-    <HorizontalScrollView
-        android:id="@+id/collabBar"
-        android:layout_width="0dp"
-        android:layout_height="48dp"
-        android:visibility="gone"
-        android:background="#FFFFFF"
-        android:elevation="4dp"
-        android:scrollbars="none"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <LinearLayout
-            android:id="@+id/collabChipContainer"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp" />
-
-    </HorizontalScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

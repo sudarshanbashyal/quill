@@ -91,6 +91,8 @@ public class CollabSession {
         void onPeerDisconnected(String peerId);
         /** A peer's display name became known or changed. */
         void onPeerInfoUpdated(String peerId, String displayName);
+        /** A peer opened or left the whiteboard screen without leaving the session. */
+        void onPeerPresenceChanged(String peerId, boolean viewing);
         /** A peer explicitly left; the session continues for everyone else. */
         void onPeerLeft(String peerId);
         /** The host explicitly ended the session for everyone. */
@@ -105,6 +107,15 @@ public class CollabSession {
     public static final class PeerInfo {
         public final String id;
         public String displayName;
+        /**
+         * Whether this peer has the whiteboard in front of them right now.
+         *
+         * <p>Connected and present are not the same thing here: a session outlives the screen that
+         * started it (see {@code CollabSessionHolder}), so someone can be reachable, relaying, and
+         * nowhere near the board. Starts true because a peer joins from the board itself, and is
+         * corrected by the first {@link CollabMessage#TYPE_PRESENCE} either way.
+         */
+        public boolean viewing = true;
 
         PeerInfo(String id) {
             this.id = id;
@@ -133,6 +144,9 @@ public class CollabSession {
     /** Joiner only: the one physical connection, to the host. */
     private String hostConnectionEndpointId;
     private boolean stopped;
+    /** Whether this device currently has the board open — announced to the others, and re-sent to
+     *  each new peer as part of the introduction so a late joiner isn't told a stale story. */
+    private boolean viewing = true;
 
     /** Runs {@link #JOIN_TIMEOUT_MS} after a join starts, cancelled the moment anything happens. */
     private final Handler timeoutHandler = new Handler(Looper.getMainLooper());
@@ -280,6 +294,7 @@ public class CollabSession {
                 // Both directions introduce themselves; the host also relays what it already
                 // knows once this arrives (see handleIncoming).
                 send(CollabMessage.peerInfo(host ? HOST_PEER_ID : "unused", myDisplayName));
+                if (!viewing) send(CollabMessage.presence(host ? HOST_PEER_ID : "unused", false));
             } else if (result.getStatus().getStatusCode()
                     != ConnectionsStatusCodes.STATUS_ALREADY_CONNECTED_TO_ENDPOINT) {
                 // The host end keeps waiting — one joiner failing to connect is not a reason to
@@ -348,6 +363,11 @@ public class CollabSession {
                     for (Map.Entry<String, PeerInfo> entry : peers.entrySet()) {
                         if (entry.getKey().equals(endpointId) || entry.getValue().displayName == null) continue;
                         sendToPhysical(endpointId, CollabMessage.peerInfo(entry.getKey(), entry.getValue().displayName));
+                        // Only the exceptions: PeerInfo starts out present, so saying so again
+                        // would be a message that changes nothing.
+                        if (!entry.getValue().viewing) {
+                            sendToPhysical(endpointId, CollabMessage.presence(entry.getKey(), false));
+                        }
                     }
                     sendToAllExcept(endpointId, CollabMessage.peerInfo(endpointId, message.peerDisplayName));
                 } else {
@@ -360,6 +380,25 @@ public class CollabSession {
                     }
                     info.displayName = message.peerDisplayName;
                     listener.onPeerInfoUpdated(message.peerId, message.peerDisplayName);
+                }
+                break;
+            case CollabMessage.TYPE_PRESENCE:
+                if (host) {
+                    // The sender speaks only for itself, so its own endpoint id is the canonical
+                    // one regardless of what the message says — same rule as PEER_LEFT.
+                    PeerInfo present = peers.get(endpointId);
+                    if (present == null) return;
+                    present.viewing = message.viewing;
+                    listener.onPeerPresenceChanged(endpointId, message.viewing);
+                    sendToAllExcept(endpointId, CollabMessage.presence(endpointId, message.viewing));
+                } else {
+                    PeerInfo present = peers.get(message.peerId);
+                    if (present == null) {
+                        present = new PeerInfo(message.peerId);
+                        peers.put(message.peerId, present);
+                    }
+                    present.viewing = message.viewing;
+                    listener.onPeerPresenceChanged(message.peerId, message.viewing);
                 }
                 break;
             case CollabMessage.TYPE_HOST_ENDED:
@@ -383,6 +422,19 @@ public class CollabSession {
                 listener.onMessage(endpointId, message);
                 break;
         }
+    }
+
+    /**
+     * Says whether this device has the board open, to everyone in the session.
+     *
+     * <p>The roster is a list of people to draw with, and someone who has closed the whiteboard is
+     * not one — they are merely still connected. Kept as state rather than only sent, so a peer
+     * who connects while this device is away is told the truth on arrival.
+     */
+    public void setViewing(boolean nowViewing) {
+        if (viewing == nowViewing) return;
+        viewing = nowViewing;
+        send(CollabMessage.presence(host ? HOST_PEER_ID : "unused", nowViewing));
     }
 
     public boolean isConnected() {

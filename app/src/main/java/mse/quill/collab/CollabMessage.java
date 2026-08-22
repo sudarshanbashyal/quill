@@ -39,6 +39,10 @@ public final class CollabMessage {
     /** A joiner sends this to the host before disconnecting explicitly ("Leave"); the host
      *  relays it to the remaining peers instead of dropping the whole session. */
     public static final int TYPE_PEER_LEFT = 8;
+    /** Whether a peer is actually looking at the board, as opposed to merely still connected.
+     *  Relayed by the host like {@link #TYPE_PEER_INFO}, and for the same reason: a joiner only
+     *  learns about the rest of the star through the middle of it. */
+    public static final int TYPE_PRESENCE = 9;
 
     public final int type;
     /** SNAPSHOT only: every stroke currently on the host's board. */
@@ -61,6 +65,8 @@ public final class CollabMessage {
     public String peerId;
     /** PEER_INFO only: the display name to associate with {@link #peerId}. */
     public String peerDisplayName;
+    /** PRESENCE only: whether {@link #peerId} currently has the whiteboard open. */
+    public boolean viewing;
 
     /**
      * How much board goes into one chunk. Three quarters of Nearby's ceiling rather than all of
@@ -169,6 +175,13 @@ public final class CollabMessage {
         return m;
     }
 
+    public static CollabMessage presence(String peerId, boolean viewing) {
+        CollabMessage m = new CollabMessage(TYPE_PRESENCE);
+        m.peerId = peerId;
+        m.viewing = viewing;
+        return m;
+    }
+
     public static CollabMessage hostEnded() {
         return new CollabMessage(TYPE_HOST_ENDED);
     }
@@ -214,6 +227,10 @@ public final class CollabMessage {
                     break;
                 case TYPE_PEER_LEFT:
                     o.put("peerId", peerId);
+                    break;
+                case TYPE_PRESENCE:
+                    o.put("peerId", peerId);
+                    o.put("viewing", viewing);
                     break;
             }
             return o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -261,6 +278,10 @@ public final class CollabMessage {
                 break;
             case TYPE_PEER_LEFT:
                 m.peerId = o.getString("peerId");
+                break;
+            case TYPE_PRESENCE:
+                m.peerId = o.getString("peerId");
+                m.viewing = o.getBoolean("viewing");
                 break;
             default:
                 throw new JSONException("Unknown CollabMessage type " + type);

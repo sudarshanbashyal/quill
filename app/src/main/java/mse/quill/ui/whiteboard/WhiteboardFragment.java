@@ -28,7 +28,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
-import com.google.android.material.chip.Chip;
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.fragment.app.Fragment;
 
@@ -63,9 +63,7 @@ import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -120,11 +118,10 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private CollabSession collabSession;
     private boolean isCollabHost;
     private CollabDialogs.StatusDialog collabStatusDialog;
-    private View collabBar;
-    private ViewGroup collabChipContainer;
-    /** Rendered chips, keyed by canonical peer id — lets add/remove/rename touch one chip
-     *  instead of rebuilding the whole bar on every roster event. */
-    private final Map<String, Chip> collabChips = new LinkedHashMap<>();
+    /** The whole roster, as one count in the top bar. Its state is derived from
+     *  {@link CollabSession#currentPeers()} on every roster event rather than mirrored here —
+     *  there is one list of who is in a session, and it belongs to the session. */
+    private MaterialButton collabPeople;
     /** A snapshot being reassembled from its chunks — see {@link #applySnapshot}. Empty except in
      *  the moment between a joiner connecting and the host's board arriving in full. */
     private final Set<Integer> pendingSnapshotChunks = new HashSet<>();
@@ -310,6 +307,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             if (whiteboardRepo.getByIdSync(id) != null) return;
             requireActivity().runOnUiThread(() -> {
                 if (!isAdded()) return;
+                // The board is gone or shut away, so the session on it has nothing left to be
+                // about. No warning here — this exit was never the user's choice to make.
+                if (collabSession != null) endCollabSession();
                 androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp();
             });
         }).start();
@@ -327,16 +327,22 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     @Override
     public void onStart() {
         super.onStart();
+        // A session belongs to the board it was started on, and only to that board. Without this
+        // check, opening any whiteboard while one was alive adopted it — a brand-new board would
+        // open already in someone else's session, drawing on top of their work. A session this
+        // screen starts itself attaches at that point instead; see startHosting.
+        if (!CollabSessionHolder.isFor(whiteboardId)) return;
+
         // Role and roster first, listener second: attaching replays whatever happened while this
         // screen was away, and those callbacks read isCollabHost — a host that hadn't re-synced
         // yet would handle its own replayed events as if it were a joiner.
-        if (CollabSessionHolder.isActive()) {
-            collabSession = CollabSessionHolder.session();
-            isCollabHost = CollabSessionHolder.isHost();
-            rebuildCollabBar();
-            applyCollabRoleToUi();
-        }
+        collabSession = CollabSessionHolder.session();
+        isCollabHost = CollabSessionHolder.isHost();
+        updateCollabRoster();
+        applyCollabRoleToUi();
         CollabSessionHolder.attach(collabListener);
+        // Back on the board — say so, since the session may have carried on without this screen.
+        CollabSessionHolder.setViewing(true);
     }
 
     /** Only stops routing callbacks to this screen — the session itself lives on in
@@ -344,6 +350,10 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     @Override
     public void onStop() {
         super.onStop();
+        // Still in the session, no longer at the board: the others should stop counting this
+        // device among the people they are drawing with until it comes back. Only for the board
+        // the session is actually on — another board's screen has nothing to say about it.
+        if (CollabSessionHolder.isFor(whiteboardId)) CollabSessionHolder.setViewing(false);
         CollabSessionHolder.detach(collabListener);
     }
 
@@ -361,9 +371,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         whiteboardView = null;
         titleInput     = null;
         textEditor     = null;
-        collabBar      = null;
-        collabChipContainer = null;
-        collabChips.clear();
+        collabPeople   = null;
     }
 
     /**
@@ -441,8 +449,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnClear        = root.findViewById(R.id.btnClear);
         btnExport       = root.findViewById(R.id.btnExport);
         btnCollab       = root.findViewById(R.id.btnCollab);
-        collabBar       = root.findViewById(R.id.collabBar);
-        collabChipContainer = root.findViewById(R.id.collabChipContainer);
+        collabPeople    = root.findViewById(R.id.collabPeople);
     }
 
     /** Attaches click listeners to every toolbar button. */
@@ -489,6 +496,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnClear.setOnClickListener(v  -> confirmClear());
         btnExport.setOnClickListener(this::showExportMenu);
         btnCollab.setOnClickListener(v -> showCollabEntry());
+        collabPeople.setOnClickListener(v -> showCollabRoster());
 
         // Set sensible defaults on screen open
         selectTool(WhiteboardView.TOOL_PEN, btnPen);
@@ -936,6 +944,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private void startHosting() {
         isCollabHost = true;
         collabSession = CollabSessionHolder.host(requireContext(), myCollabDisplayName(), whiteboardId);
+        // Attached here as well as in onStart: a session started from this screen begins after
+        // onStart has already been and gone, and an unattached screen hears nothing at all.
+        CollabSessionHolder.attach(collabListener);
         showHostInvite();
     }
 
@@ -960,14 +971,78 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
      *  stays on screen while people arrive and leave. */
     private void updateHostInviteStatus() {
         if (collabStatusDialog == null || !isCollabHost) return;
-        int connected = collabChips.size();
+        int connected = collabSession == null ? 0 : collabSession.currentPeers().size();
         collabStatusDialog.setStatus(connected == 0
                 ? getString(R.string.collab_hosting_waiting)
                 : getResources().getQuantityString(
                         R.plurals.collab_hosting_connected, connected, connected));
     }
 
+    /**
+     * Joining replaces this board with the host's, so anything already drawn here is about to go.
+     *
+     * <p>Offered as a choice rather than a warning to click past, because both answers are real
+     * ones: the sketch was scrap, or it was work — and only the person who drew it knows which.
+     * An empty board asks nothing; there is nothing to lose and no decision to make.
+     */
     private void startJoinByScan() {
+        if (whiteboardView == null || !whiteboardView.hasContent()) {
+            scanForSession();
+            return;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.collab_join_replaces_title)
+                .setMessage(R.string.collab_join_replaces_message)
+                .setPositiveButton(R.string.collab_join_save_copy, (d, w) -> saveCopyThenScan())
+                .setNeutralButton(R.string.collab_join_discard, (d, w) -> scanForSession())
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
+    }
+
+    /**
+     * Duplicates this board — strokes, text, background and title — into a new one on Home, and
+     * then goes on to the scanner.
+     *
+     * <p>A copy rather than a move: the board being joined has to stay where it is, since it is
+     * the one the session fills, and which of the two ends up holding the old drawing should not
+     * be something the user has to reason about.
+     */
+    private void saveCopyThenScan() {
+        final String sourceId = whiteboardId;
+        final String typed = titleInput != null ? titleInput.getText().toString().trim() : "";
+        final String copyTitle = typed.isEmpty()
+                ? null : getString(R.string.collab_join_copy_name, typed);
+        final Context appContext = requireContext().getApplicationContext();
+        new Thread(() -> {
+            Whiteboard source = whiteboardRepo.getByIdSync(sourceId);
+            List<Stroke> strokes = strokeDao.getByWhiteboard(sourceId);
+            List<WhiteboardText> texts = textDao.getByWhiteboard(sourceId);
+            int background = source != null
+                    ? source.background : WhiteboardPreferences.defaultBackground(appContext);
+            // The callback lands on the main thread, so the row copying gets a thread of its own.
+            whiteboardRepo.createWhiteboard(copyTitle, null, background, copyId -> new Thread(() -> {
+                // New ids: these rows are a second board now, not the same one twice.
+                for (Stroke stroke : strokes) {
+                    stroke.id = UUID.randomUUID().toString();
+                    stroke.whiteboardId = copyId;
+                    strokeDao.insertStroke(stroke);
+                }
+                for (WhiteboardText text : texts) {
+                    text.id = UUID.randomUUID().toString();
+                    text.whiteboardId = copyId;
+                    textDao.insert(text);
+                }
+                AppExecutors.getInstance().mainThread(() -> {
+                    if (!isAdded()) return;
+                    Toast.makeText(requireContext(), R.string.collab_join_copy_saved,
+                            Toast.LENGTH_SHORT).show();
+                    scanForSession();
+                });
+            }).start());
+        }).start();
+    }
+
+    private void scanForSession() {
         SessionScanner.scan(requireContext(), new SessionScanner.Listener() {
             @Override public void onToken(String token) {
                 joinWithToken(token);
@@ -993,6 +1068,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         isCollabHost = false;
         collabStatusDialog = CollabDialogs.showJoiningDialog(requireContext(), this::endCollabSession);
         collabSession = CollabSessionHolder.join(requireContext(), token, myCollabDisplayName(), whiteboardId);
+        // See startHosting: joining from Home happens before onStart, joining from this screen
+        // happens long after it, and either way this listener has to be the one attached.
+        CollabSessionHolder.attach(collabListener);
     }
 
     private final CollabSessionHolder.RosterListener collabListener = new CollabSessionHolder.RosterListener() {
@@ -1003,7 +1081,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
                 if (!isAdded()) return;
                 Toast.makeText(requireContext(), R.string.collab_connected, Toast.LENGTH_SHORT).show();
                 applyCollabRoleToUi();
-                addOrUpdateCollabChip(peerId, null);
+                updateCollabRoster();
                 if (isCollabHost) {
                     // The code stays up: this session accepts joiners for as long as it runs, and
                     // dismissing it here is what used to make the first joiner the only one.
@@ -1025,7 +1103,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             requireActivity().runOnUiThread(() -> {
                 if (!isAdded()) return;
                 Toast.makeText(requireContext(), R.string.collab_disconnected, Toast.LENGTH_SHORT).show();
-                removeCollabChip(peerId);
+                updateCollabRoster();
                 // A host whose last joiner dropped keeps hosting — the code is still on screen and
                 // still valid. Only a joiner has nothing left once the host is gone.
                 if (isCollabHost) updateHostInviteStatus();
@@ -1039,7 +1117,16 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             if (!isAdded()) return;
             requireActivity().runOnUiThread(() -> {
                 if (!isAdded()) return;
-                addOrUpdateCollabChip(peerId, displayName);
+                updateCollabRoster();
+            });
+        }
+
+        @Override
+        public void onPeerPresenceChanged(String peerId, boolean viewing) {
+            if (!isAdded()) return;
+            requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
+                updateCollabRoster();
             });
         }
 
@@ -1049,7 +1136,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             requireActivity().runOnUiThread(() -> {
                 if (!isAdded()) return;
                 Toast.makeText(requireContext(), R.string.collab_peer_left, Toast.LENGTH_SHORT).show();
-                removeCollabChip(peerId);
+                updateCollabRoster();
                 applyCollabRoleToUi();
                 updateHostInviteStatus();
             });
@@ -1222,49 +1309,88 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             btnCollab.setContentDescription(getString(collabSession != null
                     ? R.string.collab_end_session : R.string.action_collaborate));
         }
-        if (collabBar != null) {
-            collabBar.setVisibility(collabSession != null && !collabChips.isEmpty()
-                    ? View.VISIBLE : View.GONE);
+        updateCollabRoster();
+    }
+
+    /**
+     * Re-reads the roster and shows it as a count. Called on every roster event, cheaply — there
+     * are at most a handful of peers, and deriving it each time is what keeps this screen from
+     * having a second, staler idea of who is in the session.
+     */
+    private void updateCollabRoster() {
+        if (collabPeople == null) return;
+        if (collabSession == null) {
+            collabPeople.setVisibility(View.GONE);
+            return;
         }
+        int count = collabRosterNames().size();
+        collabPeople.setVisibility(View.VISIBLE);
+        collabPeople.setText(String.valueOf(count));
+        collabPeople.setContentDescription(
+                getResources().getQuantityString(R.plurals.collab_people_count, count, count));
     }
 
-    /** One chip per connected peer, keyed by canonical peer id. Called both for a fresh
-     *  connection (name not known yet, shows a placeholder) and once the name arrives. */
-    private void addOrUpdateCollabChip(String peerId, String displayName) {
-        if (collabChipContainer == null) return;
-        Chip chip = collabChips.get(peerId);
-        if (chip == null) {
-            chip = (Chip) LayoutInflater.from(requireContext())
-                    .inflate(R.layout.item_collab_chip, collabChipContainer, false);
-            collabChips.put(peerId, chip);
-            collabChipContainer.addView(chip);
-        }
-        chip.setText(displayName != null ? displayName : getString(R.string.collab_peer_connecting));
-        applyCollabRoleToUi();
-    }
-
-    private void removeCollabChip(String peerId) {
-        if (collabChipContainer == null) return;
-        Chip chip = collabChips.remove(peerId);
-        if (chip != null) collabChipContainer.removeView(chip);
-        applyCollabRoleToUi();
-    }
-
-    /** Repopulates the bar from the session's current roster — used when this fragment picks up
-     *  a session it didn't itself start (recreated while the session stayed alive). */
-    private void rebuildCollabBar() {
-        if (collabChipContainer == null || collabSession == null) return;
-        collabChipContainer.removeAllViews();
-        collabChips.clear();
+    /**
+     * Everyone at the board right now, this device first.
+     *
+     * <p>Only those actually looking at it: a session survives its screen, so someone who backed
+     * out of the whiteboard is still connected and still relaying, but they are not there to draw
+     * with, and listing them would be the roster telling a small lie every time.
+     */
+    private List<String> collabRosterNames() {
+        List<String> names = new ArrayList<>();
+        if (collabSession == null) return names;
+        names.add(getString(R.string.collab_you, myCollabDisplayName()));
         for (CollabSession.PeerInfo peer : collabSession.currentPeers()) {
-            addOrUpdateCollabChip(peer.id, peer.displayName);
+            if (!peer.viewing) continue;
+            names.add(peer.displayName != null
+                    ? peer.displayName : getString(R.string.collab_peer_connecting));
         }
+        return names;
     }
 
-    /** The back button / system back — a live collab session now survives leaving this screen
-     *  (see {@link CollabSessionHolder}), so there is nothing left to warn about here. */
+    /** The names behind the count. A list, not a row of chips: it is read once, when someone
+     *  wonders who else is here, and it costs the board nothing the rest of the time. */
+    private void showCollabRoster() {
+        List<String> names = collabRosterNames();
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(getResources().getQuantityString(
+                        R.plurals.collab_people_count, names.size(), names.size()))
+                .setItems(names.toArray(new String[0]), null)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
+    /**
+     * The back button / system back. Leaving the board leaves the session with it.
+     *
+     * <p>The session can technically outlive this screen, and briefly does — backgrounding the app
+     * keeps it up, which is what {@code setViewing} is for. But walking out of the whiteboard is
+     * not backgrounding: it is the gesture that means "I'm done here", and a session that quietly
+     * kept running behind Home was one nobody could see, leave, or avoid being dragged back into
+     * the next time they opened any board at all.
+     *
+     * <p>What survives is the board itself — every stroke received is already on this device, so
+     * leaving keeps a copy rather than losing the work, and scanning the code again rejoins.
+     */
     private void attemptExit() {
-        androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp();
+        if (collabSession == null) {
+            androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp();
+            return;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.collab_exit_warning_title)
+                .setMessage(isCollabHost
+                        ? R.string.collab_exit_host_message
+                        : R.string.collab_exit_joiner_message)
+                .setPositiveButton(isCollabHost
+                        ? R.string.collab_exit_confirm
+                        : R.string.collab_leave_session, (d, w) -> {
+                    endCollabSession();
+                    androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp();
+                })
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
     }
 
     /** Explicit exit from the session: ends it for everyone if this device is the host, or just
@@ -1286,8 +1412,6 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             collabStatusDialog.dismiss();
             collabStatusDialog = null;
         }
-        if (collabChipContainer != null) collabChipContainer.removeAllViews();
-        collabChips.clear();
         applyCollabRoleToUi();
     }
 

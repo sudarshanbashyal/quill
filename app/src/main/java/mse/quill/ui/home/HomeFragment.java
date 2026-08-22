@@ -48,6 +48,7 @@ import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
 import mse.quill.ui.whiteboard.WhiteboardFragment;
 import mse.quill.collab.CollabPermissions;
+import mse.quill.collab.CollabSessionHolder;
 import mse.quill.collab.SessionScanner;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
@@ -328,6 +329,24 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
      * takes the empty board with it (see {@code WhiteboardFragment.discardIfNeverUsed}).
      */
     private void joinWhiteboardSession() {
+        // A session outlives the board it was started on, so there may well be one running behind
+        // this screen. Joining another ends it — for everyone, if this device is its host — and
+        // that is not something to do to a room full of people without saying so first.
+        if (CollabSessionHolder.isActive()) {
+            new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.collab_already_in_session_title)
+                    .setMessage(CollabSessionHolder.isHost()
+                            ? R.string.collab_already_hosting_message
+                            : R.string.collab_already_joined_message)
+                    .setPositiveButton(R.string.collab_leave_and_join, (d, w) -> requestJoinPermissions())
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .show();
+            return;
+        }
+        requestJoinPermissions();
+    }
+
+    private void requestJoinPermissions() {
         String[] missing = CollabPermissions.missing(requireContext());
         if (missing.length > 0) {
             joinPermissionLauncher.launch(missing);
