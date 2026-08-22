@@ -25,8 +25,14 @@ import mse.quill.MainActivity;
 import mse.quill.R;
 import mse.quill.data.AppExecutors;
 import mse.quill.onboarding.Onboarding;
+import android.text.InputFilter;
+import com.google.android.material.textfield.TextInputLayout;
+import mse.quill.ui.profile.DisplayName;
+import mse.quill.util.TextFieldUtils;
 import mse.quill.onboarding.SampleData;
 import mse.quill.ui.profile.ProfilePreferences;
+import mse.quill.util.Haptics;
+import mse.quill.util.Reveal;
 
 /**
  * The first screen of a brand-new Quill: what the app is, and a choice between starting with
@@ -60,6 +66,9 @@ public class WelcomeActivity extends AppCompatActivity {
     private View summaryActions;
     private MaterialButton sampleButton;
     private MaterialButton skipButton;
+    private View namePane;
+    private View nameActions;
+    private TextInputLayout nameField;
 
     private OnBackPressedCallback backAfterSeeding;
 
@@ -89,12 +98,19 @@ public class WelcomeActivity extends AppCompatActivity {
         summaryActions = findViewById(R.id.welcome_summary_actions);
         sampleButton = findViewById(R.id.welcome_sample);
         skipButton = findViewById(R.id.welcome_skip);
+        namePane = findViewById(R.id.welcome_name_pane);
+        nameActions = findViewById(R.id.welcome_name_actions);
 
         showFeatures();
+        animateWelcomePane();
 
+        // Both answers to the content question now lead to the name, not straight into the app.
         sampleButton.setOnClickListener(v -> addSampleContent());
-        skipButton.setOnClickListener(v -> openMain());
-        findViewById(R.id.welcome_start).setOnClickListener(v -> openMain());
+        skipButton.setOnClickListener(v -> showNamePane());
+        findViewById(R.id.welcome_start).setOnClickListener(v -> showNamePane());
+        findViewById(R.id.welcome_name_shuffle).setOnClickListener(v -> shuffleSuggestedName(v));
+        findViewById(R.id.welcome_name_continue).setOnClickListener(v -> saveNameAndOpenMain());
+        findViewById(R.id.welcome_name_skip).setOnClickListener(v -> openMain());
 
         // Once the content exists, back means "get on with it" rather than "leave the app" — the
         // choice this screen was asking about has been made and acted on, and dropping the user at
@@ -108,6 +124,27 @@ public class WelcomeActivity extends AppCompatActivity {
     }
 
     // ---------- Pane one ----------
+
+    /**
+     * The screen introducing itself: the mark, then the pitch, then the four things Quill does,
+     * and last of all the choice.
+     *
+     * <p><b>The order is the argument.</b> The buttons rise in after the feature list rather than
+     * with it, so the question is only asked once there is something on screen to answer it with.
+     * A choice sitting there while the reasons are still arriving invites a tap before reading,
+     * and the tap it invites is the one that leaves the new user with an empty app.
+     *
+     * <p>The logo is the only thing that pops rather than rising. It is also the one element the
+     * splash was just animating, so it lands as the same object continuing rather than as a new
+     * screen's first item.
+     */
+    private void animateWelcomePane() {
+        Reveal.popIn(findViewById(R.id.welcome_logo), 0);
+        Reveal.riseIn(findViewById(R.id.welcome_title), 120);
+        Reveal.riseIn(findViewById(R.id.welcome_subtitle), 180);
+        long afterRows = Reveal.staggerChildren(featureList, 240);
+        Reveal.riseIn(welcomeActions, afterRows);
+    }
 
     private void showFeatures() {
         addRow(featureList, R.drawable.ic_section_note,
@@ -190,6 +227,86 @@ public class WelcomeActivity extends AppCompatActivity {
         summaryPane.setVisibility(View.VISIBLE);
         summaryActions.setVisibility(View.VISIBLE);
         backAfterSeeding.setEnabled(true);
+
+        // The rows land one after another rather than all at once, which is the difference between
+        // a receipt and a tally being counted out. Each line is a thing the app just made for the
+        // user, and arriving in sequence is what makes it read that way.
+        Haptics.confirm(summaryPane);
+        Reveal.popIn(findViewById(R.id.welcome_summary_emoji), 0);
+        Reveal.riseIn(findViewById(R.id.welcome_summary_title), 90);
+        Reveal.riseIn(findViewById(R.id.welcome_summary_subtitle), 150);
+        long afterRows = Reveal.staggerChildren(summaryList, 210);
+        Reveal.riseIn(summaryActions, afterRows);
+    }
+
+    // ---------- Pane three ----------
+
+    /**
+     * Asks what to call the user, with a suggestion already in the box.
+     *
+     * <p>Pre-filled rather than empty, and that is the whole design. An empty field asks a stranger
+     * to invent something before they have seen the app, and most people type nothing — which is
+     * how everyone ends up unnamed and a shared whiteboard has two of nobody on it. A suggestion
+     * turns the question into a choice between "fine" and "actually, call me this", and both
+     * answers leave with a name.
+     *
+     * <p>The suggestion is written to preferences on the way in, not on the way out, so the skip
+     * path has nothing to do and a process death mid-screen still leaves a named install.
+     */
+    private void showNamePane() {
+        String suggested = ProfilePreferences.ensureDefaultName(this);
+
+        String[] emoji = getResources().getStringArray(R.array.welcome_name_emoji);
+        ((TextView) findViewById(R.id.welcome_name_emoji))
+                .setText(emoji[new java.util.Random().nextInt(emoji.length)]);
+
+        if (nameField == null) {
+            nameField = TextFieldUtils.outlinedField(this, R.string.welcome_name_hint);
+            // The same filter the Profile screen puts on its field, so the rule about what a name
+            // may contain is enforced in one place and felt identically in both.
+            nameField.getEditText().setFilters(new InputFilter[]{DisplayName.filter()});
+            ((LinearLayout) findViewById(R.id.welcome_name_field_holder)).addView(nameField);
+        }
+        nameField.getEditText().setText(suggested);
+        nameField.getEditText().setSelection(suggested.length());
+
+        welcomePane.setVisibility(View.GONE);
+        welcomeActions.setVisibility(View.GONE);
+        summaryPane.setVisibility(View.GONE);
+        summaryActions.setVisibility(View.GONE);
+        namePane.setVisibility(View.VISIBLE);
+        nameActions.setVisibility(View.VISIBLE);
+
+        Reveal.popIn(findViewById(R.id.welcome_name_emoji), 0);
+        Reveal.stagger(90, findViewById(R.id.welcome_name_title),
+                findViewById(R.id.welcome_name_subtitle), nameField, nameActions);
+        // Back from here means "get on with it": the content question has already been answered and
+        // acted on, and there is a name stored either way.
+        backAfterSeeding.setEnabled(true);
+    }
+
+    /**
+     * Draws another suggestion into the field.
+     *
+     * <p>Not written to preferences: this is someone trying names on, and only the one they leave
+     * with should be stored. The first suggestion already is — see {@link #showNamePane} — so
+     * shuffling and then backing out still leaves a named install.
+     */
+    private void shuffleSuggestedName(View source) {
+        String suggested = ProfilePreferences.generateName(this);
+        nameField.getEditText().setText(suggested);
+        nameField.getEditText().setSelection(suggested.length());
+        Haptics.tick(source);
+    }
+
+    /** Keeps whatever is in the field, falling back to the suggestion if it was emptied — leaving
+     *  with no name at all is the one outcome this screen exists to prevent. */
+    private void saveNameAndOpenMain() {
+        String typed = nameField.getEditText().getText().toString();
+        if (!DisplayName.sanitize(typed).isEmpty()) {
+            ProfilePreferences.setDisplayName(this, typed);
+        }
+        openMain();
     }
 
     // ---------- Leaving ----------
@@ -204,10 +321,8 @@ public class WelcomeActivity extends AppCompatActivity {
      * content in it, where "start empty" still does the right thing.
      */
     private void openMain() {
-        // Synchronously, unlike the flag below: Home reads the name as it draws its greeting, and
-        // a name still being written on the disk thread would leave the first screen of a brand-new
-        // install greeting nobody, then quietly gaining a name on the next resume. The write itself
-        // is a preference edit, so the value is readable in this process the moment it returns.
+        // A belt-and-braces call: showNamePane has already stored a name by the time either of its
+        // buttons can be pressed. This covers the back gesture, which reaches here without either.
         ProfilePreferences.ensureDefaultName(this);
         AppExecutors.getInstance().diskIO(() -> Onboarding.markWelcomeSeen(getApplicationContext()));
         startActivity(new Intent(this, MainActivity.class));

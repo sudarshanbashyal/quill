@@ -26,7 +26,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.Haptics;
 import mse.quill.util.RelativeTime;
+import mse.quill.util.Reveal;
 import mse.quill.util.UndoDelete;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.NoteRepository;
@@ -110,8 +112,8 @@ public class FlashcardsFragment extends Fragment {
         view.findViewById(R.id.back_button).setOnClickListener(v -> leave());
         card.setOnClickListener(v -> revealAnswer());
         forwardTapsToCard(view.findViewById(R.id.card_scroll));
-        view.findViewById(R.id.button_correct).setOnClickListener(v -> grade(true));
-        view.findViewById(R.id.button_incorrect).setOnClickListener(v -> grade(false));
+        view.findViewById(R.id.button_correct).setOnClickListener(v -> { Haptics.confirm(v); grade(true); });
+        view.findViewById(R.id.button_incorrect).setOnClickListener(v -> { Haptics.confirm(v); grade(false); });
 
         // Without this the flip reads as a squash rather than a rotation: the default camera sits
         // so close to the view that a 90° turn foreshortens most of the card away.
@@ -233,6 +235,7 @@ public class FlashcardsFragment extends Fragment {
     private void revealAnswer() {
         if (session == null || answerShowing || flipping || session.current() == null) return;
         Flashcard current = session.current();
+        Haptics.tick(card);
         flip(() -> {
             answerShowing = true;
             cardLabel.setText(R.string.flashcard_label_answer);
@@ -328,6 +331,7 @@ public class FlashcardsFragment extends Fragment {
         messageIcon.setImageResource(R.drawable.ic_flashcard);
         messageTitle.setText(titleRes);
         messageBody.setText(body);
+        celebrate(titleRes);
 
         if (primaryAction == null) {
             messagePrimary.setVisibility(View.GONE);
@@ -341,6 +345,28 @@ public class FlashcardsFragment extends Fragment {
         }
         messageSecondary.setText(secondaryLabelRes);
         messageSecondary.setOnClickListener(v -> leave());
+    }
+
+    /**
+     * Marks the two panels worth marking — clearing the day's cards, and finishing a run.
+     *
+     * <p>These used to arrive with the same weight as "this note has no cards", which is the one
+     * screen in the app that is a small reward and was being rendered as an error state. The badge
+     * springs in and the two lines rise behind it, through {@link Reveal} — the same entrance the
+     * welcome screen uses, so the moments where Quill is pleased with the user all move alike.
+     *
+     * <p>Deliberately over in a third of a second and not blocking anything: it is a full stop, not
+     * a cutscene, and someone reviewing three decks in a row should not have to watch it.
+     */
+    private void celebrate(int titleRes) {
+        boolean worthMarking = titleRes == R.string.flashcards_caught_up_title
+                || titleRes == R.string.flashcards_summary_title;
+        if (!worthMarking) return;
+
+        messageIcon.setImageResource(R.drawable.ic_correct);
+        Haptics.confirm(messagePanel);
+        Reveal.popIn(messageIcon, 0);
+        Reveal.stagger(90, messageTitle, messageBody);
     }
 
     private void leave() {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Early evening — coral falling into gold, the one warm sky of the four. Five to nine sits
+     between the open blue of the day header and the navy of the night one, and neither of those
+     describes it.
+
+     Same shape as bg_home_header, which this replaces at runtime — see TimeOfDay. angle=90 means
+     startColor is the BOTTOM stop and endColor the TOP one, and there are deliberately no
+     <corners>: the rounded edge belongs to bg_content_sheet, which curves over this. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="90"
+        android:startColor="@color/header_evening_bottom"
+        android:endColor="@color/header_evening_top" />
+</shape>

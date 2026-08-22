@@ -4,7 +4,12 @@ import android.text.InputFilter;
 
 /**
  * What counts as a display name: at most {@link #MAX_LENGTH} characters drawn from letters,
- * digits, {@code -}, {@code _} and emoji.
+ * digits, spaces, {@code -}, {@code _} and emoji.
+ *
+ * <p>Space is allowed because this is a display name and not a handle — it is what a whiteboard
+ * session shows beside someone's strokes, and "Sudarshan Bashyal" is a name a person has. It was
+ * excluded originally, which quietly meant nobody could type their own. {@link #sanitize} collapses
+ * runs and trims the ends, so the permission cannot be used to store a name that is mostly nothing.
  *
  * <p>The rule is enforced as an {@link InputFilter} rather than as validation on save, so the
  * field simply refuses the keystroke instead of accepting text and rejecting it later with an
@@ -35,7 +40,7 @@ public final class DisplayName {
      */
     public static boolean isAllowed(int codePoint) {
         if (Character.isLetterOrDigit(codePoint)) return true;
-        if (codePoint == '-' || codePoint == '_') return true;
+        if (codePoint == '-' || codePoint == '_' || codePoint == ' ') return true;
 
         switch (Character.getType(codePoint)) {
             case Character.OTHER_SYMBOL:      // the pictographs themselves
@@ -49,19 +54,38 @@ public final class DisplayName {
         }
     }
 
-    /** Strips anything {@link #isAllowed} rejects and truncates to {@link #MAX_LENGTH}. */
+    /**
+     * Strips anything {@link #isAllowed} rejects, collapses runs of spaces, trims the ends, and
+     * truncates to {@link #MAX_LENGTH}.
+     *
+     * <p>The space handling is why this does more than filter. A field that accepts spaces accepts
+     * "   " as a name, and a truncation that lands on one would store a name with a trailing gap —
+     * both of which read as an empty greeting rather than as a name. Trimming happens last, so a
+     * name cut short at the limit doesn't keep the space the cut exposed.
+     */
     public static String sanitize(String input) {
         if (input == null) return null;
         StringBuilder out = new StringBuilder();
         int kept = 0;
+        boolean lastWasSpace = false;
         for (int i = 0; i < input.length() && kept < MAX_LENGTH; ) {
             int codePoint = input.codePointAt(i);
             int width = Character.charCount(codePoint);
             if (isAllowed(codePoint)) {
-                out.appendCodePoint(codePoint);
-                kept++;
+                boolean isSpace = codePoint == ' ';
+                // A leading space, or a second one in a row, is dropped rather than counted —
+                // otherwise it eats from the same budget the actual name needs.
+                if (!isSpace || (kept > 0 && !lastWasSpace)) {
+                    out.appendCodePoint(codePoint);
+                    kept++;
+                    lastWasSpace = isSpace;
+                }
             }
             i += width;
+        }
+        // Only the end can be left dangling: leading and repeated spaces were never appended.
+        while (out.length() > 0 && out.charAt(out.length() - 1) == ' ') {
+            out.deleteCharAt(out.length() - 1);
         }
         return out.toString();
     }

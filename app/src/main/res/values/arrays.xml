@@ -2,11 +2,7 @@
 <resources>
     <integer-array name="swatch_color_palette">
         <item>0xFFE57373</item>
-        <item>0xFFF06292</item>
         <item>0xFFBA68C8</item>
-        <item>0xFF9575CD</item>
-        <item>0xFF64B5F6</item>
-        <item>0xFF4DB6AC</item>
         <item>0xFF81C784</item>
         <item>0xFFFFB74D</item>
     </integer-array>
@@ -89,5 +85,108 @@
         <item>Hope you get some good sleep afterwards.</item>
         <item>Wind down whenever — this will keep.</item>
         <item>Tomorrow-you will be glad you did this.</item>
+    </string-array>
+
+    <!-- The name a fresh install is given, assembled as one of each (see
+         ProfilePreferences.ensureDefaultName). Two words rather than a number because the name's
+         real job is telling two people apart on a shared whiteboard, and "Amber Fox" and "Quiet
+         Heron" are distinguishable at a glance in a way that quill_7692 and quill_1043 are not.
+
+         Both lists are 24 long, so there are 576 pairs. Nothing checks for collisions — there is no
+         server and no account — so the number only has to make two people in the same room landing
+         on the same name unlikely, which it does.
+
+         Kept short enough that the longest pair stays inside DisplayName.MAX_LENGTH, and
+         deliberately free of anything that could read as a judgement of the person wearing it. -->
+    <string-array name="default_name_adjectives">
+        <item>Amber</item>
+        <item>Brisk</item>
+        <item>Calm</item>
+        <item>Clever</item>
+        <item>Copper</item>
+        <item>Eager</item>
+        <item>Fleet</item>
+        <item>Golden</item>
+        <item>Hazel</item>
+        <item>Ivory</item>
+        <item>Jolly</item>
+        <item>Keen</item>
+        <item>Lively</item>
+        <item>Merry</item>
+        <item>Nimble</item>
+        <item>Olive</item>
+        <item>Quiet</item>
+        <item>Rapid</item>
+        <item>Sage</item>
+        <item>Silver</item>
+        <item>Sunny</item>
+        <item>Swift</item>
+        <item>Teal</item>
+        <item>Violet</item>
+    </string-array>
+    <string-array name="default_name_nouns">
+        <item>Otter</item>
+        <item>Heron</item>
+        <item>Fox</item>
+        <item>Marten</item>
+        <item>Badger</item>
+        <item>Falcon</item>
+        <item>Finch</item>
+        <item>Hare</item>
+        <item>Ibis</item>
+        <item>Jay</item>
+        <item>Kite</item>
+        <item>Lynx</item>
+        <item>Magpie</item>
+        <item>Newt</item>
+        <item>Osprey</item>
+        <item>Puffin</item>
+        <item>Quail</item>
+        <item>Raven</item>
+        <item>Stoat</item>
+        <item>Tern</item>
+        <item>Vole</item>
+        <item>Wren</item>
+        <item>Crane</item>
+        <item>Pika</item>
+    </string-array>
+
+    <!-- One is drawn for the "what should we call you" pane. Deliberately a small, warm set: a
+         greeting, a bit of sparkle, something that suggests starting. Nothing that could read as a
+         reaction to the user, since it appears before they have done anything. -->
+    <string-array name="welcome_name_emoji">
+        <item>👋</item>
+        <item>✨</item>
+        <item>🌱</item>
+        <item>🪐</item>
+        <item>🎨</item>
+        <item>🍵</item>
+        <item>🐸</item>
+        <item>🐝</item>
+        <item>🐙</item>
+        <item>🛸</item>
+    </string-array>
+
+    <!-- Home's empty sections. A line is drawn per bind, so the three of them aren't the same
+         sentence with a different noun three times down one screen — which is what a brand-new
+         Quill used to look like.
+
+         Every line still says how to fix it, because that is the useful half; the variety is in
+         how it says it, not whether. -->
+    <string-array name="empty_collections_lines">
+        <item>No collections yet — tap + to make one</item>
+        <item>Nothing filed away yet. Tap + for your first collection</item>
+        <item>Collections group notes by subject. Tap + to start one</item>
+    </string-array>
+    <string-array name="empty_notes_lines">
+        <item>No notes yet — tap + to create one</item>
+        <item>A blank page is waiting. Tap + when you\'re ready</item>
+        <item>Nothing written down yet. Tap + to begin</item>
+        <item>This is where your notes will live. Tap + for the first</item>
+    </string-array>
+    <string-array name="empty_whiteboards_lines">
+        <item>No whiteboards yet — tap + to draw one</item>
+        <item>Nothing sketched yet. Tap + for a blank board</item>
+        <item>For what a sentence can\'t say. Tap + to draw</item>
     </string-array>
 </resources>
