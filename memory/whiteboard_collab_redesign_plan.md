@@ -1,8 +1,11 @@
 # Whiteboard collab: session-persistence + multi-user redesign — implementation plan
 
 Status as of 2026-08-20: crash fix landed on `fix/whiteboard` (see "Crash fix" below,
-already shipped — this doc is the *next* piece of work, not a description of what's done).
-Everything else in this file is unimplemented, planned only.
+already shipped). **Steps 2, 3, 4 below, plus the collaborator-names bar, are now
+implemented** on `feat/multiUserWhiteboard` (compiles clean via
+`:app:compileDebugJavaWithJavac`, not yet verified on-device — no adb in this
+environment). See "Implementation notes" at the bottom for what actually landed and how
+it differs from the plan below in one place (Step 1).
 
 ## Context
 
@@ -137,3 +140,48 @@ existing `new Thread(() -> strokeDao.insertStroke(...))`).
   explicitly ended (this plan defaults to "stays open")?
 - Foreground-service notification copy/UX — does the user want to review that before it's
   built, given it's new user-facing surface (a persistent notification while collaborating)?
+
+## Implementation notes (added after landing Steps 2-4 + collaborator bar)
+
+User decisions locked in for this round: unbounded peer count, no host-lock-joining
+toggle (always open until host ends it), names built together with the N-peer work, full
+scope attempted in one pass.
+
+**Steps 3, 4, 2 landed together** in `CollabSession.java` (one coherent rewrite, since
+they touch the same methods): `Map<String, PeerInfo> peers` replaces `peerEndpointId`;
+`send()`/`sendTo(peerId,_)`/`sendToAllExcept(excludeId,_)`; `TYPE_PEER_INFO` handshake
+(host and joiner both introduce themselves on connect, host relays so the whole star
+converges — see the class's own doc comment for why "peers" means something different on
+a host vs. a joiner, this is the trickiest part of the file); `TYPE_HOST_ENDED`/
+`TYPE_PEER_LEFT` for explicit end/leave, host no longer calls `client.stopAdvertising()`
+after the first connection so later joiners can still find it.
+`WhiteboardFragment.applyIncoming` now takes the sending peer id and relays
+STROKE/TEXT/RETRACT/CLEAR to every other peer when `isCollabHost` (the Step 4 fix).
+
+**Collaborator names bar**: `fragment_whiteboard.xml` gained
+`collabBar`/`collabChipContainer` (a `HorizontalScrollView` wrapping a `LinearLayout`,
+bottom-constrained, `gone` unless the session has peers); `whiteboardView`/`leftSidebar`
+now constrain their bottom to `collabBar` instead of `parent`. New
+`res/layout/item_collab_chip.xml` (a non-interactive Material `Chip`), one inflated per
+peer, keyed by canonical peer id in `WhiteboardFragment.collabChips`. Name source:
+`ProfilePreferences.displayName(context)`, falling back to `Build.MODEL`/"Guest" — see
+`WhiteboardFragment.myCollabDisplayName()`.
+
+**Step 1 (Service extraction) was scoped down.** Instead of a full bound foreground
+`Service`, added `mse.quill.collab.CollabSessionHolder` — a static singleton that owns
+the live `CollabSession` outside any one Fragment instance
+(`attach`/`detach(RosterListener)`, `host`/`join`/`end`/`leave`). `WhiteboardFragment`
+binds in `onStart()`/unbinds in `onStop()` and no longer calls `endCollabSession()` in
+`onDestroyView()`, so the session now survives fragment destroy/recreate (rotation,
+back-and-forth nav within the app). **What this does *not* give you**: a foreground-
+service notification, or survival once the *process* itself is backgrounded/killed by
+the OS (Nearby gets throttled without a foreground service to justify staying alive).
+Promoting `CollabSessionHolder`'s state into a real bound `Service` later is a small,
+contained follow-up — Fragments already talk to it through `attach`/`detach` rather than
+a raw field, so the call sites don't need to change again, only where the state lives.
+This was a deliberate scope call under a tight budget, not a discovery that the full
+Service was unnecessary — flag it back to the user if "survives full backgrounding" turns
+out to matter in practice.
+
+**Not yet done**: on-device verification (multi-device relay, advertising staying open
+past the first joiner, chip bar rendering) — no adb in this environment, needs the user.

@@ -229,6 +229,10 @@
     <string name="collab_exit_warning_message">You\'re collaborating live. Leaving this whiteboard will end the session for everyone.</string>
     <string name="collab_exit_confirm">Leave and end session</string>
     <string name="collab_permission_denied">Nearby needs Bluetooth/Wi-Fi permissions to find another device</string>
+    <string name="collab_leave_session">Leave session</string>
+    <string name="collab_peer_left">A collaborator left the session</string>
+    <string name="collab_host_ended">The host ended the session</string>
+    <string name="collab_peer_connecting">Connecting…</string>
 
     <!-- Sharing a whole collection: a .quillpack, a zip of each member note's own .quill bundle. -->
     <string name="action_export_collection">Share collection</string>

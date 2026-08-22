@@ -27,6 +27,15 @@ public final class CollabMessage {
     public static final int TYPE_TEXT = 3;
     public static final int TYPE_RETRACT = 4;
     public static final int TYPE_CLEAR = 5;
+    /** Name-exchange handshake, sent right after connecting and relayed by the host so every
+     *  peer's display name converges across the whole star topology. */
+    public static final int TYPE_PEER_INFO = 6;
+    /** Host broadcasts this before tearing the session down explicitly, so joiners can tell
+     *  "the host ended it" apart from a bare connection loss. */
+    public static final int TYPE_HOST_ENDED = 7;
+    /** A joiner sends this to the host before disconnecting explicitly ("Leave"); the host
+     *  relays it to the remaining peers instead of dropping the whole session. */
+    public static final int TYPE_PEER_LEFT = 8;
 
     public final int type;
     /** SNAPSHOT only: every stroke currently on the host's board. */
@@ -40,6 +49,11 @@ public final class CollabMessage {
     /** RETRACT only: the id of the stroke or text item to remove. */
     public String retractId;
     public boolean retractIsText;
+    /** PEER_INFO/PEER_LEFT only: the id of the peer the message describes (the sender's own id
+     *  for PEER_INFO, the departing peer's id for PEER_LEFT). */
+    public String peerId;
+    /** PEER_INFO only: the display name to associate with {@link #peerId}. */
+    public String peerDisplayName;
 
     private CollabMessage(int type) {
         this.type = type;
@@ -75,6 +89,23 @@ public final class CollabMessage {
         return new CollabMessage(TYPE_CLEAR);
     }
 
+    public static CollabMessage peerInfo(String peerId, String displayName) {
+        CollabMessage m = new CollabMessage(TYPE_PEER_INFO);
+        m.peerId = peerId;
+        m.peerDisplayName = displayName;
+        return m;
+    }
+
+    public static CollabMessage hostEnded() {
+        return new CollabMessage(TYPE_HOST_ENDED);
+    }
+
+    public static CollabMessage peerLeft(String peerId) {
+        CollabMessage m = new CollabMessage(TYPE_PEER_LEFT);
+        m.peerId = peerId;
+        return m;
+    }
+
     public byte[] toBytes() {
         try {
             JSONObject o = new JSONObject();
@@ -99,6 +130,15 @@ public final class CollabMessage {
                     o.put("retractIsText", retractIsText);
                     break;
                 case TYPE_CLEAR:
+                    break;
+                case TYPE_PEER_INFO:
+                    o.put("peerId", peerId);
+                    o.put("peerDisplayName", peerDisplayName);
+                    break;
+                case TYPE_HOST_ENDED:
+                    break;
+                case TYPE_PEER_LEFT:
+                    o.put("peerId", peerId);
                     break;
             }
             return o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -135,6 +175,15 @@ public final class CollabMessage {
                 m.retractIsText = o.getBoolean("retractIsText");
                 break;
             case TYPE_CLEAR:
+                break;
+            case TYPE_PEER_INFO:
+                m.peerId = o.getString("peerId");
+                m.peerDisplayName = o.optString("peerDisplayName", null);
+                break;
+            case TYPE_HOST_ENDED:
+                break;
+            case TYPE_PEER_LEFT:
+                m.peerId = o.getString("peerId");
                 break;
             default:
                 throw new JSONException("Unknown CollabMessage type " + type);

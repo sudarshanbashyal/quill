@@ -18,8 +18,8 @@
     the tools sit under the thumb rather than at the far top of a tall screen. The eye toggle
     stays in the top bar because a control cannot be the thing it hides.
 
-    No bottom bar in this version — that's added back later
-    when Wi-Fi Direct collaboration is introduced.
+    A bottom bar (collabBar) is now present, but only visible during a live collaboration
+    session — it lists every connected collaborator's display name.
 -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -92,7 +92,7 @@
         android:scrollbars="horizontal|vertical"
         android:scrollbarStyle="insideOverlay"
         app:layout_constraintTop_toBottomOf="@id/topToolbar"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/collabBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
@@ -136,7 +136,7 @@
         app:strokeWidth="1dp"
         app:layout_constrainedHeight="true"
         app:layout_constraintTop_toBottomOf="@id/topToolbar"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/collabBar"
         app:layout_constraintStart_toStartOf="parent">
 
         <ScrollView
@@ -399,5 +399,32 @@
         </ScrollView>
 
     </com.google.android.material.card.MaterialCardView>
+
+    <!-- ── Collaborator bar: who's connected, by name ─────────────────────────
+         Only visible while a live session has at least one collaborator (see
+         WhiteboardFragment#applyCollabRoleToUi); horizontally scrollable so it doesn't need to
+         know a cap on how many people can join. -->
+    <HorizontalScrollView
+        android:id="@+id/collabBar"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:visibility="gone"
+        android:background="#FFFFFF"
+        android:elevation="4dp"
+        android:scrollbars="none"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:id="@+id/collabChipContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+
+    </HorizontalScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
