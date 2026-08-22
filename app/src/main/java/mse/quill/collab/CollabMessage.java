@@ -2,6 +2,8 @@ package mse.quill.collab;
 
 import android.graphics.PointF;
 
+import com.google.android.gms.nearby.connection.ConnectionsClient;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -17,8 +19,9 @@ import mse.quill.data.model.WhiteboardText;
  * message kinds only, plus {@code CLEAR} (host-only, destructive to everyone). Strokes and text
  * items are append-only and id'd, so applying any of these on receipt is a dedupe, never a merge.
  *
- * <p>JSON over Nearby's {@code BYTES} payload — a stroke's point list is small enough that this
- * never needs the {@code FILE} payload type chunking mentioned in the plan.
+ * <p>JSON over Nearby's {@code BYTES} payload. One stroke's point list is comfortably small; a
+ * whole board's is not, which is why {@code SNAPSHOT} is the one message kind that arrives in
+ * numbered chunks — see {@link #snapshotChunks}.
  */
 public final class CollabMessage {
 
@@ -42,6 +45,10 @@ public final class CollabMessage {
     public List<Stroke> strokes;
     /** SNAPSHOT only: every text item currently on the host's board. */
     public List<WhiteboardText> texts;
+    /** SNAPSHOT only: which chunk of the board this is, and how many chunks make up the whole —
+     *  see {@link #snapshotChunks}. A single-chunk snapshot is {@code 0} of {@code 1}. */
+    public int snapshotIndex;
+    public int snapshotCount = 1;
     /** STROKE only: the one stroke just completed. */
     public Stroke stroke;
     /** TEXT only: the one text item just placed. */
@@ -55,6 +62,15 @@ public final class CollabMessage {
     /** PEER_INFO only: the display name to associate with {@link #peerId}. */
     public String peerDisplayName;
 
+    /**
+     * How much board goes into one chunk. Three quarters of Nearby's ceiling rather than all of
+     * it: the per-chunk cost is measured on each item's own JSON, and the envelope around them
+     * (the array brackets, the type field, and UTF-8 expanding any non-ASCII text) is not free.
+     * Read the ceiling rather than hard-coding it — it has changed across Play Services versions,
+     * and a stale copy of it here would be a size limit nobody remembers writing down.
+     */
+    private static final int CHUNK_BUDGET_BYTES = ConnectionsClient.MAX_BYTES_DATA_SIZE * 3 / 4;
+
     private CollabMessage(int type) {
         this.type = type;
     }
@@ -64,6 +80,63 @@ public final class CollabMessage {
         m.strokes = strokes;
         m.texts = texts;
         return m;
+    }
+
+    /**
+     * The board split into as many messages as it takes to fit through Nearby.
+     *
+     * <p>A {@code BYTES} payload is capped at {@link ConnectionsClient#MAX_BYTES_DATA_SIZE} (a
+     * little under 1 MB) and a larger one fails the send outright — silently, as far as the sender
+     * can tell, which is the part that makes it worth defending against rather than hoping about.
+     * A snapshot is the one message kind that can get there: it carries the whole board at once,
+     * and a stroke costs roughly ten bytes per captured point, so a long-lived board full of ink
+     * eventually crosses the line no single-payload version could survive.
+     *
+     * <p>Always at least one chunk, empty board included — an empty snapshot is still the
+     * instruction "the host's board is what you should be showing".
+     */
+    public static List<CollabMessage> snapshotChunks(List<Stroke> strokes, List<WhiteboardText> texts) {
+        List<CollabMessage> chunks = new ArrayList<>();
+        List<Stroke> batchStrokes = new ArrayList<>();
+        List<WhiteboardText> batchTexts = new ArrayList<>();
+        int budget = 0;
+        try {
+            for (Stroke s : strokes) {
+                int cost = jsonSize(strokeToJson(s));
+                if (budget + cost > CHUNK_BUDGET_BYTES && !(batchStrokes.isEmpty() && batchTexts.isEmpty())) {
+                    chunks.add(snapshot(batchStrokes, batchTexts));
+                    batchStrokes = new ArrayList<>();
+                    batchTexts = new ArrayList<>();
+                    budget = 0;
+                }
+                batchStrokes.add(s);
+                budget += cost;
+            }
+            for (WhiteboardText t : texts) {
+                int cost = jsonSize(textToJson(t));
+                if (budget + cost > CHUNK_BUDGET_BYTES && !(batchStrokes.isEmpty() && batchTexts.isEmpty())) {
+                    chunks.add(snapshot(batchStrokes, batchTexts));
+                    batchStrokes = new ArrayList<>();
+                    batchTexts = new ArrayList<>();
+                    budget = 0;
+                }
+                batchTexts.add(t);
+                budget += cost;
+            }
+        } catch (JSONException e) {
+            throw new IllegalStateException(e);
+        }
+        chunks.add(snapshot(batchStrokes, batchTexts));
+
+        for (int i = 0; i < chunks.size(); i++) {
+            chunks.get(i).snapshotIndex = i;
+            chunks.get(i).snapshotCount = chunks.size();
+        }
+        return chunks;
+    }
+
+    private static int jsonSize(JSONObject o) {
+        return o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 
     public static CollabMessage stroke(Stroke stroke) {
@@ -118,6 +191,8 @@ public final class CollabMessage {
                     JSONArray textArr = new JSONArray();
                     for (WhiteboardText t : texts) textArr.put(textToJson(t));
                     o.put("texts", textArr);
+                    o.put("chunk", snapshotIndex);
+                    o.put("chunks", snapshotCount);
                     break;
                 case TYPE_STROKE:
                     o.put("stroke", strokeToJson(stroke));
@@ -163,6 +238,8 @@ public final class CollabMessage {
                 for (int i = 0; i < textArr.length(); i++) {
                     m.texts.add(textFromJson(textArr.getJSONObject(i)));
                 }
+                m.snapshotIndex = o.optInt("chunk", 0);
+                m.snapshotCount = o.optInt("chunks", 1);
                 break;
             case TYPE_STROKE:
                 m.stroke = strokeFromJson(o.getJSONObject("stroke"));

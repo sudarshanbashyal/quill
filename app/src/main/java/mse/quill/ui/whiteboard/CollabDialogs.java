@@ -60,8 +60,15 @@ final class CollabDialogs {
         }
     }
 
-    /** Shown while hosting: the QR code to scan, and a status line ("waiting…" → "Connected"). */
-    static StatusDialog showHostDialog(Context context, Bitmap qr, Runnable onCancelled) {
+    /**
+     * Shown while hosting: the QR code to scan, and a status line ("waiting…" → who has joined).
+     *
+     * <p>It deliberately outlives the first connection. A session stays open to whoever scans next
+     * — the host never stops advertising — so taking the code away the moment one person joined
+     * made every session a two-device session in practice. "Done" puts it away without ending
+     * anything; the collaborate button brings it back.
+     */
+    static StatusDialog showHostDialog(Context context, Bitmap qr, Runnable onEndSession) {
         int pad = dp(context, 24);
         LinearLayout column = new LinearLayout(context);
         column.setOrientation(LinearLayout.VERTICAL);
@@ -83,7 +90,8 @@ final class CollabDialogs {
         AlertDialog dialog = new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.collab_host)
                 .setView(column)
-                .setNegativeButton(R.string.action_cancel, (d, w) -> onCancelled.run())
+                .setPositiveButton(R.string.collab_host_done, null)
+                .setNegativeButton(R.string.collab_end_session, (d, w) -> onEndSession.run())
                 .setCancelable(false)
                 .show();
         return new StatusDialog(dialog, status);

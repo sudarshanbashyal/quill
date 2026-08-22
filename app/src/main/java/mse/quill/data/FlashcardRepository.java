@@ -29,6 +29,13 @@ import mse.quill.util.NoteDisplayUtils;
  * it over an edited note updates that block's card text and leaves its SM-2 columns alone. A card
  * whose block has since been deleted is deliberately <em>not</em> removed — someone's review history
  * shouldn't evaporate because a note got tidied up — it simply stops appearing in the note's deck.
+ *
+ * <p>"Stops appearing" is a stamp on the row, {@code orphaned_at}, not an absence from the results
+ * of one query. It used to be the latter, and the two halves of the app then disagreed: the review
+ * screen showed only cards the note could still produce, while the decks list counted rows, so
+ * emptying an answer left a deck reading "1 due" that opened onto "No cards yet". Every count of
+ * what there is to review filters on the stamp; only {@link #loadBySegmentIdSync} ignores it, since
+ * that is what has to find an orphaned card again in order to revive it.
  */
 public class FlashcardRepository {
 
@@ -115,6 +122,10 @@ public class FlashcardRepository {
                     }
                     deck.add(card);
                 }
+                // Whatever this note's cards used to come from and no longer do. Inside the same
+                // transaction as the writes above, so the deck and the counts of it can never
+                // disagree about which cards exist.
+                projectionChanged |= markOrphansSync(db, noteId, reviewable);
                 db.setTransactionSuccessful();
             } finally {
                 db.endTransaction();
@@ -137,6 +148,116 @@ public class FlashcardRepository {
     }
 
     /**
+     * Brings {@code orphaned_at} in line with what the note's Q&amp;A blocks can currently produce,
+     * and reports whether anything moved.
+     *
+     * <p>Both directions matter. A card is stamped when its block is gone or has had a half
+     * emptied — the state the user is in halfway through rewriting an answer — and unstamped the
+     * moment that block can make a card again, with its schedule untouched, so a card is not
+     * punished for the minute its answer field spent blank.
+     *
+     * <p>Matched on {@code source_segment_id} rather than on card ids, so the same call works for
+     * a caller that has just built the deck and for one that only has the note's segments. Cards
+     * with no {@code source_segment_id} — rows from before that column existed — are stamped too:
+     * a sync can never match one to a block, so they were already invisible for review while still
+     * being counted, which is the same lie by a different route.
+     *
+     * <p>Callers must already be inside a transaction on {@code db}.
+     */
+    static boolean markOrphansSync(SQLiteDatabase db, String noteId, List<QaSegment> reviewable) {
+        List<String> liveIds = new ArrayList<>();
+        for (QaSegment qa : reviewable) {
+            if (qa.id != null) liveIds.add(qa.id);
+        }
+
+        ContentValues stamp = new ContentValues();
+        stamp.put("orphaned_at", System.currentTimeMillis());
+
+        if (liveIds.isEmpty()) {
+            // No blocks left to keep anything alive, so every one of this note's cards is orphaned
+            // — and nothing can be revived, which is why this doesn't fall through to the pair
+            // below (an empty IN list is not valid SQL anyway).
+            return db.update("flashcards", stamp,
+                    "note_id = ? AND orphaned_at IS NULL", new String[]{noteId}) > 0;
+        }
+
+        // Both statements match on the same list, so they share one argument array.
+        String liveList = placeholders(liveIds.size());
+        List<String> args = new ArrayList<>();
+        args.add(noteId);
+        args.addAll(liveIds);
+        String[] argArray = args.toArray(new String[0]);
+
+        int stamped = db.update("flashcards", stamp,
+                "note_id = ? AND orphaned_at IS NULL "
+                        + "AND (source_segment_id IS NULL OR source_segment_id NOT IN (" + liveList + "))",
+                argArray);
+
+        ContentValues revive = new ContentValues();
+        revive.putNull("orphaned_at");
+        int revived = db.update("flashcards", revive,
+                "note_id = ? AND orphaned_at IS NOT NULL AND front <> '' "
+                        + "AND source_segment_id IN (" + liveList + ")",
+                argArray);
+
+        return stamped + revived > 0;
+    }
+
+    private static String placeholders(int count) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append('?');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Takes a note's cards out of circulation for a lock, keeping everything that isn't its text.
+     *
+     * <p>This used to be a delete, and the delete was half right. {@code front} and {@code back} are
+     * copies of the note's Q&amp;A blocks in plaintext columns, so leaving them behind a locked
+     * collection would keep a readable copy of the note in a table the lock doesn't reach — that
+     * part was never negotiable. But the SM-2 columns are not content: an interval, a repetition
+     * count and an easiness factor say nothing about what the note contains, and throwing them away
+     * cost the user the only thing in a deck that can't be regenerated. Re-creating cards later was
+     * always possible — {@link #syncFromNote} rebuilds them from the blocks — what was lost was
+     * everything Quill knew about how well they were known.
+     *
+     * <p>So the row stays, its text is blanked, and it is stamped orphaned so every "what is there
+     * to review" query already leaves it out. The next sync of that note refills the text from its
+     * blocks and clears the stamp, with the schedule untouched.
+     *
+     * <p>The revive in {@link #markOrphansSync} requires non-empty text for exactly this reason: a
+     * plain save must not bring a blanked card back before something has put its question back in
+     * it.
+     */
+    static void suspendForLockSync(SQLiteDatabase db, String noteId) {
+        ContentValues cv = new ContentValues();
+        cv.put("front", "");
+        cv.put("back", "");
+        cv.put("orphaned_at", System.currentTimeMillis());
+        db.update("flashcards", cv, "note_id = ?", new String[]{noteId});
+    }
+
+    /**
+     * The save path's entry point: re-stamps a note's cards without ever creating one.
+     *
+     * <p>{@link #syncFromNote} can't be used here. It is the thing that <em>makes</em> a deck, so
+     * running it on every save would turn writing a Q&amp;A block into silently generating
+     * flashcards nobody asked for. This only ever moves the stamp on rows that already exist, which
+     * means a note with no deck costs one indexed count and nothing else.
+     *
+     * <p>Called from inside {@code NoteRepository.saveNote}'s transaction so the decks list is
+     * right as soon as the note is, rather than only after the deck screen has next been opened —
+     * which is the whole point, since the list is what was showing the wrong number.
+     */
+    public static boolean markOrphansOnSaveSync(SQLiteDatabase db, String noteId,
+                                                List<NoteSegment> segments) {
+        return markOrphansSync(db, noteId, reviewableQa(segments));
+    }
+
+    /**
      * One row per note that has cards, most urgent first.
      *
      * <p>Counted in SQL rather than by loading the cards themselves — the list shows totals, and a
@@ -151,9 +272,22 @@ public class FlashcardRepository {
         });
     }
 
-    /** Synchronous form of {@link #loadDecks}, for the flashcards widget's RemoteViewsFactory,
-     *  which Android already runs off the main thread. */
+    /** Synchronous form of {@link #loadDecks}, for callers already off the main thread. */
     public List<FlashcardDeck> loadDecksSync() {
+        return loadDecksSync(false);
+    }
+
+    /**
+     * The decks a home-screen widget is allowed to show — <b>every locked collection is excluded,
+     * open or not</b>. See {@code NoteRepository.loadPinnedNotesForWidgetSync} for the reasoning;
+     * a deck is titled with its note's title, so this is what keeps those titles off the home
+     * screen for any collection the user encrypted.
+     */
+    public List<FlashcardDeck> loadDecksForWidgetSync() {
+        return loadDecksSync(true);
+    }
+
+    private List<FlashcardDeck> loadDecksSync(boolean excludeAllLocked) {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             long now = System.currentTimeMillis();
             List<FlashcardDeck> decks = new ArrayList<>();
@@ -165,10 +299,12 @@ public class FlashcardRepository {
             // An open collection is still encrypted at rest, so its titles come back as ciphertext
             // and are decrypted below — hiding the shut ones is only half the job.
             Set<String> lockedIds = NoteCrypto.lockedCollectionIds(db);
-            Set<String> hidden = NoteCrypto.hiddenOf(lockedIds);
+            // Either the collections shut right now, or — for the widget — every one that is
+            // encrypted at rest. Which of the two is the only difference between the two callers.
+            Set<String> excluded = excludeAllLocked ? lockedIds : NoteCrypto.hiddenOf(lockedIds);
             List<String> args = new ArrayList<>();
             args.add(String.valueOf(now));
-            args.addAll(hidden);
+            args.addAll(excluded);
             args.add(String.valueOf(now));
 
             Cursor c = db.rawQuery(
@@ -180,8 +316,12 @@ public class FlashcardRepository {
                             // fallback the rest of the app shows it under.
                             "n.created_at " +
                             "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
-                            "WHERE n.deleted_at IS NULL " +
-                            NoteCrypto.hiddenClause(hidden) +
+                            // orphaned_at drops the cards the note can no longer produce. Because
+                            // the JOIN feeds a GROUP BY, a note whose every card is orphaned falls
+                            // out of the list entirely rather than sitting there as an empty deck
+                            // — which is what the review screen has always shown for it.
+                            "WHERE n.deleted_at IS NULL AND f.orphaned_at IS NULL " +
+                            NoteCrypto.excludeCollectionsClause(excluded) +
                             "GROUP BY n.id, n.title, n.collection_id, n.created_at " +
                             // Decks with something to do come first; among the rest, whichever comes
                             // back soonest.
@@ -215,11 +355,66 @@ public class FlashcardRepository {
             return decks;
     }
 
+    /**
+     * Every card due at {@code now}, across every note, soonest first — the global review session.
+     *
+     * <p>The same exclusions the decks list applies, for the same reasons: trashed notes, orphaned
+     * cards, and any collection that is shut. Full {@link Flashcard} rows rather than the previews
+     * {@link #loadDueCardsSync} hands the widget, because this deck gets graded and the SM-2
+     * columns have to make the round trip.
+     *
+     * <p>No syncing. A per-note session reconciles its note's blocks against its cards on the way
+     * in, which is right when you have arrived from that note; doing it here would mean reading and
+     * re-parsing every note in the app to open one review screen. The cards are already kept in
+     * step by every save.
+     */
+    public void loadDueAcrossNotes(long now, OnDeckLoaded cb) {
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
+
+            List<String> args = new ArrayList<>();
+            args.add(String.valueOf(now));
+            args.addAll(hidden);
+
+            List<Flashcard> due = new ArrayList<>();
+            try (Cursor c = db.rawQuery(
+                    "SELECT f.id, f.note_id, f.source_segment_id, f.front, f.back, f.interval, "
+                            + "f.repetitions, f.easiness, f.next_review, f.last_reviewed_at "
+                            + "FROM flashcards f JOIN notes n ON n.id = f.note_id "
+                            + "WHERE n.deleted_at IS NULL AND f.orphaned_at IS NULL "
+                            + "AND f.next_review <= ? "
+                            + NoteCrypto.hiddenClause(hidden)
+                            + "ORDER BY f.next_review ASC",
+                    args.toArray(new String[0]))) {
+                while (c.moveToNext()) due.add(readCard(c));
+            }
+            if (cb != null) executors.mainThread(() -> cb.onLoaded(due));
+        });
+    }
+
+    /** The ten columns every full-card read selects, in order. */
+    private static Flashcard readCard(Cursor c) {
+        Flashcard card = new Flashcard();
+        card.id = c.getString(0);
+        card.noteId = c.getString(1);
+        card.sourceSegmentId = c.getString(2);
+        card.front = c.isNull(3) ? "" : c.getString(3);
+        card.back = c.isNull(4) ? "" : c.getString(4);
+        card.interval = c.getInt(5);
+        card.repetitions = c.getInt(6);
+        card.easiness = c.getDouble(7);
+        card.nextReview = c.getLong(8);
+        card.lastReviewedAt = c.isNull(9) ? null : c.getLong(9);
+        return card;
+    }
+
     /** How many cards a note has — what decides whether it offers "turn into" or "review". */
     public void countForNote(String noteId, OnCounted cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
-            Cursor c = db.rawQuery("SELECT COUNT(*) FROM flashcards WHERE note_id = ?",
+            Cursor c = db.rawQuery(
+                    "SELECT COUNT(*) FROM flashcards WHERE note_id = ? AND orphaned_at IS NULL",
                     new String[]{noteId});
             int count = 0;
             try {
@@ -271,7 +466,8 @@ public class FlashcardRepository {
         try (Cursor c = db.rawQuery(
                 "SELECT COUNT(*), COUNT(DISTINCT f.note_id) " +
                         "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
-                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
+                        "WHERE n.deleted_at IS NULL AND f.orphaned_at IS NULL "
+                        + "AND f.next_review <= ? " +
                         NoteCrypto.hiddenClause(hidden),
                 args.toArray(new String[0]))) {
             if (!c.moveToFirst()) return new DueSummary(0, 0);
@@ -301,20 +497,35 @@ public class FlashcardRepository {
      * excluded the same way {@link #countDueSync} excludes them.
      */
     public List<DueCardPreview> loadDueCardsSync(long now, int limit) {
+        return loadDueCardsSync(now, limit, false);
+    }
+
+    /**
+     * The due cards a home-screen widget is allowed to show — <b>every locked collection is
+     * excluded, open or not</b>, the same rule {@link #dueProjectionSync} applies for the watch
+     * and for the same reason: neither surface has a session or a gate.
+     */
+    public List<DueCardPreview> loadDueCardsForWidgetSync(long now, int limit) {
+        return loadDueCardsSync(now, limit, true);
+    }
+
+    private List<DueCardPreview> loadDueCardsSync(long now, int limit, boolean excludeAllLocked) {
         SQLiteDatabase db = appDatabase.getWritableDatabase();
-        Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
+        Set<String> excluded = excludeAllLocked
+                ? NoteCrypto.lockedCollectionIds(db) : NoteCrypto.hiddenCollectionIds(db);
 
         List<String> args = new ArrayList<>();
         args.add(String.valueOf(now));
-        args.addAll(hidden);
+        args.addAll(excluded);
         args.add(String.valueOf(limit));
 
         List<DueCardPreview> cards = new ArrayList<>();
         try (Cursor c = db.rawQuery(
                 "SELECT f.id, f.note_id, f.front " +
                         "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
-                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
-                        NoteCrypto.hiddenClause(hidden) +
+                        "WHERE n.deleted_at IS NULL AND f.orphaned_at IS NULL "
+                        + "AND f.next_review <= ? " +
+                        NoteCrypto.excludeCollectionsClause(excluded) +
                         "ORDER BY f.next_review ASC LIMIT ?",
                 args.toArray(new String[0]))) {
             while (c.moveToNext()) {
@@ -358,7 +569,8 @@ public class FlashcardRepository {
         try (Cursor c = db.rawQuery(
                 "SELECT f.id, f.front, f.back, f.next_review, n.id, n.title, n.created_at " +
                         "FROM flashcards f JOIN notes n ON n.id = f.note_id " +
-                        "WHERE n.deleted_at IS NULL AND f.next_review <= ? " +
+                        "WHERE n.deleted_at IS NULL AND f.orphaned_at IS NULL "
+                        + "AND f.next_review <= ? " +
                         NoteCrypto.excludeCollectionsClause(locked),
                 args.toArray(new String[0]))) {
             while (c.moveToNext()) {

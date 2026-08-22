@@ -5,6 +5,11 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import mse.quill.ui.quiz.QuizQuestion;
+import mse.quill.ui.quiz.QuizSession;
+import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -222,10 +227,19 @@ public class QuizRepository {
     }
 
     /** Closes an attempt: completed if every question was answered, abandoned if it was left. */
+    /**
+     * Closes an attempt and files the paper with it.
+     *
+     * <p>{@code results} is what makes an attempt reopenable later. It is written for abandoned
+     * attempts too: walking out of a quiz half done is a thing worth being able to look at again,
+     * and the alternative — keeping answers only for completed runs — would make the history lie
+     * about which questions were even reached.
+     */
     public void finishAttempt(String attemptId, int score, int answered, boolean completed,
-                              Runnable onDone) {
+                              List<QuizSession.Result> results, Runnable onDone) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
+            saveAnswersSync(db, attemptId, results);
             ContentValues cv = new ContentValues();
             cv.put("score", score);
             cv.put("answered", answered);
@@ -241,6 +255,75 @@ public class QuizRepository {
     }
 
     /**
+     * Replaces this attempt's stored answers.
+     *
+     * <p>Replaces rather than appends, so a re-close of the same attempt — which the status guard
+     * above already makes a no-op for the score — cannot leave two papers stapled together.
+     */
+    private void saveAnswersSync(SQLiteDatabase db, String attemptId,
+                                 List<QuizSession.Result> results) {
+        if (results == null) return;
+        db.beginTransaction();
+        try {
+            db.delete("quiz_attempt_answers", "attempt_id = ?", new String[]{attemptId});
+            for (int i = 0; i < results.size(); i++) {
+                QuizSession.Result result = results.get(i);
+                ContentValues cv = new ContentValues();
+                cv.put("id", UUID.randomUUID().toString());
+                cv.put("attempt_id", attemptId);
+                cv.put("position", i);
+                cv.put("source_id", result.question.sourceId);
+                cv.put("prompt", result.question.prompt);
+                cv.put("options", new JSONArray(result.question.options).toString());
+                cv.put("correct_index", result.question.correctIndex);
+                cv.put("selected_index", result.selectedIndex);
+                db.insert("quiz_attempt_answers", null, cv);
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public interface OnAnswersLoaded { void onLoaded(List<QuizSession.Result> results); }
+
+    /**
+     * The marked paper for a past attempt, in the order it was sat.
+     *
+     * <p>Comes back empty for an attempt taken before answers were stored, which the caller shows
+     * as "this one wasn't kept" rather than as an error — the score on the row beside it is still
+     * true.
+     */
+    public void loadAttemptAnswers(String attemptId, OnAnswersLoaded cb) {
+        executors.diskIO(() -> {
+            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            List<QuizSession.Result> results = new ArrayList<>();
+            try (Cursor c = db.rawQuery(
+                    "SELECT source_id, prompt, options, correct_index, selected_index "
+                            + "FROM quiz_attempt_answers WHERE attempt_id = ? ORDER BY position ASC",
+                    new String[]{attemptId})) {
+                while (c.moveToNext()) {
+                    List<String> options = new ArrayList<>();
+                    try {
+                        JSONArray stored = new JSONArray(c.isNull(2) ? "[]" : c.getString(2));
+                        for (int i = 0; i < stored.length(); i++) options.add(stored.getString(i));
+                    } catch (JSONException e) {
+                        Log.w("QuizRepository", "unreadable stored options for attempt " + attemptId, e);
+                        continue;
+                    }
+                    QuizQuestion question = QuizQuestion.restored(
+                            c.isNull(0) ? null : c.getString(0),
+                            c.isNull(1) ? "" : c.getString(1),
+                            options,
+                            c.getInt(3));
+                    results.add(QuizSession.Result.restored(question, c.getInt(4)));
+                }
+            }
+            if (cb != null) executors.mainThread(() -> cb.onLoaded(results));
+        });
+    }
+
+    /**
      * Deletes a quiz and everything ever scored on it.
      *
      * <p>A hard delete, like a flashcard deck's, and for the same reason: the note's Q&amp;A blocks
@@ -252,6 +335,9 @@ public class QuizRepository {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             db.beginTransaction();
             try {
+                db.delete("quiz_attempt_answers",
+                        "attempt_id IN (SELECT id FROM quiz_attempts WHERE quiz_id = ?)",
+                        new String[]{quizId});
                 db.delete("quiz_attempts", "quiz_id = ?", new String[]{quizId});
                 db.delete("quizzes", "id = ?", new String[]{quizId});
                 db.setTransactionSuccessful();

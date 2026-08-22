@@ -449,7 +449,7 @@ public class QuizSessionFragment extends Fragment {
         if (attemptId == null || attemptClosed || session == null) return;
         attemptClosed = true;
         quizRepository.finishAttempt(attemptId, session.score(), session.answered(), completed,
-                null);
+                session.results(), null);
     }
 
     private void confirmLeave() {

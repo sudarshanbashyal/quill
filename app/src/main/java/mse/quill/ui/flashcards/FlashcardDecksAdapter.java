@@ -31,6 +31,12 @@ public class FlashcardDecksAdapter extends RecyclerView.Adapter<FlashcardDecksAd
         this.listener = listener;
     }
 
+    /** The row at a position, for the swipe handler — null for a stale position, which is what
+     *  a holder detached between the swipe finishing and this being asked reports. */
+    public FlashcardDeck deckAt(int position) {
+        return position < 0 || position >= decks.size() ? null : decks.get(position);
+    }
+
     public void submit(List<FlashcardDeck> decks) {
         this.decks = decks;
         notifyDataSetChanged();

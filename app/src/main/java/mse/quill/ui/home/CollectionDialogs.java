@@ -34,6 +34,29 @@ public final class CollectionDialogs {
 
     private CollectionDialogs() {}
 
+    /** The two ways a note gets into a collection. */
+    public interface AddNoteListener {
+        void onNewNote();
+        void onExistingNote();
+    }
+
+    /**
+     * Asks which of the two the user meant, for the collection screen's "+" and for the button on
+     * its empty state — both of which used to be halves of a split button that named neither.
+     */
+    public static void showAddNoteDialog(Context context, AddNoteListener listener) {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.dialog_add_note_title)
+                .setItems(new String[]{
+                        context.getString(R.string.action_add_note_new),
+                        context.getString(R.string.action_add_note_existing)
+                }, (dialog, which) -> {
+                    if (which == 0) listener.onNewNote();
+                    else listener.onExistingNote();
+                })
+                .show();
+    }
+
     public static void showCreateDialog(Context context, OnTextPicked callback) {
         TextInputLayout nameField = TextFieldUtils.outlinedField(context, R.string.collection_name_hint);
 
@@ -89,6 +112,16 @@ public final class CollectionDialogs {
     }
 
     /** @param excludeCollectionId a collection id to omit from the list (e.g. the one currently open), or null. */
+    /**
+     * Picks where a note should go.
+     *
+     * <p>Locked destinations are labelled, and confirm before they are used. Moving a note into a
+     * locked collection encrypts it, and that costs its flashcards: the cards keep the question and
+     * answer as their own plaintext columns, so leaving them behind would keep a readable copy of
+     * the note in a table the lock doesn't reach — the same reason locking a whole collection
+     * removes them. Locking says so in its confirmation; this path used to do the identical thing
+     * in silence, so a deck made a minute earlier simply vanished.
+     */
     public static void showAssignCollectionDialog(Context context, List<Collection> collections,
                                                    String excludeCollectionId, OnCollectionPicked callback) {
         List<Collection> options = new ArrayList<>();
@@ -97,11 +130,30 @@ public final class CollectionDialogs {
         }
 
         String[] items = new String[options.size()];
-        for (int i = 0; i < options.size(); i++) items[i] = options.get(i).name;
+        for (int i = 0; i < options.size(); i++) {
+            Collection option = options.get(i);
+            items[i] = option.biometricLocked
+                    ? context.getString(R.string.collection_locked_option, option.name)
+                    : option.name;
+        }
 
         new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.action_move_to_collection)
-                .setItems(items, (dialog, which) -> callback.onPicked(options.get(which).id))
+                .setItems(items, (dialog, which) -> {
+                    Collection picked = options.get(which);
+                    if (picked.biometricLocked) confirmMoveIntoLocked(context, picked, callback);
+                    else callback.onPicked(picked.id);
+                })
+                .show();
+    }
+
+    private static void confirmMoveIntoLocked(Context context, Collection destination,
+                                              OnCollectionPicked callback) {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(context.getString(R.string.move_into_locked_title, destination.name))
+                .setMessage(R.string.move_into_locked_message)
+                .setPositiveButton(R.string.action_move, (d, w) -> callback.onPicked(destination.id))
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 

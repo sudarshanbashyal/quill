@@ -2,11 +2,9 @@ package mse.quill.audio;
 
 import android.content.Context;
 import android.content.Intent;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
-import android.os.Build;
+import android.widget.Toast;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -45,8 +43,8 @@ public final class AudioPlayback {
     private static volatile AudioPlayback instance;
 
     private final Context appContext;
-    private final AudioManager audioManager;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final AudioFocus focus;
     private final List<Listener> listeners = new ArrayList<>();
 
     private MediaPlayer player;
@@ -55,7 +53,6 @@ public final class AudioPlayback {
     private int durationMs;
     private boolean playing;
 
-    private AudioFocusRequest focusRequest;
     private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
         // A call, another app's audio, or an alarm: give way rather than talk over it. Transient
         // ducking is treated as a pause too — a voice memo half-heard under something else is
@@ -77,7 +74,7 @@ public final class AudioPlayback {
 
     private AudioPlayback(Context context) {
         this.appContext = context.getApplicationContext();
-        this.audioManager = (AudioManager) appContext.getSystemService(Context.AUDIO_SERVICE);
+        this.focus = new AudioFocus(appContext, handler);
     }
 
     public static AudioPlayback get(Context context) {
@@ -141,11 +138,23 @@ public final class AudioPlayback {
         release();
         try {
             player = new MediaPlayer();
-            player.setAudioAttributes(new AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build());
-            player.setDataSource(path);
+            player.setAudioAttributes(AudioFocus.speechAttributes());
+            // A recording in a locked collection is encrypted on disk, and MediaPlayer needs
+            // random access — so it gets a MediaDataSource over the plaintext in memory rather
+            // than a decrypted temp file that would have to be cleaned up. Plaintext clips keep
+            // streaming straight from disk.
+            android.media.MediaDataSource source = mse.quill.security.MediaFiles.source(path);
+            if (source != null) {
+                player.setDataSource(source);
+            } else if (mse.quill.security.MediaFiles.isEncrypted(path)) {
+                // Encrypted and it would not open. Handing MediaPlayer the path here would give it
+                // the ciphertext, which it reports as an unhelpful native decoder error; the real
+                // cause is almost always the collection key's authentication window having closed
+                // since the note was opened, and the answer is to unlock it again.
+                throw new IOException("locked media: " + path);
+            } else {
+                player.setDataSource(path);
+            }
             player.prepare();
             player.setOnCompletionListener(mp -> {
                 // A finished clip closes itself, bar and notification with it — the same end state
@@ -171,6 +180,14 @@ public final class AudioPlayback {
         } catch (IOException | IllegalStateException e) {
             release();
             notifyStateChanged();
+            // Said out loud rather than logged. A play button that does nothing is the one outcome
+            // the user cannot diagnose, and "nothing happened" is what a lapsed key looks like from
+            // the outside.
+            Toast.makeText(appContext,
+                    appContext.getString(mse.quill.security.MediaFiles.isEncrypted(path)
+                            ? mse.quill.R.string.audio_locked_needs_unlock
+                            : mse.quill.R.string.audio_playback_failed),
+                    Toast.LENGTH_LONG).show();
             return;
         }
         if (!requestFocus()) {
@@ -248,34 +265,11 @@ public final class AudioPlayback {
     // ── Audio focus ────────────────────────────────────────────────────────
 
     private boolean requestFocus() {
-        if (audioManager == null) return true;
-        int result;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .build())
-                    .setOnAudioFocusChangeListener(focusListener, handler)
-                    .build();
-            result = audioManager.requestAudioFocus(focusRequest);
-        } else {
-            result = audioManager.requestAudioFocus(focusListener,
-                    AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-        }
-        return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        return focus.request(focusListener);
     }
 
     private void abandonFocus() {
-        if (audioManager == null) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (focusRequest != null) {
-                audioManager.abandonAudioFocusRequest(focusRequest);
-                focusRequest = null;
-            }
-        } else {
-            audioManager.abandonAudioFocus(focusListener);
-        }
+        focus.abandon(focusListener);
     }
 
     // ── Listeners ──────────────────────────────────────────────────────────

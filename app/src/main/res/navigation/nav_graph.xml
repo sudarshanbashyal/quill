@@ -90,6 +90,15 @@
             app:argType="string"
             app:nullable="true"
             android:defaultValue="@null" />
+        <!-- True only when the caller minted this board a moment ago and is opening it for the
+             first time. It is what lets the screen throw the board away again if nothing is ever
+             put on it — see WhiteboardFragment.discardIfNeverUsed. Defaulted to false, so every
+             other way in (Home's list, a note's embed, a widget tap) means "an existing board",
+             which is never discarded however empty it is. -->
+        <argument
+            android:name="created_now"
+            app:argType="boolean"
+            android:defaultValue="false" />
     </fragment>
 
     <!-- A top-level destination (see menu_bottom_nav), so it takes no arguments and has no

@@ -11,9 +11,14 @@ import androidx.appcompat.app.AppCompatDelegate;
 
 import mse.quill.MainActivity;
 import mse.quill.R;
+import mse.quill.ui.welcome.WelcomeActivity;
 
 /**
  * The app's entry point: shows the animated Quill mark, then hands off to {@link MainActivity}.
+ *
+ * <p>Where it hands off to is {@link StartupTasks}' answer: {@link mse.quill.ui.welcome.WelcomeActivity}
+ * on what looks like a first install, {@link MainActivity} otherwise. Decided there rather than
+ * here so the database read it needs happens on the thread this screen is already waiting for.
  *
  * <p>The hand-off waits on two things, whichever finishes last:
  *
@@ -38,6 +43,8 @@ public class SplashActivity extends AppCompatActivity {
 
     private boolean minimumElapsed;
     private boolean startupFinished;
+    /** Set by {@link StartupTasks} before {@link #startupFinished}, and read only after it. */
+    private boolean showWelcome;
     private boolean started;
     private boolean handedOff;
 
@@ -55,7 +62,8 @@ public class SplashActivity extends AppCompatActivity {
             openMainIfReady();
         }, MINIMUM_DISPLAY_MS);
 
-        StartupTasks.run(getApplicationContext(), () -> {
+        StartupTasks.run(getApplicationContext(), showWelcome -> {
+            this.showWelcome = showWelcome;
             startupFinished = true;
             openMainIfReady();
         });
@@ -91,7 +99,8 @@ public class SplashActivity extends AppCompatActivity {
             overrideActivityTransition(
                     OVERRIDE_TRANSITION_CLOSE, android.R.anim.fade_in, android.R.anim.fade_out);
         }
-        startActivity(new Intent(this, MainActivity.class));
+        startActivity(new Intent(this,
+                showWelcome ? WelcomeActivity.class : MainActivity.class));
         finish();
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);

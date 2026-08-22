@@ -2,6 +2,7 @@ package mse.quill.data;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
@@ -20,7 +21,9 @@ public class AppDatabase extends SQLiteOpenHelper {
      * different things, so the next number has to clear the highest either of them used. See
      * {@link #ensureAdditiveSchema} for why the migration doesn't trust this number alone.
      */
-    private static final int DATABASE_VERSION = 9;
+    /** v11 ran {@link #ensureNotesFts} on databases that upgraded past v3 and so never got the
+     *  search index onCreate builds; v12 adds quiz_attempt_answers. Both additive. */
+    private static final int DATABASE_VERSION = 12;
     private static volatile AppDatabase instance;
 
     public static synchronized AppDatabase getInstance(Context context) {
@@ -51,6 +54,28 @@ public class AppDatabase extends SQLiteOpenHelper {
             instance = null;
         }
         context.getApplicationContext().deleteDatabase(DATABASE_NAME);
+    }
+
+    /**
+     * True if this Quill holds anything the user would recognise as theirs — a note, a collection
+     * or a whiteboard. <b>Blocking — call from the disk thread.</b>
+     *
+     * <p>For {@code Onboarding}, which needs to tell a first install from an update. The stored
+     * "welcome seen" flag can't answer that on its own: it is missing for someone who has been
+     * using Quill since before the welcome screen existed, and showing them an empty-app
+     * introduction over a notebook they have been keeping for weeks would be worse than never
+     * having built one.
+     *
+     * <p>Counted across three tables rather than notes alone because none of them is a reliable
+     * proxy for the others — a board drawn from Home belongs to no note, and a collection can be
+     * made before anything is filed in it.
+     */
+    public boolean hasAnyContentSync() {
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT (SELECT COUNT(*) FROM notes) + (SELECT COUNT(*) FROM collections) "
+                        + "+ (SELECT COUNT(*) FROM whiteboards)", null)) {
+            return c.moveToFirst() && c.getInt(0) > 0;
+        }
     }
 
     @Override
@@ -137,6 +162,11 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "easiness REAL DEFAULT 2.5, " +
                 "next_review INTEGER, " +
                 "last_reviewed_at INTEGER, " +
+                // Stamped when the note stops being able to produce this card — the Q&A block was
+                // deleted, or one of its halves was emptied. The row stays, so refilling the half
+                // brings the card back with its schedule intact; every count of "what is there to
+                // review" leaves stamped rows out. See FlashcardRepository.markOrphansSync.
+                "orphaned_at INTEGER, " +
                 "FOREIGN KEY(note_id) REFERENCES notes(id))");
 
         // A quiz is a *marker*, not a question set: it records that a note was turned into one.
@@ -222,19 +252,30 @@ public class AppDatabase extends SQLiteOpenHelper {
                 "FOREIGN KEY(note_id) REFERENCES notes(id), " +
                 "FOREIGN KEY(tag_id) REFERENCES tags(id))");
 
+        db.execSQL("CREATE TABLE IF NOT EXISTS quiz_attempt_answers (" +
+                "id TEXT PRIMARY KEY, " +
+                "attempt_id TEXT NOT NULL, " +
+                "position INTEGER NOT NULL, " +
+                "source_id TEXT, " +
+                "prompt TEXT, " +
+                // The options as they were shown, in the order they were shown, as a JSON array.
+                // Storing them is the whole point: the generator shuffles per attempt, so a paper
+                // rebuilt from the note would put the same answers under different letters and
+                // stop being the paper the user actually sat.
+                "options TEXT, " +
+                "correct_index INTEGER, " +
+                // -1 for a question left blank, matching QuizSession.NO_SELECTION.
+                "selected_index INTEGER, " +
+                "FOREIGN KEY(attempt_id) REFERENCES quiz_attempts(id))");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempt_answers_attempt "
+                + "ON quiz_attempt_answers(attempt_id)");
+
         // ---------- FTS5 virtual table ----------
 
         // Standalone (not content='notes') because the indexed body is the Markdown document
         // flattened to plain text, which no column on `notes` holds — NoteRepository writes both
         // columns in the same transaction as the save.
-        try {
-            db.execSQL("CREATE VIRTUAL TABLE notes_fts USING fts5(note_id UNINDEXED, title, body)");
-        } catch (SQLException e) {
-            // Some SQLite builds (notably some emulator system images) aren't compiled with the
-            // FTS5 module. The search UI still filters in memory, so skip the table rather than
-            // failing database creation entirely — writes to it are guarded the same way.
-            Log.w("AppDatabase", "fts5 unavailable, skipping notes_fts table", e);
-        }
+        ensureNotesFts(db);
 
         // ---------- Indexes (recommended for FK lookups) ----------
 
@@ -285,6 +326,34 @@ public class AppDatabase extends SQLiteOpenHelper {
         // Links a flashcard back to the Q&A block it came from, and records when it was last seen.
         addColumnIfMissing(db, "flashcards", "source_segment_id", "TEXT");
         addColumnIfMissing(db, "flashcards", "last_reviewed_at", "INTEGER");
+        // Left null on existing rows, which is the right default: nothing is orphaned until the
+        // next sync of its note looks at the blocks and decides otherwise.
+        addColumnIfMissing(db, "flashcards", "orphaned_at", "INTEGER");
+
+        // The search index was only ever created in onCreate, so every database that upgraded from
+        // v3 has been running without one — silently, because both the writes and the reads are
+        // guarded for FTS5-less builds and an absent table looks exactly like an absent module.
+        // Creating it here is most of the fix; backfilling is the rest, or the index would only
+        // know about notes saved after today.
+        db.execSQL("CREATE TABLE IF NOT EXISTS quiz_attempt_answers (" +
+                "id TEXT PRIMARY KEY, " +
+                "attempt_id TEXT NOT NULL, " +
+                "position INTEGER NOT NULL, " +
+                "source_id TEXT, " +
+                "prompt TEXT, " +
+                // The options as they were shown, in the order they were shown, as a JSON array.
+                // Storing them is the whole point: the generator shuffles per attempt, so a paper
+                // rebuilt from the note would put the same answers under different letters and
+                // stop being the paper the user actually sat.
+                "options TEXT, " +
+                "correct_index INTEGER, " +
+                // -1 for a question left blank, matching QuizSession.NO_SELECTION.
+                "selected_index INTEGER, " +
+                "FOREIGN KEY(attempt_id) REFERENCES quiz_attempts(id))");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempt_answers_attempt "
+                + "ON quiz_attempt_answers(attempt_id)");
+
+        ensureNotesFts(db);
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_flashcards_source_segment_id " +
                 "ON flashcards(source_segment_id)");
 
@@ -361,6 +430,70 @@ public class AppDatabase extends SQLiteOpenHelper {
                     "(SELECT MAX(s.created_at) FROM strokes s WHERE s.whiteboard_id = whiteboards.id), " +
                     "CAST(strftime('%s','now') AS INTEGER) * 1000) " +
                     "WHERE created_at IS NULL OR updated_at IS NULL");
+        }
+    }
+
+    /**
+     * Creates {@code notes_fts} if it isn't there, and fills it from the notes table if it is
+     * empty.
+     *
+     * <p>Standalone (not {@code content='notes'}) because the indexed body is the Markdown document
+     * flattened to plain text, which no column on {@code notes} holds — {@code NoteRepository}
+     * writes both columns in the same transaction as the save.
+     *
+     * <p>Some SQLite builds — notably some emulator system images — aren't compiled with FTS5. The
+     * search falls back to matching titles in memory, so a missing module skips the table rather
+     * than failing database creation.
+     */
+    private void ensureNotesFts(SQLiteDatabase db) {
+        try {
+            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts "
+                    + "USING fts5(note_id UNINDEXED, title, body)");
+        } catch (SQLException e) {
+            Log.w("AppDatabase", "fts5 unavailable, skipping notes_fts table", e);
+            return;
+        }
+        backfillNotesFts(db);
+    }
+
+    /**
+     * Indexes what is already there, once.
+     *
+     * <p>Only when the index is empty: a populated one is kept current by every save, and
+     * re-reading every note on each launch to confirm that would be a lot of work to learn nothing.
+     * An app with no notes yet also finds nothing to do, which is the same no-op by a different
+     * route.
+     *
+     * <p>Locked collections are skipped rather than decrypted. The index stores the body as plain
+     * text, so filing one here would put a readable copy of the encrypted note in a table with no
+     * lock on it — the same reason {@code NoteRepository} removes a note from the index when its
+     * collection is locked. Those notes join the index if and when the collection is unlocked and
+     * they are next saved.
+     */
+    private void backfillNotesFts(SQLiteDatabase db) {
+        try (android.database.Cursor count =
+                     db.rawQuery("SELECT COUNT(*) FROM notes_fts", null)) {
+            if (count.moveToFirst() && count.getInt(0) > 0) return;
+        } catch (SQLException e) {
+            return;
+        }
+
+        try (android.database.Cursor c = db.rawQuery(
+                "SELECT n.id, n.title, n.content_blob FROM notes n "
+                        + "LEFT JOIN collections c ON c.id = n.collection_id "
+                        + "WHERE n.deleted_at IS NULL "
+                        + "AND (c.biometric_locked IS NULL OR c.biometric_locked = 0)", null)) {
+            while (c.moveToNext()) {
+                String markdown = c.isNull(2)
+                        ? "" : new String(c.getBlob(2), java.nio.charset.StandardCharsets.UTF_8);
+                android.content.ContentValues cv = new android.content.ContentValues();
+                cv.put("note_id", c.getString(0));
+                cv.put("title", c.isNull(1) ? "" : c.getString(1));
+                cv.put("body", mse.quill.data.serialization.NoteDocument.toPlainText(markdown));
+                db.insert("notes_fts", null, cv);
+            }
+        } catch (SQLException e) {
+            Log.w("AppDatabase", "could not backfill notes_fts", e);
         }
     }
 

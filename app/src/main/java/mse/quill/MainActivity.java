@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -33,6 +34,7 @@ import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 
+import mse.quill.collab.SessionCode;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.WearNoteListPublisher;
 import mse.quill.data.WearProjectionPublisher;
@@ -41,6 +43,7 @@ import mse.quill.reminders.StudyReminders;
 import mse.quill.security.AppLock;
 import mse.quill.security.CollectionLock;
 import mse.quill.ui.audio.MiniPlayerView;
+import mse.quill.util.SwipeToDelete;
 import mse.quill.util.WindowInsetsUtils;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
@@ -78,6 +81,13 @@ public class MainActivity extends AppCompatActivity {
             applyBottomInset();
             return insets;
         });
+
+        // Before handleViewIntent below, which is the thing that reads them.
+        if (savedInstanceState != null) {
+            pendingImportUri = savedInstanceState.getParcelable(STATE_PENDING_IMPORT);
+            viewIntentConsumed = savedInstanceState.getBoolean(STATE_IMPORT_CONSUMED, false);
+            pendingJoinToken = savedInstanceState.getString(STATE_PENDING_JOIN);
+        }
 
         applyTopInsetToEveryScreen();
         setupNowPlayingBar();
@@ -138,6 +148,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        // A new intent is a new request, whatever the last one was — see viewIntentConsumed.
+        viewIntentConsumed = false;
         handleViewIntent(intent);
         handleReminderIntent(intent);
         handleWidgetIntent(intent);
@@ -235,10 +247,51 @@ public class MainActivity extends AppCompatActivity {
      *  what lets {@link #deliverSharedFileWhenHomeIsReady} deliver it the moment it is. */
     private Uri pendingImportUri;
 
+    /**
+     * Whether the file named by the <em>current</em> intent has already been handed to Home.
+     *
+     * <p>The activity's intent outlives the activity: a rotation recreates this Activity and
+     * {@link #getIntent()} still returns the VIEW intent that started it, so without this the file
+     * would be imported a second time and the user would find two copies of the note they opened
+     * once. Reset in {@link #onNewIntent}, because a new intent is a new request — the same file
+     * tapped twice on purpose is two imports, and that is the user's call to make.
+     */
+    private boolean viewIntentConsumed;
+
+    private static final String STATE_PENDING_IMPORT = "pending_import_uri";
+    private static final String STATE_IMPORT_CONSUMED = "view_intent_consumed";
+    private static final String STATE_PENDING_JOIN = "pending_join_token";
+
+    /** Carries both across a rotation: the flag so an imported file isn't imported again, and the
+     *  uri so one that arrived in the moment before Home was ready isn't dropped instead. */
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putParcelable(STATE_PENDING_IMPORT, pendingImportUri);
+        outState.putBoolean(STATE_IMPORT_CONSUMED, viewIntentConsumed);
+        outState.putString(STATE_PENDING_JOIN, pendingJoinToken);
+    }
+
     private void handleViewIntent(Intent intent) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return;
         Uri uri = intent.getData();
-        if (uri == null) return;
+        if (uri == null || viewIntentConsumed) return;
+        viewIntentConsumed = true;
+
+        // Two kinds of thing arrive as a VIEW: a file to import, and a whiteboard session's link.
+        // The scheme settles it before either is attempted — a quill:// link handed to the
+        // importers would be opened, found to contain no bundle, and reported as a broken file.
+        if ("quill".equals(uri.getScheme())) {
+            String token = SessionCode.parse(uri.getLastPathSegment());
+            if (token == null) {
+                android.widget.Toast.makeText(this, R.string.collab_error_not_a_session,
+                        android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            joinSessionWhenUnlocked(token);
+            return;
+        }
+
         pendingImportUri = uri;
 
         // The file's result belongs on Home (that's where a manually-picked import already lands),
@@ -250,6 +303,33 @@ public class MainActivity extends AppCompatActivity {
 
         deliverPendingImportIfReady();
     }
+
+    /**
+     * Opens a board joined to the scanned session — but not until the app is unlocked.
+     *
+     * <p>The lock gate is a view over this window rather than a screen of its own, so Home goes on
+     * resuming behind it: without the wait, a link scanned while Quill was locked would create a
+     * board, join a stranger's session and start drawing it onto the screen underneath the words
+     * "Quill is locked". The gate has to come down first, and if the user walks away from it,
+     * nothing has happened at all.
+     */
+    private void joinSessionWhenUnlocked(String token) {
+        if (AppLock.shouldPrompt(this)) {
+            pendingJoinToken = token;
+            return;
+        }
+        runWhenNavHostReady(host -> {
+            Bundle args = new Bundle();
+            args.putBoolean(mse.quill.ui.whiteboard.WhiteboardFragment.ARG_CREATED_NOW, true);
+            args.putString(mse.quill.ui.whiteboard.WhiteboardFragment.ARG_JOIN_TOKEN, token);
+            // No whiteboard_id: the screen mints one for itself, which is exactly what a joiner
+            // needs — an empty board of its own for the host's snapshot to fill.
+            host.getNavController().navigate(R.id.whiteboardFragment, args);
+        });
+    }
+
+    /** A session link that arrived while the gate was up, waiting for it to come down. */
+    private String pendingJoinToken;
 
     /** Home is resumed as soon as it exists, cold start or not, so watching for that (rather than
      *  e.g. a fixed delay) is what makes this reliable regardless of how long the nav host takes to
@@ -273,6 +353,19 @@ public class MainActivity extends AppCompatActivity {
         if (host == null) return;
         Fragment current = host.getChildFragmentManager().getPrimaryNavigationFragment();
         if (!(current instanceof mse.quill.ui.home.HomeFragment)) return;
+
+        // Resumed, not merely present — the check this used to be missing, and the difference
+        // between the two ways a file can arrive. Tapping a .quill in a file manager while Quill is
+        // already running finds a Home with a view, so it worked; doing it with Quill closed does
+        // not. A cold start restores the fragment during onCreate, so the instanceof above already
+        // passes while onCreateView is still ahead of it — and Home's first act on being handed a
+        // file is to show a Snackbar, which needs the view it does not yet have. That threw
+        // IllegalStateException out of onCreate, which is to say Quill crashed on launch and the
+        // user was dropped back in the file manager with nothing imported.
+        //
+        // Nothing is lost by waiting: deliverSharedFileWhenHomeIsReady is registered before the
+        // intent is ever read, and calls back here the moment Home resumes.
+        if (!current.isResumed()) return;
 
         Uri uri = pendingImportUri;
         pendingImportUri = null;
@@ -468,7 +561,13 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        if (!AppLock.shouldPrompt(this)) hideLockGate();
+        if (!AppLock.shouldPrompt(this)) {
+            hideLockGate();
+            // Also here, not only in hideLockGate: the gate may already be down by the time a
+            // waiting link is noticed — the device-credential fallback runs in its own Activity,
+            // so coming back from it resumes this one rather than dismissing anything.
+            deliverPendingJoin();
+        }
     }
 
     /**
@@ -504,6 +603,13 @@ public class MainActivity extends AppCompatActivity {
         // material the user went out of their way to encrypt, so leaving the app is enough to shut
         // them — coming back to one always costs a prompt.
         CollectionLock.relockAll();
+
+        // Leaving the app is the moment the home screen is about to be looked at, and it is also
+        // the last chance to catch anything that changed without a push of its own. The widgets
+        // have no periodic refresh (updatePeriodMillis is 0), so this is a backstop rather than
+        // the mechanism: each repository pushes its own change as it makes it. Cheap when there is
+        // no widget on the home screen — every call short-circuits on an empty id array.
+        mse.quill.widget.WidgetUpdater.notifyAllChanged(this);
     }
 
     private void showLockGate() {
@@ -517,6 +623,16 @@ public class MainActivity extends AppCompatActivity {
         if (lockGate == null || lockGate.getVisibility() == View.GONE) return;
         lockGate.setVisibility(View.GONE);
         setLockBackCallbackEnabled(false);
+        deliverPendingJoin();
+    }
+
+    /** The other half of {@link #joinSessionWhenUnlocked}: the gate is down, so the session link
+     *  that was waiting behind it can go ahead. */
+    private void deliverPendingJoin() {
+        if (pendingJoinToken == null) return;
+        String token = pendingJoinToken;
+        pendingJoinToken = null;
+        joinSessionWhenUnlocked(token);
     }
 
     /**
@@ -528,6 +644,106 @@ public class MainActivity extends AppCompatActivity {
      * anywhere deeper: a note editor or a review session is somewhere you arrived from a tab, and
      * offering to jump away mid-note is noise.
      */
+    // ── Swiping between tabs ─────────────────────────────────────────────
+
+    /** The bottom bar's items in order, which is also the order a swipe walks them. */
+    private static final int[] TAB_DESTINATIONS = {
+            R.id.homeFragment,
+            R.id.flashcardDecksFragment,
+            R.id.quizzesFragment,
+            R.id.profileFragment,
+    };
+
+    /** How much of the screen's width a drag has to cross to count as turning the page. */
+    private static final float SWIPE_TAB_FRACTION = 0.3f;
+
+    private float swipeDownX;
+    private float swipeDownY;
+    /** False once the gesture has disqualified itself — went vertical, or a second finger landed. */
+    private boolean swipeCandidate;
+
+    /**
+     * Moves to the next or previous tab on a horizontal drag across the screen.
+     *
+     * <p>Watched at the activity rather than claimed by a view, and never consuming the event: the
+     * gesture is read alongside whatever the screen underneath is already doing, and acts only on
+     * release. That is what lets it share the horizontal axis with swipe-to-delete instead of
+     * fighting it for interception — the row's gesture runs normally, and this one stands down
+     * because {@link SwipeToDelete#isSwipeInProgress()} says a row has already claimed the drag.
+     *
+     * <p>The distance threshold is several times a row's, for the same reason. A row commits to
+     * being dragged after about a finger's width; asking for a third of the screen here means that
+     * by the time this gesture would qualify, any row that was going to claim it already has.
+     *
+     * <p>Only between the four top-level destinations. Deeper screens — a note, a review session, a
+     * whiteboard — hide the bar entirely, and a horizontal drag on a whiteboard is a pen stroke.
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                swipeDownX = event.getX();
+                swipeDownY = event.getY();
+                swipeCandidate = true;
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                // A second finger means a pinch or a scroll, not a page turn.
+                swipeCandidate = false;
+                break;
+            case MotionEvent.ACTION_UP:
+                if (swipeCandidate) {
+                    handleHorizontalSwipe(event.getX() - swipeDownX, event.getY() - swipeDownY);
+                }
+                swipeCandidate = false;
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                swipeCandidate = false;
+                break;
+            default:
+                break;
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void handleHorizontalSwipe(float dx, float dy) {
+        // A row is mid-swipe, or was: the drag belongs to it either way, including the case where
+        // it was released short of deleting and sprang back.
+        if (SwipeToDelete.isSwipeInProgress()) return;
+
+        float minDistance = getResources().getDisplayMetrics().widthPixels * SWIPE_TAB_FRACTION;
+        if (Math.abs(dx) < minDistance) return;
+        // Comfortably horizontal, so a diagonal flick while scrolling a list doesn't change tab.
+        if (Math.abs(dx) < Math.abs(dy) * 2) return;
+
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+        if (host == null) return;
+        NavController navController = host.getNavController();
+        if (navController.getCurrentDestination() == null) return;
+
+        int current = indexOfTab(navController.getCurrentDestination().getId());
+        if (current < 0) return;
+
+        // Swiping left carries the screen forward, the way a page does.
+        int target = current + (dx < 0 ? 1 : -1);
+        // No wrap-around: running off the end of the bar should feel like the end of the bar, not
+        // like being thrown back to the start.
+        if (target < 0 || target >= TAB_DESTINATIONS.length) return;
+
+        BottomNavigationView bottomNav = findViewById(R.id.bottom_nav);
+        if (bottomNav == null || bottomNav.getVisibility() != View.VISIBLE) return;
+        // Through the bar rather than the controller, so the selected item moves with the screen
+        // and the back stack is popped exactly as a tap would have done it.
+        bottomNav.setSelectedItemId(TAB_DESTINATIONS[target]);
+    }
+
+    private static int indexOfTab(int destinationId) {
+        for (int i = 0; i < TAB_DESTINATIONS.length; i++) {
+            if (TAB_DESTINATIONS[i] == destinationId) return i;
+        }
+        return -1;
+    }
+
     private void setupBottomNavigation() {
         NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.nav_host_fragment);

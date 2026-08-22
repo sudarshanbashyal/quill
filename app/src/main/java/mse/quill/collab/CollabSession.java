@@ -1,8 +1,11 @@
 package mse.quill.collab;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
+import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.nearby.Nearby;
 import com.google.android.gms.nearby.connection.AdvertisingOptions;
 import com.google.android.gms.nearby.connection.ConnectionInfo;
@@ -57,6 +60,28 @@ public class CollabSession {
      *  so a fixed sentinel stands in for it instead. */
     private static final String HOST_PEER_ID = "host";
 
+    /**
+     * The ways a session can fail, as things the user can be told apart from one another.
+     *
+     * <p>A single {@code onError(String)} used to carry whatever Play Services said, which is how
+     * "Bluetooth is off" and "nobody is hosting that code" arrived looking identical — both as a
+     * sentence the user could do nothing with. The caller maps these to its own copy; the raw text
+     * survives as {@code detail}, for the log.
+     */
+    public enum Failure {
+        /** The radios refused, or the app is missing a permission it needs. */
+        RADIO_UNAVAILABLE,
+        /** Advertising wouldn't start — the host's side of {@link #RADIO_UNAVAILABLE}. */
+        CANNOT_HOST,
+        /** Discovery wouldn't start. */
+        CANNOT_SEARCH,
+        /** Nothing was advertising that token before the deadline: wrong code, host gone, or out
+         *  of range. This is the one that used to be an indefinite wait. */
+        SESSION_NOT_FOUND,
+        /** The session was found and then the connection itself failed or was rejected. */
+        CONNECT_FAILED
+    }
+
     public interface Listener {
         /** A device just connected and is ready to exchange messages (its name isn't known yet).
          *  {@code peerId} is canonical: a Nearby endpoint id if this device is the host, or
@@ -71,7 +96,8 @@ public class CollabSession {
         /** The host explicitly ended the session for everyone. */
         void onSessionEndedByHost();
         void onMessage(String peerId, CollabMessage message);
-        void onError(String reason);
+        /** @param detail the underlying message, for logs rather than for the screen. */
+        void onError(Failure failure, String detail);
     }
 
     /** What this device knows about one participant (see class doc for what "peers" means per
@@ -85,6 +111,17 @@ public class CollabSession {
         }
     }
 
+    /**
+     * How long a joiner looks before giving up, in ms.
+     *
+     * <p>Nearby's discovery has no deadline of its own — it searches until it is told to stop — so
+     * a mistyped, stale or simply wrong code left the joining dialog spinning for as long as the
+     * user was willing to watch it. Twenty seconds is comfortably longer than a working join takes
+     * over Bluetooth (a couple of seconds once both radios are up) and short enough that a failure
+     * is still obviously a failure.
+     */
+    private static final long JOIN_TIMEOUT_MS = 20_000L;
+
     private final ConnectionsClient client;
     private final Listener listener;
     private final boolean host;
@@ -96,6 +133,10 @@ public class CollabSession {
     /** Joiner only: the one physical connection, to the host. */
     private String hostConnectionEndpointId;
     private boolean stopped;
+
+    /** Runs {@link #JOIN_TIMEOUT_MS} after a join starts, cancelled the moment anything happens. */
+    private final Handler timeoutHandler = new Handler(Looper.getMainLooper());
+    private Runnable joinTimeout;
 
     private CollabSession(Context context, Listener listener, boolean host, String myDisplayName) {
         this.client = Nearby.getConnectionsClient(context.getApplicationContext());
@@ -130,11 +171,23 @@ public class CollabSession {
         client.startAdvertising(token, SERVICE_ID, connectionLifecycleCallback, options)
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "startAdvertising failed", e);
-                    listener.onError("Could not start hosting: " + e.getMessage());
+                    fail(radioProblem(e) ? Failure.RADIO_UNAVAILABLE : Failure.CANNOT_HOST,
+                            e.getMessage());
                 });
     }
 
     private void startDiscovery(String wantedToken) {
+        // Armed before discovery rather than after, so a search that never even starts is still on
+        // a clock. Covers the whole join — finding the host *and* connecting to it — because from
+        // the outside those are one act, and a connection that stalls half way through is as
+        // unhelpful as one that never found anything.
+        joinTimeout = () -> {
+            joinTimeout = null;
+            Log.w(TAG, "join timed out after " + JOIN_TIMEOUT_MS + "ms");
+            fail(Failure.SESSION_NOT_FOUND, "timeout");
+        };
+        timeoutHandler.postDelayed(joinTimeout, JOIN_TIMEOUT_MS);
+
         DiscoveryOptions options = new DiscoveryOptions.Builder().setStrategy(STRATEGY).build();
         client.startDiscovery(SERVICE_ID, new EndpointDiscoveryCallback() {
             @Override
@@ -147,7 +200,7 @@ public class CollabSession {
                 client.requestConnection(deviceLabel(), endpointId, connectionLifecycleCallback)
                         .addOnFailureListener(e -> {
                             Log.e(TAG, "requestConnection failed", e);
-                            listener.onError("Could not connect: " + e.getMessage());
+                            fail(Failure.CONNECT_FAILED, e.getMessage());
                         });
             }
 
@@ -157,8 +210,41 @@ public class CollabSession {
             }
         }, options).addOnFailureListener(e -> {
             Log.e(TAG, "startDiscovery failed", e);
-            listener.onError("Could not search for a session: " + e.getMessage());
+            fail(radioProblem(e) ? Failure.RADIO_UNAVAILABLE : Failure.CANNOT_SEARCH, e.getMessage());
         });
+    }
+
+    /**
+     * Reports a failure once and shuts the session down.
+     *
+     * <p>Once, because several of these can arrive together — a timeout firing as a connection
+     * result comes back, say — and the second one would be an error message about a session that
+     * has already been torn down. {@link #stop()} sets {@code stopped}, which is what makes this
+     * idempotent, and it also cancels the deadline.
+     */
+    private void fail(Failure failure, String detail) {
+        if (stopped) return;
+        stop();
+        listener.onError(failure, detail);
+    }
+
+    /**
+     * Whether Play Services is telling us the radios are the problem, rather than anything about
+     * this session. {@code STATUS_RADIO_ERROR} is what it answers with when Bluetooth or Wi-Fi is
+     * off, or when a permission the radios need was refused — which is worth saying plainly,
+     * because it is the one failure here the user can go and fix.
+     */
+    private static boolean radioProblem(Exception e) {
+        return e instanceof ApiException
+                && ((ApiException) e).getStatusCode() == ConnectionsStatusCodes.STATUS_RADIO_ERROR;
+    }
+
+    /** Stops the join clock — the peer arrived, or the session is being torn down. */
+    private void cancelJoinTimeout() {
+        if (joinTimeout != null) {
+            timeoutHandler.removeCallbacks(joinTimeout);
+            joinTimeout = null;
+        }
     }
 
     private String deviceLabel() {
@@ -178,6 +264,7 @@ public class CollabSession {
         @Override
         public void onConnectionResult(String endpointId, ConnectionResolution result) {
             if (result.getStatus().isSuccess()) {
+                cancelJoinTimeout();
                 if (host) {
                     peers.put(endpointId, new PeerInfo(endpointId));
                     // Stays open to new joiners for the life of the session (no "lock joining"
@@ -195,7 +282,14 @@ public class CollabSession {
                 send(CollabMessage.peerInfo(host ? HOST_PEER_ID : "unused", myDisplayName));
             } else if (result.getStatus().getStatusCode()
                     != ConnectionsStatusCodes.STATUS_ALREADY_CONNECTED_TO_ENDPOINT) {
-                listener.onError("Connection failed");
+                // The host end keeps waiting — one joiner failing to connect is not a reason to
+                // take the QR code away from whoever tries next. The joiner has nothing left to
+                // wait for, so for it this is the end of the attempt.
+                if (host) {
+                    Log.w(TAG, "incoming connection failed: " + result.getStatus());
+                } else {
+                    fail(Failure.CONNECT_FAILED, String.valueOf(result.getStatus()));
+                }
             }
         }
 
@@ -330,7 +424,19 @@ public class CollabSession {
     }
 
     private void sendToPhysical(String endpointId, CollabMessage message) {
-        client.sendPayload(endpointId, Payload.fromBytes(message.toBytes()));
+        byte[] bytes = message.toBytes();
+        // Nearby drops an oversized BYTES payload on the floor and tells the sender nothing, so
+        // say it here rather than letting the peer silently never receive it. SNAPSHOT is chunked
+        // to stay under this (see CollabMessage.snapshotChunks); anything else reaching the limit
+        // is a single item large enough to be worth knowing about.
+        if (bytes.length > ConnectionsClient.MAX_BYTES_DATA_SIZE) {
+            Log.e(TAG, "message type " + message.type + " is " + bytes.length + " bytes, over "
+                    + "Nearby's " + ConnectionsClient.MAX_BYTES_DATA_SIZE + " limit — not sent");
+            return;
+        }
+        client.sendPayload(endpointId, Payload.fromBytes(bytes))
+                .addOnFailureListener(e ->
+                        Log.e(TAG, "sendPayload failed (type " + message.type + ")", e));
     }
 
     /** Host-only: ends the session for everyone, telling joiners explicitly rather than letting
@@ -351,6 +457,7 @@ public class CollabSession {
      *  unambiguous reason instead. */
     public void stop() {
         stopped = true;
+        cancelJoinTimeout();
         client.stopAllEndpoints();
         client.stopAdvertising();
         client.stopDiscovery();

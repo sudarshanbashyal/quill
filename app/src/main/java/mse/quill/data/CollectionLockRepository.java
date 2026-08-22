@@ -91,6 +91,13 @@ public class CollectionLockRepository {
                 }
 
                 writeNotes(db, collectionId, converted, true);
+                // The files behind the note's images and recordings. Until now they stayed in the
+                // clear in filesDir — unreachable through the UI, which is not the same thing as
+                // protected. After writeNotes, so a failure here leaves a collection whose text is
+                // already encrypted rather than one that is neither.
+                for (Row row : plain) {
+                    NoteRepository.convertNoteMediaSync(db, row.id, collectionId, true);
+                }
                 // The last moment these bodies are readable. Any whiteboard embedded in them has to
                 // be on record now, or the boards of a note nobody can read stay listed on Home.
                 relinkWhiteboards(db, plain);
@@ -109,6 +116,10 @@ public class CollectionLockRepository {
                 // writeNotes(..., locked=true) just deleted this collection's flashcards — the
                 // Flashcards widget's due-now/deck rows are stale in exactly the same way.
                 mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+                // And the boards: the strokes are not encrypted by any of this, so the only thing
+                // keeping this collection's drawings off the home screen is the widget's query
+                // being asked again. relinkWhiteboards above is what it will read.
+                mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
 
                 // These titles are no longer allowed off the device — see WearNoteListPublisher,
                 // which excludes every encrypted collection whether it is open or shut. Without
@@ -148,6 +159,11 @@ public class CollectionLockRepository {
                 }
 
                 writeNotes(db, collectionId, converted, false);
+                // The other direction. Before the key is deleted below, which is the only thing
+                // that could still decrypt them.
+                for (Row row : converted) {
+                    NoteRepository.convertNoteMediaSync(db, row.id, collectionId, false);
+                }
                 // Cheap, and it repairs a collection that was already locked when the links table
                 // was introduced — the migration couldn't read those bodies, this can.
                 relinkWhiteboards(db, converted);
@@ -156,9 +172,10 @@ public class CollectionLockRepository {
                 CollectionLock.relock(collectionId);
                 if (cb != null) executors.mainThread(cb::onDone);
 
-                // Same reasoning as lock(): the widget's rows are stale until asked again, and an
-                // unlocked collection's notes are allowed to reappear in the pinned list now.
-                mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+                // Same reasoning as lock(), in the other direction: an unlocked collection's
+                // notes, decks and boards are all allowed back on the home screen now, and none of
+                // them return until each widget is asked again.
+                mse.quill.widget.WidgetUpdater.notifyAllChanged(appContext);
 
                 // The other direction: these notes are ordinary again and may rejoin the watch's
                 // pickers. Unlike the lock, nothing is at stake in being late — but a list that is
@@ -206,8 +223,7 @@ public class CollectionLockRepository {
 
             // Same reasoning as lock()/unlock(): the collection and its (now-deleted) notes must
             // not linger in the widget's cached rows.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            mse.quill.widget.WidgetUpdater.notifyAllChanged(appContext);
 
             // These notes are gone for good, not soft-deleted, so the watch must stop offering
             // them. Same rule as everywhere else that changes what belongs on the list.
@@ -248,11 +264,9 @@ public class CollectionLockRepository {
                     // Flashcards hold the question and answer as their own plaintext columns,
                     // copied out of the note's Q&A blocks. Encrypting the note while leaving those
                     // behind would keep a readable copy of its content in a table the lock doesn't
-                    // reach — the same reason the FTS rows go. They aren't lost so much as reset:
-                    // re-syncing the deck after unlocking rebuilds every card from the blocks it
-                    // came from. What genuinely goes is the SM-2 schedule, which is why the
-                    // confirmation dialog says so before any of this runs.
-                    db.delete("flashcards", "note_id = ?", new String[]{row.id});
+                    // reach — the same reason the FTS rows go. The text goes; the schedule stays.
+                    // See FlashcardRepository.suspendForLockSync.
+                    FlashcardRepository.suspendForLockSync(db, row.id);
                 } else {
                     reindex(db, row.id, row.title, row.body);
                 }

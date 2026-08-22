@@ -36,6 +36,8 @@ import mse.quill.share.CollectionBundleWriter;
 import mse.quill.ui.home.CollectionDialogs;
 import mse.quill.ui.home.NotesAdapter;
 import mse.quill.ui.notes.NoteEditorFragment;
+import mse.quill.util.SwipeToDelete;
+import mse.quill.util.UndoDelete;
 import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
@@ -49,7 +51,9 @@ public class CollectionDetailFragment extends Fragment {
     private NoteRepository noteRepository;
     private CollectionRepository collectionRepository;
     private NotesAdapter notesAdapter;
-    private TextView emptyNotesView;
+    private View emptyNotesView;
+    /** Shown only when the collection is genuinely empty — see {@link #applyFilters}. */
+    private View emptyAddNoteButton;
     private TextView toolbarSubtitle;
     private EditText titleField;
     /** The name as the database has it, so an edit can be told from a redraw — and reverted to. */
@@ -92,6 +96,7 @@ public class CollectionDetailFragment extends Fragment {
                 NavHostFragment.findNavController(this).navigateUp());
 
         emptyNotesView = view.findViewById(R.id.empty_notes);
+        emptyAddNoteButton = view.findViewById(R.id.empty_add_note);
 
         RecyclerView recyclerView = view.findViewById(R.id.recycler_notes);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -109,17 +114,36 @@ public class CollectionDetailFragment extends Fragment {
                         newCollectionId -> noteRepository.assignCollection(note.id, newCollectionId,
                                 CollectionDetailFragment.this::reloadNotes),
                         () -> togglePin(note, isPinned),
-                        () -> noteRepository.deleteNote(note.id, CollectionDetailFragment.this::reloadNotes));
+                        () -> deleteNoteWithUndo(note));
             }
         });
         recyclerView.setAdapter(notesAdapter);
+        // Every row is a note, same as Home's notes section — the gesture shouldn't mean something
+        // different depending on which screen the note is being read from.
+        SwipeToDelete.attach(recyclerView, new SwipeToDelete.Target() {
+            @Override public boolean isSwipeable(RecyclerView.ViewHolder holder) { return true; }
+
+            @Override public void onSwiped(RecyclerView.ViewHolder holder) {
+                Note note = notesAdapter.noteAt(holder.getBindingAdapterPosition());
+                if (note != null) deleteNoteWithUndo(note);
+            }
+        });
 
         searchBar = view.findViewById(R.id.search_bar);
         searchBar.setHint(R.string.search_hint_collection);
         searchBar.setListener(new SearchFilterBar.Listener() {
             @Override public void onQueryChanged(String query) {
                 filter.setQuery(query);
+                // Drawn twice on purpose: once now from what is already in memory, so the list
+                // responds to the keystroke, and again when the index answers with the notes whose
+                // *body* matches. Waiting for the round trip would make typing feel laggy for the
+                // sake of results that mostly agree.
                 applyFilters();
+                noteRepository.searchNoteIds(query, ids -> {
+                    if (!isAdded()) return;
+                    filter.setFullTextMatches(query, ids);
+                    applyFilters();
+                });
             }
 
             @Override public void onFilterRequested() {
@@ -132,13 +156,8 @@ public class CollectionDetailFragment extends Fragment {
             }
         });
 
-        view.findViewById(R.id.btn_add_note).setOnClickListener(v -> {
-            Bundle noteArgs = new Bundle();
-            noteArgs.putString(NoteEditorFragment.ARG_COLLECTION_ID, collectionId);
-            NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment, noteArgs);
-        });
-
-        view.findViewById(R.id.btn_search_notes).setOnClickListener(v -> showAddExistingNotesDialog());
+        view.findViewById(R.id.btn_add_note).setOnClickListener(v -> showAddNoteChooser());
+        view.findViewById(R.id.empty_add_note).setOnClickListener(v -> showAddNoteChooser());
 
         view.findViewById(R.id.btn_share_collection).setOnClickListener(v -> shareCollection());
     }
@@ -288,6 +307,22 @@ public class CollectionDetailFragment extends Fragment {
         }
     }
 
+    /** Both ways in — the header's "+" and the empty state's button — ask the same question. */
+    private void showAddNoteChooser() {
+        CollectionDialogs.showAddNoteDialog(requireContext(), new CollectionDialogs.AddNoteListener() {
+            @Override public void onNewNote() {
+                Bundle noteArgs = new Bundle();
+                noteArgs.putString(NoteEditorFragment.ARG_COLLECTION_ID, collectionId);
+                NavHostFragment.findNavController(CollectionDetailFragment.this)
+                        .navigate(R.id.noteEditorFragment, noteArgs);
+            }
+
+            @Override public void onExistingNote() {
+                showAddExistingNotesDialog();
+            }
+        });
+    }
+
     private void showAddExistingNotesDialog() {
         noteRepository.loadNotes(null, notes -> {
             if (!isAdded()) return;
@@ -298,6 +333,16 @@ public class CollectionDetailFragment extends Fragment {
             AddExistingNotesDialog.show(requireContext(), noteRepository, collectionId, candidates, this::reloadNotes);
         });
     }
+
+    private void deleteNoteWithUndo(Note note) {
+        UndoDelete.offer(requireView(), getString(R.string.note_deleted), noteKey(note.id),
+                this::reloadNotes,
+                () -> noteRepository.deleteNote(note.id, null));
+        reloadNotes();
+    }
+
+    /** The same key Home uses, so a note deleted on one screen is hidden on the other too. */
+    private static String noteKey(String id) { return "note:" + id; }
 
     private void reloadNotes() {
         noteRepository.loadNotes(collectionId, notes -> {
@@ -318,8 +363,17 @@ public class CollectionDetailFragment extends Fragment {
     }
 
     private void applyFilters() {
-        List<Note> filtered = filter.apply(allNotesInCollection);
+        List<Note> filtered = new ArrayList<>();
+        // A note waiting out its undo window is out of this list too, or reloading the collection
+        // would put it back under the bar still offering to undo it.
+        for (Note note : filter.apply(allNotesInCollection)) {
+            if (!UndoDelete.isHidden(noteKey(note.id))) filtered.add(note);
+        }
         notesAdapter.submitList(filtered);
         emptyNotesView.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
+        // The offer to add one belongs to an empty collection, not to a filter that happens to
+        // match nothing: the notes are there, and "Add a note" is not the way to see them.
+        emptyAddNoteButton.setVisibility(
+                allNotesInCollection.isEmpty() ? View.VISIBLE : View.GONE);
     }
 }

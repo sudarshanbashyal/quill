@@ -5,6 +5,7 @@ import android.content.Context;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.Window;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -17,6 +18,8 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
@@ -44,8 +47,13 @@ import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
 import mse.quill.ui.whiteboard.WhiteboardFragment;
+import mse.quill.collab.CollabPermissions;
+import mse.quill.collab.SessionScanner;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
+import java.util.Random;
+import mse.quill.util.SwipeToDelete;
+import mse.quill.util.UndoDelete;
 import mse.quill.util.WindowInsetsUtils;
 
 public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
@@ -81,6 +89,15 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private List<Whiteboard> allWhiteboards = new ArrayList<>();
     private List<Note> allNotes = new ArrayList<>();
     private List<Tag> allTags = new ArrayList<>();
+
+    /** Which header is on screen, and which of its lines were drawn for this visit. Held so that
+     *  coming back from a note doesn't reshuffle the greeting under the user — see renderHeader. */
+    private static final float SUBTITLE_ALPHA = 0.75f;
+    private static final Random RANDOM = new Random();
+
+    private TimeOfDay headerPeriod;
+    private int greetingIndex;
+    private int subtitleIndex;
     /** Survives a reload; the list is re-derived from it rather than the other way round. */
     private final NoteFilter filter = new NoteFilter();
     private SearchFilterBar searchBar;
@@ -121,6 +138,12 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         collectionImporter = new mse.quill.data.CollectionImporter(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
+            @Override public void onCreateCollectionRequested() { createCollection(); }
+
+            @Override public void onCreateNoteRequested() { createNote(); }
+
+            @Override public void onCreateWhiteboardRequested() { createWhiteboard(); }
+
             @Override public void onCollectionClicked(String collectionId, String displayName) {
                 // Gated here rather than on the collection screen itself: opening the screen and
                 // then covering it means the destination has already queried its notes, and a
@@ -142,7 +165,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                 CollectionDialogs.showNoteActionsDialog(requireContext(), allCollections, note.collectionId, isPinned,
                         collectionId -> noteRepository.assignCollection(note.id, collectionId, HomeFragment.this::reloadAll),
                         () -> togglePin(note, isPinned),
-                        () -> noteRepository.deleteNote(note.id, HomeFragment.this::reloadAll));
+                        () -> deleteNoteWithUndo(note));
             }
 
             @Override public void onWhiteboardClicked(Whiteboard whiteboard) {
@@ -160,8 +183,26 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         RecyclerView recyclerView = view.findViewById(R.id.recycler_home);
         recyclerView.setLayoutManager(layoutManager);
         recyclerView.setAdapter(homeAdapter);
+        // Note rows only. The section headers and the two card grids share this list, and a card
+        // sliding out from under a full-width red panel would be promising a gesture its layout
+        // doesn't have — they are also what leaves room for the swipe-between-tabs gesture, which
+        // is deliberately the loser wherever there is a row to delete.
+        SwipeToDelete.attach(recyclerView, new SwipeToDelete.Target() {
+            @Override public boolean isSwipeable(RecyclerView.ViewHolder holder) {
+                return homeAdapter.noteAt(holder.getBindingAdapterPosition()) != null;
+            }
+
+            @Override public void onSwiped(RecyclerView.ViewHolder holder) {
+                Note note = homeAdapter.noteAt(holder.getBindingAdapterPosition());
+                if (note != null) deleteNoteWithUndo(note);
+            }
+        });
 
         applyStatusBarScrim(view);
+        // Before the first draw, so Home never appears in the wrong sky for a frame and then
+        // corrects itself. A fresh view is also a fresh visit, which is when new lines are drawn.
+        headerPeriod = null;
+        renderHeader();
 
         pinnedSection = view.findViewById(R.id.pinned_section);
         pinnedCardsContainer = view.findViewById(R.id.pinned_cards_container);
@@ -172,7 +213,16 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         searchBar.setListener(new SearchFilterBar.Listener() {
             @Override public void onQueryChanged(String query) {
                 filter.setQuery(query);
+                // Drawn twice on purpose: once now from what is already in memory, so the list
+                // responds to the keystroke, and again when the index answers with the notes whose
+                // *body* matches. Waiting for the round trip would make typing feel laggy for the
+                // sake of results that mostly agree.
                 applyFilters();
+                noteRepository.searchNoteIds(query, ids -> {
+                    if (!isAdded()) return;
+                    filter.setFullTextMatches(query, ids);
+                    applyFilters();
+                });
             }
 
             @Override public void onFilterRequested() {
@@ -222,14 +272,12 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
         fabOptionNote.setOnClickListener(v -> {
             collapseFabOptions(fabOptions, sweepDistance);
-            NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment);
+            createNote();
         });
 
         fabOptionCollection.setOnClickListener(v -> {
             collapseFabOptions(fabOptions, sweepDistance);
-            CollectionDialogs.showCreateDialog(requireContext(), name ->
-                    collectionRepository.createCollection(
-                            name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
+            createCollection();
         });
 
         View fabOptionImport = view.findViewById(R.id.fab_option_import);
@@ -247,13 +295,114 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         // backs out without drawing anything.
         fabOptionWhiteboard.setOnClickListener(v -> {
             collapseFabOptions(fabOptions, sweepDistance);
-            // Straight to the canvas, untitled — the board is named from its own toolbar the way a
-            // note is named in its editor. Asking for a name before there is anything to name is
-            // the wrong order, and an empty dialog field was the common answer anyway.
-            whiteboardRepository.createWhiteboard(null, null,
-                    mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
-                    whiteboardId -> openWhiteboard(whiteboardId, null));
+            createWhiteboard();
         });
+
+        view.findViewById(R.id.fab_option_join).setOnClickListener(v -> {
+            collapseFabOptions(fabOptions, sweepDistance);
+            joinWhiteboardSession();
+        });
+    }
+
+    // ── Joining someone else's whiteboard ────────────────────────────────
+
+    /** Set while the permission prompt is up, so a grant can carry on where it left off. */
+    private final ActivityResultLauncher<String[]> joinPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
+                    result -> {
+                        boolean granted = !result.containsValue(false);
+                        if (granted) {
+                            scanAndJoin();
+                        } else {
+                            Toast.makeText(requireContext(), R.string.collab_permission_denied,
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    });
+
+    /**
+     * Scans a host's code and opens a board already joined to their session.
+     *
+     * <p>Permissions first, then the scan, then the board — in that order because each step is a
+     * chance for the user to back out, and the board is the only one of the three that leaves
+     * anything behind. It is created with {@code created_now}, so a join that is refused or fails
+     * takes the empty board with it (see {@code WhiteboardFragment.discardIfNeverUsed}).
+     */
+    private void joinWhiteboardSession() {
+        String[] missing = CollabPermissions.missing(requireContext());
+        if (missing.length > 0) {
+            joinPermissionLauncher.launch(missing);
+            return;
+        }
+        scanAndJoin();
+    }
+
+    private void scanAndJoin() {
+        SessionScanner.scan(requireContext(), new SessionScanner.Listener() {
+            @Override public void onToken(String token) {
+                if (!isAdded()) return;
+                openJoinedWhiteboard(token);
+            }
+
+            @Override public void onCancelled() {
+                // Backing out of the scanner is an answer, not a fault. Nothing was started.
+            }
+
+            @Override public void onFailed(boolean notASession) {
+                if (!isAdded()) return;
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.collab_error_title)
+                        .setMessage(notASession
+                                ? R.string.collab_error_not_a_session
+                                : R.string.collab_error_scanner)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+            }
+        });
+    }
+
+    /** A fresh board for the session to fill: the host sends everything it holds on connect. */
+    private void openJoinedWhiteboard(String token) {
+        whiteboardRepository.createWhiteboard(null, null,
+                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
+                whiteboardId -> {
+                    if (!isAdded()) return;
+                    Bundle args = new Bundle();
+                    args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
+                    args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, true);
+                    args.putString(WhiteboardFragment.ARG_JOIN_TOKEN, token);
+                    NavHostFragment.findNavController(this)
+                            .navigate(R.id.whiteboardFragment, args);
+                });
+    }
+
+    // ── The three things Home can add ────────────────────────────────────
+    //
+    // Methods rather than listener bodies because there are now two ways to reach each: the FAB's
+    // options, and tapping the section header the new thing would land in.
+
+    private void createNote() {
+        NavHostFragment.findNavController(this).navigate(R.id.noteEditorFragment);
+    }
+
+    private void createCollection() {
+        CollectionDialogs.showCreateDialog(requireContext(), name ->
+                collectionRepository.createCollection(
+                        name, ColorUtils.randomPaletteColor(requireContext()), id -> reloadCollections()));
+    }
+
+    /**
+     * A board created here is standalone (no parent note) — it's owned by Home's Whiteboards
+     * section. The row is inserted up front so the board exists in that list even if the user backs
+     * out without drawing anything.
+     *
+     * <p>Straight to the canvas, untitled — the board is named from its own toolbar the way a note
+     * is named in its editor. Asking for a name before there is anything to name is the wrong
+     * order, and an empty dialog field was the common answer anyway.
+     */
+    private void createWhiteboard() {
+        whiteboardRepository.createWhiteboard(null, null,
+                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
+                whiteboardId -> openWhiteboard(whiteboardId, null, true));
     }
 
     /**
@@ -381,16 +530,86 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         super.onResume();
         reloadAll();
         // On resume, not just once: Profile is a tab away, so the name can change and come
-        // straight back here without this fragment ever being recreated.
-        renderGreeting();
+        // straight back here without this fragment ever being recreated. It is also what moves the
+        // header on when the clock crosses into the next part of the day while the app is open.
+        renderHeader();
     }
 
-    private void renderGreeting() {
+    @Override
+    public void onPause() {
+        super.onPause();
+        // Home is the only screen with a dark header, so the icons it borrowed go back before
+        // anything else is drawn.
+        setLightStatusBarIcons(true);
+    }
+
+    /**
+     * Dresses the header for the hour: gradient, ink, status bar, stars and both lines of text.
+     *
+     * <p>All of it together, because a half-applied period is worse than none — the near-black
+     * greeting that reads perfectly on the morning sky disappears into the night one.
+     *
+     * <p>The two lines are re-drawn from their arrays when the period changes and when the view is
+     * built, but not on every resume. Backing out of a note is not a new visit to Home, and a
+     * greeting that reshuffled itself each time you closed a note would read as a glitch rather
+     * than as variety.
+     */
+    private void renderHeader() {
+        View root = requireView();
+        TimeOfDay period = TimeOfDay.now();
+        if (period != headerPeriod) {
+            headerPeriod = period;
+            pickHeaderLines(period);
+        }
+
+        root.findViewById(R.id.home_header).setBackgroundResource(period.sky.backgroundRes);
+        root.findViewById(R.id.status_bar_scrim)
+                .setBackgroundColor(ContextCompat.getColor(requireContext(), period.sky.scrimColourRes));
+        root.findViewById(R.id.home_header_stars)
+                .setVisibility(period.sky.showsStars ? View.VISIBLE : View.GONE);
+        applyStatusBarIcons(period);
+
+        int ink = ContextCompat.getColor(requireContext(), period.sky.inkColourRes);
+        String[] greetings = getResources().getStringArray(period.greetingsArrayRes);
+        String[] subtitles = getResources().getStringArray(period.subtitlesArrayRes);
+
         String name = ProfilePreferences.displayName(requireContext());
-        TextView greeting = requireView().findViewById(R.id.home_greeting);
-        greeting.setText(name == null
-                ? getString(R.string.home_greeting)
-                : getString(R.string.home_greeting_named, name));
+        String greeting = greetings[greetingIndex % greetings.length];
+        TextView greetingView = root.findViewById(R.id.home_greeting);
+        greetingView.setText(name == null
+                ? greeting
+                : getString(R.string.home_greeting_with_name, greeting, name));
+        greetingView.setTextColor(ink);
+
+        TextView subtitleView = root.findViewById(R.id.home_greeting_subtitle);
+        subtitleView.setText(subtitles[subtitleIndex % subtitles.length]);
+        // The same ink, softened. The design draws both lines in one colour; the fade is what keeps
+        // the second one secondary without introducing a fourth colour per period that would have
+        // to be legible against three different skies.
+        subtitleView.setTextColor(ink);
+        subtitleView.setAlpha(SUBTITLE_ALPHA);
+    }
+
+    private void pickHeaderLines(TimeOfDay period) {
+        greetingIndex = RANDOM.nextInt(getResources().getStringArray(period.greetingsArrayRes).length);
+        subtitleIndex = RANDOM.nextInt(getResources().getStringArray(period.subtitlesArrayRes).length);
+    }
+
+    /**
+     * Flips the system's status-bar icons to pale for the night header and back afterwards.
+     *
+     * <p>The window is the activity's, so this has to be put back — {@link #onPause} does it — or
+     * every other screen in the app would inherit Home's night icons and lose its clock against the
+     * white page.
+     */
+    private void applyStatusBarIcons(TimeOfDay period) {
+        setLightStatusBarIcons(!period.sky.lightStatusBarIcons);
+    }
+
+    private void setLightStatusBarIcons(boolean darkIcons) {
+        Window window = requireActivity().getWindow();
+        new WindowInsetsControllerCompat(window, window.getDecorView())
+                .setAppearanceLightStatusBars(darkIcons);
     }
 
     private void openNote(String noteId) {
@@ -407,10 +626,17 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     private void openWhiteboard(String whiteboardId, String noteId) {
+        openWhiteboard(whiteboardId, noteId, false);
+    }
+
+    /** @param createdNow true when the row was made a moment ago by the caller, which is what lets
+     *                    the board screen discard it again if nothing is drawn on it. */
+    private void openWhiteboard(String whiteboardId, String noteId, boolean createdNow) {
         if (!isAdded()) return;
         Bundle args = new Bundle();
         args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
         args.putString(WhiteboardFragment.ARG_NOTE_ID, noteId);
+        args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, createdNow);
         NavHostFragment.findNavController(this).navigate(R.id.whiteboardFragment, args);
     }
 
@@ -430,9 +656,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                     AppExecutors.getInstance().mainThread(() -> {
                         if (!isAdded()) return;
                         WhiteboardDialogs.showDeleteConfirmation(
-                                requireContext(), whiteboard, embedded, () ->
-                                        whiteboardRepository.deleteWhiteboard(
-                                                whiteboard.id, HomeFragment.this::reloadWhiteboards));
+                                requireContext(), whiteboard, embedded,
+                                () -> deleteWhiteboardWithUndo(whiteboard));
                     });
                 });
             }
@@ -470,7 +695,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                         .setTitle(getString(R.string.delete_collection_title_format, collection.name))
                         .setMessage(R.string.delete_collection_message)
                         .setPositiveButton(R.string.action_delete, (d, w) ->
-                                collectionRepository.deleteCollection(collection.id, HomeFragment.this::reloadAll))
+                                deleteCollectionWithUndo(collection))
                         .setNegativeButton(R.string.action_cancel, null)
                         .show();
             }
@@ -555,6 +780,9 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     private void renderPinnedSection(List<Note> pinnedNotes) {
+        // Filtered before the visibility check, or unpinning the last pinned note by deleting it
+        // would leave the band on screen as an empty strip under its own header.
+        pinnedNotes = withoutHidden(pinnedNotes, note -> noteKey(note.id));
         pinnedCardsContainer.removeAllViews();
         pinnedSection.setVisibility(pinnedNotes.isEmpty() ? View.GONE : View.VISIBLE);
 
@@ -565,7 +793,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                 CollectionDialogs.showNoteActionsDialog(requireContext(), allCollections, note.collectionId, true,
                         collectionId -> noteRepository.assignCollection(note.id, collectionId, HomeFragment.this::reloadAll),
                         () -> togglePin(note, true),
-                        () -> noteRepository.deleteNote(note.id, HomeFragment.this::reloadAll));
+                        () -> deleteNoteWithUndo(note));
             }
         };
 
@@ -596,14 +824,61 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         searchBar.render(filter, allTags);
     }
 
+    /**
+     * Everything deleted from Home is deferred behind an undo bar, so the lists have to leave those
+     * rows out until the bar has gone one way or the other. Done here rather than at each of the
+     * three reloads because this is the one place all three lists are handed to the adapter — and
+     * because Home reloads itself constantly (resume, filter change, pin, rename), any of which
+     * would otherwise put a deleted row back on screen underneath its own undo bar.
+     */
     private void applyFilters() {
-        homeAdapter.submitCollections(filter.applyToCollections(allCollections));
+        homeAdapter.submitCollections(
+                withoutHidden(filter.applyToCollections(allCollections), c -> collectionKey(c.id)));
         // Boards are matched on their *displayed* title, so searching "untitled" finds the unnamed
         // ones — the fallback name is what the card shows.
-        homeAdapter.submitWhiteboards(filter.applyToWhiteboards(allWhiteboards,
-                board -> NoteDisplayUtils.resolveWhiteboardTitle(requireContext(), board)));
-        homeAdapter.submitNotes(filter.apply(allNotes));
+        homeAdapter.submitWhiteboards(withoutHidden(
+                filter.applyToWhiteboards(allWhiteboards,
+                        board -> NoteDisplayUtils.resolveWhiteboardTitle(requireContext(), board)),
+                board -> whiteboardKey(board.id)));
+        homeAdapter.submitNotes(withoutHidden(filter.apply(allNotes), note -> noteKey(note.id)));
     }
+
+    private static <T> List<T> withoutHidden(List<T> items, java.util.function.Function<T, String> key) {
+        List<T> visible = new ArrayList<>();
+        for (T item : items) {
+            if (!UndoDelete.isHidden(key.apply(item))) visible.add(item);
+        }
+        return visible;
+    }
+
+    // ── Deleting, with a few seconds to change your mind ──────────────────
+
+    private void deleteNoteWithUndo(Note note) {
+        UndoDelete.offer(requireView(), getString(R.string.note_deleted), noteKey(note.id),
+                this::reloadAll,
+                () -> noteRepository.deleteNote(note.id, null));
+        reloadAll();
+    }
+
+    private void deleteWhiteboardWithUndo(Whiteboard whiteboard) {
+        UndoDelete.offer(requireView(), getString(R.string.whiteboard_deleted),
+                whiteboardKey(whiteboard.id),
+                this::reloadWhiteboards,
+                () -> whiteboardRepository.deleteWhiteboard(whiteboard.id, null));
+        reloadWhiteboards();
+    }
+
+    private void deleteCollectionWithUndo(Collection collection) {
+        UndoDelete.offer(requireView(), getString(R.string.collection_deleted),
+                collectionKey(collection.id),
+                this::reloadAll,
+                () -> collectionRepository.deleteCollection(collection.id, null));
+        reloadAll();
+    }
+
+    private static String noteKey(String id) { return "note:" + id; }
+    private static String whiteboardKey(String id) { return "board:" + id; }
+    private static String collectionKey(String id) { return "collection:" + id; }
 
     private void reloadTags() {
         tagRepository.loadAllTags(tags -> {
