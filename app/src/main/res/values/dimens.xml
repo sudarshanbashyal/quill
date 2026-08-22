@@ -226,6 +226,9 @@
          Quill does" look like the same list. -->
     <dimen name="welcome_row_icon">24dp</dimen>
     <dimen name="welcome_logo_size">44sp</dimen>
+    <!-- Big enough to be the first thing seen on the name pane, small enough not to be the whole
+         screen. -->
+    <dimen name="welcome_name_emoji_size">56sp</dimen>
 
     <!-- Q&A hint dialog (QaBlockHintDialog). The strip inside it is a replica of the formatting
          toolbar, so it borrows that bar's own height rather than declaring a second one; only the

@@ -644,6 +644,13 @@
          phrasing has to survive a number other than the expected one. -->
     <string name="welcome_done_title">Sample content added</string>
     <string name="welcome_done_subtitle">Here is what is now in your Quill. None of it is special — edit or long-press to delete any of it, like anything else you write.</string>
+    <!-- Pane three of the welcome flow: the name. The field arrives pre-filled with a suggestion,
+         so both buttons leave with a name — "Skip" means "this one is fine", not "no name". -->
+    <string name="welcome_name_title">What should we call you?</string>
+    <string name="welcome_name_subtitle">It\'s how Quill greets you, and what shows up beside your drawings when you share a whiteboard. We\'ve picked one to start with — change it here or later in Profile.</string>
+    <string name="welcome_name_hint">Your name</string>
+    <string name="welcome_name_action_continue">Continue</string>
+    <string name="welcome_name_action_skip">Keep this one</string>
     <string name="welcome_done_action">Start exploring</string>
 
     <string name="welcome_summary_collection_where">“%1$s” — open it from Home</string>

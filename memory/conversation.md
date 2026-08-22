@@ -3727,3 +3727,39 @@ database, removed the db and the onboarding flag, took the first run through "St
 `quill_7692` written and Home render "Hey there, quill_7692" immediately, then restored everything.
 `pm clear` was avoided on purpose: it may take the Keystore entries with it, and the locked
 collection's ciphertext would be scrap without its key.
+
+## 2026-08-22 — A name worth having, and a screen that asks for it (Feature implementation)
+
+**`quill_7692` was the wrong shape.** The name's real job is telling people apart in a shared
+whiteboard session, and two four-digit handles have to be read digit by digit where "Amber Fox" and
+"Quiet Heron" are distinguishable at a glance. It is now an adjective + animal drawn from two
+24-item arrays (576 pairs) — no collision check, because there is no server and none is needed for
+two people in a room.
+
+That needed one rule change: `DisplayName` didn't allow spaces, which also quietly meant nobody
+could type their own full name. Space is now allowed, with `sanitize` collapsing runs and trimming
+the ends so the permission can't be used to store a name that is mostly nothing.
+
+**A screen to ask.** After the sample-content question, a third pane: "What should we call you?"
+with the generated name already in the field, Continue and "Keep this one". Pre-filled rather than
+empty is the whole design — an empty field asks a stranger to invent something before they have
+seen the app, most people type nothing, and everyone ends up unnamed, which is the problem the
+default was for. Both buttons leave with a name; the suggestion is written on the way *in*, so the
+skip path has nothing to do and a process death mid-screen still leaves a named install.
+
+Made friendlier on the user's note that it read as generic: centred rather than pinned to the top
+(it is one question, and top-aligned it left most of the screen empty below it), and a large emoji
+drawn from a short warm set above the title.
+
+**Collab naming was started and backed out** at the user's request — `deviceLabel()` still sends
+`Build.MODEL`. Worth knowing for whenever it resumes: only the *joiner's* label travels, because a
+host advertises under the session token and that is the only endpoint-name slot there is. Naming the
+host to the joiner needs a message in `CollabMessage`, and neither direction can be checked without
+two devices.
+
+**Testing note — first-run flows are dangerous on a live emulator.** Reaching the welcome screen
+needs the database gone (the flag alone isn't enough; `shouldShowWelcome` also asks whether there is
+content), and one such round left the user's notes missing until they were restored from backup. The
+safe way, used for the final screenshot: temporarily flip `WelcomeActivity` to `exported="true"`,
+launch it with `am start`, and clear only `profile_prefs.xml` — the pane touches no database at all.
+Revert the manifest afterwards.

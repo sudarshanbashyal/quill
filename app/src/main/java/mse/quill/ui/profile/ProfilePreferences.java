@@ -4,8 +4,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.text.TextUtils;
 
-import java.util.Locale;
 import java.util.Random;
+
+import mse.quill.R;
 
 /**
  * Who the user is to Quill: a display name, and whether they want reminders.
@@ -23,10 +24,6 @@ public final class ProfilePreferences {
     private static final String KEY_NOTIFICATIONS_ENABLED = "notifications_enabled";
     private static final String KEY_REMINDER_HOUR = "reminder_hour";
     private static final String KEY_REMINDER_MINUTE = "reminder_minute";
-
-    /** What a generated name looks like: this, then four digits — {@code quill_4821}. Every
-     *  character of it is one {@link DisplayName} allows, so it survives its own sanitizer. */
-    private static final String GENERATED_NAME_PREFIX = "quill_";
 
     private static final int DEFAULT_REMINDER_HOUR = 20;
     private static final int DEFAULT_REMINDER_MINUTE = 0;
@@ -50,26 +47,29 @@ public final class ProfilePreferences {
      * Gives a brand-new install a name of its own, and returns whatever the name now is.
      *
      * <p>A generated name beats no name for the same reason a new document is called "Untitled" and
-     * not left blank: Home's greeting has a shape, and the version without a name is the lesser
-     * half of it. It is a starting point, not an identity — the Profile screen's field shows it
-     * from the first visit, so changing it is one tap and obviously allowed.
+     * not left blank: Home's greeting has a shape, and the version without a name is the lesser half
+     * of it. It is a starting point, not an identity — the Profile screen's field shows it from the
+     * first visit, so changing it is one tap and obviously allowed.
+     *
+     * <p><b>Two words, not a number.</b> The name's real job is telling people apart in a shared
+     * whiteboard session, and a pair like "Amber Fox" is distinguishable at a glance where
+     * {@code quill_7692} and {@code quill_1043} are two strings that have to be read digit by
+     * digit. It also reads as a person rather than as an account, which is what a label beside
+     * someone's strokes should do.
      *
      * <p>Only when nothing is set, and only called from the welcome screen — an existing notebook
-     * whose owner never filled the field in has deliberately been greeted plainly for weeks, and
-     * an update that started calling them {@code quill_4821} would be an odd thing to do to them.
-     *
-     * <p>Four digits, from an ordinary {@link Random}: this is a label on one device, not a
-     * username anything checks for collisions, so uniqueness costs nothing and buys nothing.
+     * whose owner never filled the field in has deliberately been greeted plainly for weeks, and an
+     * update that started calling them "Quiet Heron" would be an odd thing to do to them.
      */
     public static String ensureDefaultName(Context context) {
         String existing = displayName(context);
         if (existing != null) return existing;
 
-        // Locale.US so the digits are always ASCII. Character.isLetterOrDigit would accept
-        // Arabic-Indic ones too, but a name meant to read as a handle should look the same
-        // whatever the device's locale is set to.
-        String generated = GENERATED_NAME_PREFIX
-                + String.format(Locale.US, "%04d", new Random().nextInt(10_000));
+        Random random = new Random();
+        String[] adjectives = context.getResources().getStringArray(R.array.default_name_adjectives);
+        String[] nouns = context.getResources().getStringArray(R.array.default_name_nouns);
+        String generated = adjectives[random.nextInt(adjectives.length)]
+                + " " + nouns[random.nextInt(nouns.length)];
         setDisplayName(context, generated);
         return generated;
     }
