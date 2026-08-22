@@ -3390,6 +3390,43 @@ stops at the gate; unlocking opens a fresh board with "Connecting…"; twenty se
 five options and "Join session" opens Play Services' scanner. The one thing not verifiable here is
 two devices actually drawing together — that needs the second phone.
 
+## 2026-08-20 — Bug fix: whiteboard collab crash on exit, non-host
+
+**Reported:** while collaborating live on a whiteboard, quitting the collab session as the
+non-host crashed the app.
+
+**Root cause:** `WhiteboardFragment.onDestroyView()` unconditionally calls
+`endCollabSession()` → `CollabSession.stop()`, which triggers Nearby Connections' async
+`onDisconnected` callback. The `collabListener`'s callbacks (`onPeerConnected`,
+`onPeerDisconnected`, `onMessage`, `onError`) all called `requireActivity()` unconditionally —
+by the time an async callback fired, the fragment could already be detached (screen left,
+activity finishing), so `requireActivity()` threw `IllegalStateException`. Hit hardest as the
+non-host because leaving the whiteboard is the ordinary way to "quit" collab.
+
+**Fixed:** added `if (!isAdded()) return;` guards before every `requireActivity()` call in
+`collabListener`, on `fix/whiteboard`. Confirmed compiling (`compileDebugJavaWithJavac`); user
+confirmed done.
+
+## 2026-08-20 — Feature implementation: exit warning during live collab
+
+**Asked:** warn the user before they leave the whiteboard while a collab session is active,
+since leaving currently ends the session for everyone (unconditionally, per the bug above).
+
+**Built:** both exit paths — the in-app `back_button` and system/gesture back (intercepted via
+a new `OnBackPressedCallback` registered in `onViewCreated`) — now route through a new
+`attemptExit()` helper. If `collabSession != null`, it shows a confirmation dialog ("Leave
+whiteboard?" / "Leaving this whiteboard will end the session for everyone." / "Leave and end
+session" vs. cancel) before navigating up; otherwise it exits immediately as before. Added
+strings `collab_exit_warning_title`, `collab_exit_warning_message`, `collab_exit_confirm`.
+`onResume()`'s forced navigate-away (board deleted, or its collection re-locked while the app
+was backgrounded) deliberately bypasses this warning — that exit isn't a user choice.
+
+**Note:** this is a stopgap, not a fix for the underlying "leaving always ends the session"
+behavior — see `memory/whiteboard_collab_redesign_plan.md` for the planned follow-up
+(session persists across screen exit; only host-end/peer-leave/real-disconnect end it), which
+would make this warning's message stale once implemented (it would no longer be true that
+leaving *always* ends the session for everyone).
+
 ## 2026-08-21 — "Not enough Q&A blocks" became a picture (Feature implementation)
 
 **The complaint**: choosing "Turn into flashcards" or "Make quiz" on a note without enough Q&A

@@ -258,7 +258,36 @@
     <string name="collab_error_cannot_search">Couldn\'t start looking for the session. Turn Bluetooth and Wi-Fi off and on again, then retry.</string>
     <string name="collab_end_session">End session</string>
     <string name="collab_leaving_locks_others_out">Ending the session disconnects everyone.</string>
+    <string name="collab_exit_warning_title">Leave whiteboard?</string>
+    <string name="collab_exit_host_message">You\'re hosting this session. Leaving ends it for everyone — the board as it stands now stays on this phone.</string>
+    <string name="collab_exit_joiner_message">Leaving takes you out of the session. The board as it stands now stays on this phone, and you can scan the code again to rejoin.</string>
+    <string name="collab_exit_confirm">Leave and end session</string>
     <string name="collab_permission_denied">Nearby needs Bluetooth/Wi-Fi permissions to find another device</string>
+    <string name="collab_leave_session">Leave session</string>
+    <string name="collab_peer_left">A collaborator left the session</string>
+    <string name="collab_host_ended">The host ended the session</string>
+    <string name="collab_peer_connecting">Connecting…</string>
+    <string name="collab_you">%1$s (you)</string>
+    <string name="collab_already_in_session_title">Already in a session</string>
+    <string name="collab_already_hosting_message">You\'re hosting a whiteboard session. Joining another one ends it for everyone in it.</string>
+    <string name="collab_already_joined_message">You\'re in a whiteboard session. Joining another one leaves it.</string>
+    <string name="collab_leave_and_join">Leave and join</string>
+    <string name="collab_join_replaces_title">Joining replaces this board</string>
+    <string name="collab_join_replaces_message">You\'ll be drawing on the host\'s whiteboard, so everything on this one is replaced when you join. You can keep a copy of it first.</string>
+    <string name="collab_join_save_copy">Save a copy and join</string>
+    <string name="collab_join_discard">Discard and join</string>
+    <string name="collab_join_copy_name">%1$s (copy)</string>
+    <string name="collab_join_copy_saved">Copy saved to your whiteboards</string>
+    <plurals name="collab_people_count">
+        <item quantity="one">%d person on this board</item>
+        <item quantity="other">%d people on this board</item>
+    </plurals>
+    <string name="collab_host_done">Done</string>
+    <string name="collab_show_code">Show code</string>
+    <plurals name="collab_hosting_connected">
+        <item quantity="one">%d person connected — anyone else can still scan this code</item>
+        <item quantity="other">%d people connected — anyone else can still scan this code</item>
+    </plurals>
 
     <!-- Sharing a whole collection: a .quillpack, a zip of each member note's own .quill bundle. -->
     <string name="action_export_collection">Share collection</string>

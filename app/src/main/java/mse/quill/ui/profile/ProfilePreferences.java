@@ -21,6 +21,7 @@ public final class ProfilePreferences {
 
     private static final String PREFS_NAME = "profile_prefs";
     private static final String KEY_DISPLAY_NAME = "display_name";
+    private static final String KEY_COLLAB_NAME = "collab_display_name";
     private static final String KEY_NOTIFICATIONS_ENABLED = "notifications_enabled";
     private static final String KEY_HAPTICS_ENABLED = "haptics_enabled";
     private static final String KEY_REMINDER_HOUR = "reminder_hour";
@@ -68,6 +69,33 @@ public final class ProfilePreferences {
 
         String generated = generateName(context);
         setDisplayName(context, generated);
+        return generated;
+    }
+
+    /**
+     * The name the other phones in a live whiteboard session see.
+     *
+     * <p>Falls back to a generated two-word name rather than to {@code Build.MODEL}, which is what
+     * used to happen: a chip reading "SM-A546B" beside someone's strokes names a handset, not a
+     * person, and every collaborator on the same model gets the same label.
+     *
+     * <p>Kept under its own key rather than routed through {@link #ensureDefaultName} on purpose.
+     * That one is the welcome screen's to call, and a notebook old enough to predate it has been
+     * greeted plainly on Home ever since — joining someone's whiteboard is not a reason to start
+     * calling them "Quiet Heron" there too. Setting a real name in Profile still wins here from
+     * the moment it is set, since {@link #displayName} is checked first.
+     */
+    public static String collabDisplayName(Context context) {
+        String own = displayName(context);
+        if (own != null) return own;
+
+        String fallback = prefs(context).getString(KEY_COLLAB_NAME, null);
+        if (!TextUtils.isEmpty(fallback)) return fallback;
+
+        // Stored rather than generated per session: a collaborator who leaves and rejoins should
+        // come back as the same person, and the host's roster should not gain a stranger.
+        String generated = generateName(context);
+        prefs(context).edit().putString(KEY_COLLAB_NAME, generated).apply();
         return generated;
     }
 
