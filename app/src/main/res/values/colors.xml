@@ -7,6 +7,15 @@
     <color name="brand_purple">#7C6FEA</color>
     <color name="brand_purple_dark">#5C4DD6</color>
     <color name="brand_purple_light">#EFECFE</color>
+
+    <!-- Study calendar (StudyCalendarView). Four steps of the brand purple against the card's own
+         fill, so a busy week reads as the app's colour rather than as a second palette. The empty
+         cell is deliberately visible — a grid that showed only the days you studied would be a
+         scatter of dots with nothing to measure them against. -->
+    <color name="study_cell_empty">#E8E7EF</color>
+    <color name="study_cell_light">#CFC9F7</color>
+    <color name="study_cell_medium">#A79BF1</color>
+    <color name="study_cell_strong">#7C6FEA</color>
     <!-- The logo mark's own two colours, sampled from res/drawable/logo.png. They back the
          launcher icon and the splash, which is why they are a pair of their own rather than
          brand_purple_light/text_primary — the tile is cooler and the ink is more neutral than
@@ -36,15 +45,23 @@
     <color name="header_gradient_start">#EFECFD</color>
     <color name="header_gradient_end">#CAC3FA</color>
 
-    <!-- Home's three headers, one per part of the day (see home_morning / home_day / home_night in
-         the MSE Figma file). Named _top and _bottom by where the colour actually appears, not by
-         the gradient's start/end: bg_home_header draws at angle=90, which puts startColor at the
-         BOTTOM, and two of these palettes are dark at the top — mixing the two namings up would
-         invert the sky. -->
-    <color name="header_morning_top">#8E9DCD</color>
-    <color name="header_morning_bottom">#FCB9A3</color>
-    <color name="header_day_top">#FE6C54</color>
-    <color name="header_day_bottom">#F5A188</color>
+    <!-- Home's headers, one per part of the day (see home_morning / home_day / home_night in the
+         MSE Figma file; evening has no frame and was drawn to sit between day and night). Named
+         _top and _bottom by where the colour actually appears, not by the gradient's start/end:
+         bg_home_header draws at angle=90, which puts startColor at the BOTTOM, and two of these
+         palettes are dark at the top — mixing the two namings up would invert the sky.
+
+         Read down the list they are one day: dawn breaking over a warm horizon, open blue at noon,
+         a sunset, then navy. -->
+    <color name="header_morning_top">#76A2BD</color>
+    <color name="header_morning_bottom">#FFA880</color>
+    <color name="header_day_top">#538DCD</color>
+    <color name="header_day_bottom">#BDCFE6</color>
+    <!-- The only warm sky of the four, which is the point: five to nine is the one stretch the
+         blue palettes cannot cover without lying about the hour. Kept light enough at the top for
+         header_ink_dark — it sits about where header_morning_top does against that ink. -->
+    <color name="header_evening_top">#E4796B</color>
+    <color name="header_evening_bottom">#F7C77E</color>
     <color name="header_night_top">#0B5786</color>
     <color name="header_night_bottom">#001D2C</color>
 

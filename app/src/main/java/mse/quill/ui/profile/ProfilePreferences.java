@@ -22,6 +22,7 @@ public final class ProfilePreferences {
     private static final String PREFS_NAME = "profile_prefs";
     private static final String KEY_DISPLAY_NAME = "display_name";
     private static final String KEY_NOTIFICATIONS_ENABLED = "notifications_enabled";
+    private static final String KEY_HAPTICS_ENABLED = "haptics_enabled";
     private static final String KEY_REMINDER_HOUR = "reminder_hour";
     private static final String KEY_REMINDER_MINUTE = "reminder_minute";
 
@@ -65,13 +66,18 @@ public final class ProfilePreferences {
         String existing = displayName(context);
         if (existing != null) return existing;
 
+        String generated = generateName(context);
+        setDisplayName(context, generated);
+        return generated;
+    }
+
+    /** One suggestion, stored nowhere — the welcome screen's shuffle button tries them on. */
+    public static String generateName(Context context) {
         Random random = new Random();
         String[] adjectives = context.getResources().getStringArray(R.array.default_name_adjectives);
         String[] nouns = context.getResources().getStringArray(R.array.default_name_nouns);
-        String generated = adjectives[random.nextInt(adjectives.length)]
+        return adjectives[random.nextInt(adjectives.length)]
                 + " " + nouns[random.nextInt(nouns.length)];
-        setDisplayName(context, generated);
-        return generated;
     }
 
     /**
@@ -84,6 +90,19 @@ public final class ProfilePreferences {
         prefs(context).edit()
                 .putString(KEY_DISPLAY_NAME, TextUtils.isEmpty(cleaned) ? null : cleaned)
                 .apply();
+    }
+
+    /**
+     * Whether the app's own small vibrations are on. Default true — they are part of how the
+     * reviewing screens feel, and a feature nobody discovers because it ships off is not a feature.
+     * The switch exists because haptics are genuinely unwanted by some people, not as a hedge.
+     */
+    public static boolean hapticsEnabled(Context context) {
+        return prefs(context).getBoolean(KEY_HAPTICS_ENABLED, true);
+    }
+
+    public static void setHapticsEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_HAPTICS_ENABLED, enabled).apply();
     }
 
     /** Whether the daily study reminder is on. Acted on by {@code StudyReminders}. */

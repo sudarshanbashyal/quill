@@ -12,6 +12,8 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import mse.quill.R;
 
+// Haptics lives beside this class; both are the feel of a gesture rather than its logic.
+
 /**
  * Swipe a full-width row either way to delete it.
  *
@@ -40,22 +42,26 @@ public final class SwipeToDelete {
     /**
      * How far across its own width a row has to be dragged before letting go deletes it.
      *
-     * <p>Well past the default half. Deleting is not undoable-by-shrug — the undo bar is a few
-     * seconds, and after that a deck's review history or a quiz's scores are gone — so the gesture
-     * should take a deliberate pull rather than the flick that scrolling a list sometimes produces
-     * sideways by accident.
+     * <p>Past the default half, but not by much. Deleting is not undoable-by-shrug — the undo bar
+     * is a few seconds — so the gesture should take a deliberate pull rather than the flick that
+     * scrolling a list sometimes produces sideways by accident.
+     *
+     * <p>Settled by feel across three tries. 0.7 asked for most of the screen and turned a quick
+     * action into a haul; 0.6 was short enough that the pull stopped reading as deliberate. This
+     * sits between them — still clearly further than the accidental sideways drag a vertical
+     * scroll produces, without the row having to cross the whole phone.
      */
-    private static final float SWIPE_THRESHOLD = 0.7f;
+    private static final float SWIPE_THRESHOLD = 0.65f;
 
     /**
      * How much faster than usual a fling has to be to delete on velocity alone.
      *
      * <p>Raising the distance threshold on its own doesn't do it: ItemTouchHelper also dismisses
      * anything thrown hard enough, whatever distance it covered, so a short sharp flick would still
-     * take the row. Effectively out of reach, which leaves distance as the only way through and
-     * makes the gesture mean one thing.
+     * take the row. High enough that distance is what carries the gesture, without making a
+     * genuinely committed throw feel ignored.
      */
-    private static final float ESCAPE_VELOCITY_MULTIPLIER = 8f;
+    private static final float ESCAPE_VELOCITY_MULTIPLIER = 4f;
 
     /**
      * Whether ItemTouchHelper is currently dragging a row sideways.
@@ -113,6 +119,9 @@ public final class SwipeToDelete {
 
             @Override
             public void onSwiped(@NonNull RecyclerView.ViewHolder holder, int direction) {
+                // The row is gone: a heavier tap than the one that marked the threshold on the way
+                // past it, so letting go feels like the end of the gesture rather than more of it.
+                Haptics.confirm(holder.itemView);
                 target.onSwiped(holder);
             }
 
@@ -125,14 +134,26 @@ public final class SwipeToDelete {
             @Override
             public void clearView(@NonNull RecyclerView rv, @NonNull RecyclerView.ViewHolder h) {
                 super.clearView(rv, h);
+                pastThreshold = false;
                 if (activeSwipes > 0) activeSwipes--;
             }
+
+            /** Whether the drag has already passed the point where letting go deletes. Tracked so
+             *  the tap fires once on the way over rather than on every frame beyond it. */
+            private boolean pastThreshold;
 
             @Override
             public void onChildDraw(@NonNull Canvas canvas, @NonNull RecyclerView rv,
                                     @NonNull RecyclerView.ViewHolder holder, float dX, float dY,
                                     int actionState, boolean isCurrentlyActive) {
                 View row = holder.itemView;
+                if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE && isCurrentlyActive) {
+                    // The one haptic here that is information rather than decoration: it tells the
+                    // thumb the swipe has taken, without asking the eye to judge a distance.
+                    boolean past = Math.abs(dX) >= row.getWidth() * SWIPE_THRESHOLD;
+                    if (past && !pastThreshold) Haptics.threshold(row);
+                    pastThreshold = past;
+                }
                 if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE && dX != 0) {
                     // Inset to the row's own margins so the panel is the shape of the thing being
                     // removed rather than a bar across the whole screen.

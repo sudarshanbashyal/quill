@@ -8,11 +8,11 @@ import mse.quill.R;
  * What Home's header looks like and says at a given hour.
  *
  * <p>Two things that don't divide the day the same way, so they are two types. {@link Sky} is the
- * look — three of them, drawn from the {@code home_morning}, {@code home_day} and {@code home_night}
- * frames in the MSE Figma file. {@code TimeOfDay} is what the app <em>says</em>, and there are more
- * of those than there are skies: "Good evening" is fine at eight and wrong at two in the morning,
- * while both of those hours want the same night gradient behind them. Splitting the two is what
- * lets the words get more specific without asking the designer for more palettes.
+ * look — the {@code home_morning}, {@code home_day} and {@code home_night} frames in the MSE Figma
+ * file, plus an evening palette added afterwards. {@code TimeOfDay} is what the app <em>says</em>,
+ * and there can be more of those than there are skies: "Good evening" is fine at eight and wrong
+ * at two in the morning, while both of those hours want the same night gradient behind them.
+ * Splitting the two is what lets the words get more specific without asking for more palettes.
  *
  * <p>The boundaries are the ordinary meanings of the words rather than astronomical ones. The small
  * hours start at midnight and evening at five, because the header is describing the user's day, not
@@ -34,19 +34,22 @@ public enum TimeOfDay {
     AFTERNOON(12, Sky.DAY,
             R.array.home_greetings_afternoon, R.array.home_subtitles_afternoon),
 
-    /** Shares the day's sky on purpose: that palette is a sunset already, and five to nine is when
-     *  it stops being a lie. */
-    EVENING(17, Sky.DAY,
+    EVENING(17, Sky.EVENING,
             R.array.home_greetings_evening, R.array.home_subtitles_evening),
 
     NIGHT(21, Sky.NIGHT,
             R.array.home_greetings_night, R.array.home_subtitles_night);
 
-    /** The three headers the design actually draws. */
+    /** The headers the app actually draws — three from the design, plus the evening one. */
     public enum Sky {
         MORNING(R.drawable.bg_home_header_morning, R.color.header_morning_top,
                 R.color.header_ink_dark, false, false),
         DAY(R.drawable.bg_home_header_day, R.color.header_day_top,
+                R.color.header_ink_dark, false, false),
+        /** Its own palette rather than the day's. The day gradient is the open blue of noon, which
+         *  says nothing at seven in the evening; this one falls from coral into gold, so the hour
+         *  before the navy one actually looks like it. */
+        EVENING(R.drawable.bg_home_header_evening, R.color.header_evening_top,
                 R.color.header_ink_dark, false, false),
         /** The only dark one, so the only one that changes the ink, the system's status-bar icons
          *  and the sparkle in the corner. */

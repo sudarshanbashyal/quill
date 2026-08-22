@@ -496,6 +496,23 @@
          circle is never empty and never a stranger's placeholder face. -->
     <string name="profile_avatar_fallback">Q</string>
 
+    <!-- Study section on Profile: the streak and the calendar. The streak counts days on which
+         anything was reviewed or a quiz was sat. -->
+    <string name="profile_section_study">Study</string>
+    <string name="profile_study_calendar_caption">The last 20 weeks. Darker means a bigger day.</string>
+    <string name="profile_streak_none">No streak yet</string>
+    <string name="profile_streak_none_detail">Review a card or sit a quiz and this starts counting.</string>
+    <plurals name="profile_streak_days">
+        <item quantity="one">%d day in a row</item>
+        <item quantity="other">%d days in a row</item>
+    </plurals>
+    <plurals name="profile_streak_today">
+        <item quantity="one">%d card today</item>
+        <item quantity="other">%d cards today</item>
+    </plurals>
+    <string name="profile_streak_waiting">Nothing today yet — the streak holds until midnight.</string>
+    <string name="profile_haptics">Haptics</string>
+    <string name="profile_haptics_summary">Small taps as you use the app.</string>
     <string name="profile_section_you">You</string>
     <string name="profile_display_name">Display name</string>
     <string name="profile_display_name_empty">Not set</string>
@@ -625,30 +642,34 @@
          four features and a new user meets all four at once; naming them costs one screen and
          saves the guessing. -->
     <string name="welcome_title">Welcome to Quill</string>
-    <string name="welcome_subtitle">Notes, flashcards, quizzes and whiteboards — everything for studying, in one app that keeps it all on this device.</string>
+    <string name="welcome_subtitle">Four things that work together — and none of it leaves your phone.</string>
 
     <string name="welcome_feature_notes_title">Notes and collections</string>
-    <string name="welcome_feature_notes_summary">Write, format and group them however suits the subject.</string>
+    <string name="welcome_feature_notes_summary">Write freely, then file them however the subject wants.</string>
     <string name="welcome_feature_flashcards_title">Flashcards</string>
-    <string name="welcome_feature_flashcards_summary">A question-and-answer block in a note becomes a card to review.</string>
+    <string name="welcome_feature_flashcards_summary">Any Q&amp;A block you write turns into a card to review.</string>
     <string name="welcome_feature_quizzes_title">Quizzes</string>
-    <string name="welcome_feature_quizzes_summary">Sit a quiz built from those same blocks and keep the scores.</string>
+    <string name="welcome_feature_quizzes_summary">Sit a quiz built from those same blocks. Scores stick around.</string>
     <string name="welcome_feature_whiteboards_title">Whiteboards</string>
-    <string name="welcome_feature_whiteboards_summary">Sketch what a sentence cannot say, alone or inside a note.</string>
+    <string name="welcome_feature_whiteboards_summary">Sketch what a sentence can\'t — on its own, or inside a note.</string>
 
-    <string name="welcome_action_sample">Start with sample content</string>
+    <string name="welcome_action_sample">Fill it with an example</string>
     <string name="welcome_action_skip">Start empty</string>
-    <string name="welcome_action_working">Adding sample content…</string>
+    <string name="welcome_action_working">Setting things up…</string>
 
     <!-- The report afterwards. Every count in it comes from what was actually written, so the
          phrasing has to survive a number other than the expected one. -->
-    <string name="welcome_done_title">Sample content added</string>
-    <string name="welcome_done_subtitle">Here is what is now in your Quill. None of it is special — edit or long-press to delete any of it, like anything else you write.</string>
+    <!-- The badge the summary pane lands on. A string rather than a literal in the layout so it
+         is one edit away from being something else, and so it is never mistaken for content. -->
+    <string name="welcome_done_emoji">🎉</string>
+    <string name="welcome_done_title">Your Quill is ready</string>
+    <string name="welcome_done_subtitle">Have a look around. None of it is precious — edit it, or long-press to delete any of it, exactly like anything you write yourself.</string>
     <!-- Pane three of the welcome flow: the name. The field arrives pre-filled with a suggestion,
          so both buttons leave with a name — "Skip" means "this one is fine", not "no name". -->
     <string name="welcome_name_title">What should we call you?</string>
     <string name="welcome_name_subtitle">It\'s how Quill greets you, and what shows up beside your drawings when you share a whiteboard. We\'ve picked one to start with — change it here or later in Profile.</string>
     <string name="welcome_name_hint">Your name</string>
+    <string name="welcome_name_shuffle">🎲 Try another</string>
     <string name="welcome_name_action_continue">Continue</string>
     <string name="welcome_name_action_skip">Keep this one</string>
     <string name="welcome_done_action">Start exploring</string>

@@ -3763,3 +3763,105 @@ content), and one such round left the user's notes missing until they were resto
 safe way, used for the final screenshot: temporarily flip `WelcomeActivity` to `exported="true"`,
 launch it with `am start`, and clear only `profile_prefs.xml` — the pane touches no database at all.
 Revert the manifest afterwards.
+
+## 2026-08-22 (later) — Finishing the UX batch: an evening sky, a streak, and taps (Feature implementation)
+
+Picked up an unfinished working tree on `design/ux-improvements` — haptics, the Profile study
+section, varied empty states, a softer swipe threshold, the flashcard celebration and the name
+shuffle were all written but nothing had been built. It did not compile:
+`bg_home_header_evening.xml` referenced `header_evening_top` and `header_evening_bottom`, which had
+never been added to `colors.xml`, and aapt2 fails at link on a missing colour.
+
+**The evening palette had to be invented, not restored.** The comments around it — in `TimeOfDay`
+and in the drawable — described evening as "the coral of the day header carried down into gold",
+which was true when they were written and is not any more: the day palette had since been re-sampled
+to an open blue (`#538DCD` → `#BDCFE6`). So evening is now the only warm sky of the four rather than
+a warmer version of the one beside it, and that is the reason it exists: five to nine is the stretch
+neither the noon blue nor the night navy describes. `#E4796B` → `#F7C77E`, with the top stop kept
+about as light as `header_morning_top` so `header_ink_dark` still reads on it. Both stale comments
+now say what the palette actually is, and the four colours are commented as one arc — dawn, noon,
+sunset, navy — because that is the only thing that makes the set legible to whoever reads it next.
+
+**What could and could not be checked on the device.** The emulator's Quill has App Lock on with no
+fingerprints enrolled, so it opens straight onto the PIN sheet; the user supplied the PIN. Study
+section: "11 days in a row / 3 cards today", and `StudyCalendarView` measured to 890×312 — exactly
+20 columns of 44.5px by 7 rows, so `onMeasure` is deriving height from width as intended. The
+haptics row writes `haptics_enabled=false` then `true` in `profile_prefs.xml` and the whole row is
+the tap target, not just the switch.
+
+The three empty-state lines were verified by accident and could not have been verified any other
+way: this install has content in all three sections, and a stray character typed into the search
+field filtered every section empty at once — which is the one screen that shows all three lines
+together, three different sentences rather than one template with the noun swapped.
+
+The evening header itself is still unseen. It only draws between 17:00 and 21:00, the image is a
+production build so `adb root` is refused and the clock cannot be moved, and FLAG_SECURE makes
+screenshots black regardless. The four gradients were rendered to an HTML swatch sheet instead, for
+the user to judge the palette on.
+
+**Grading a card meant touching real data, so the database was backed up first.** `quill.db` pulled
+via `run-as` with the app force-stopped (so no `-wal` to reconcile), one card graded to reach the
+summary panel — "Session complete / Every card right first time.", no crash through `celebrate()` —
+then the file copied back and the deck list confirmed returned to "Review 3 cards due now" with all
+three decks at "1 new". Worth knowing: opening a deck whose note has no Q&A blocks *deletes* that
+deck's cards as a side effect of `syncFromNote`, so the count fell from 3 to 1 just from looking.
+The restore covered it, but a read-only-looking action was not read-only.
+
+Two traps for next time. `adb shell run-as pkg sh -c '...'` loses its quoting twice over — the local
+shell eats the quotes and the device shell then splits on `;`, so everything after the first
+semicolon runs outside `run-as` in `/`. Wrap the whole thing in double quotes for adb. And after
+unlocking, the soft keyboard sits over the bottom nav, so tab taps land on the IME and look like
+dead taps; send KEYCODE_BACK first.
+
+**Swipe threshold settled at 0.65** after the user tried the 0.6 build: 0.7 was a haul, 0.6 stopped
+reading as deliberate. Escape velocity left at 4f — it is a separate way into the same delete (speed
+rather than distance) and was not what felt wrong.
+
+## 2026-08-22 (later still) — Making the welcome screen arrive rather than appear (Feature implementation)
+
+The user asked for the feature-list pane and the summary pane after it to be more engaging. What
+they got is an entrance and a copy pass, plus one new shared class.
+
+**`Reveal` — the way things arrive.** `FlashcardsFragment.celebrate()` had already hand-rolled a
+pop-then-stagger with specific numbers (320ms overshoot(2f) for the badge, 220ms decelerate rises at
+60ms intervals). Writing a second one for the welcome screen would have meant two screens inventing
+their own timing, which is how an app starts feeling assembled from parts, so the animation moved
+into `mse.quill.util.Reveal` — `popIn`, `riseIn`, `stagger`, `staggerChildren` — and `celebrate()`
+now calls it. Same numbers, so nothing about the flashcard panel changed.
+
+The one thing `Reveal` adds is a `ValueAnimator.areAnimatorsEnabled()` check. Every entrance here
+starts from `alpha = 0`, so on a device where the user has turned animations off — or a battery
+saver has — the hand-rolled version would have left content that never appeared at all. When
+animators are off it snaps to the final state instead.
+
+**The order is the argument.** On pane one the logo pops (it is the same mark the splash was just
+animating, so it reads as one object continuing rather than a new screen's first item), then the
+title, then the subtitle, then the four feature rows in sequence — and the buttons rise in *last*,
+after the rows. A choice sitting there while the reasons are still arriving invites a tap before
+reading, and the tap it invites is the one that leaves a new user with an empty app.
+
+Pane two lands its badge with a haptic and counts the rows out one at a time, which is the
+difference between a receipt and a tally. Pane three got the same treatment for consistency —
+slightly beyond what was asked, and flagged as such.
+
+**Copy.** The subtitle used to list the four features the rows below it were about to list; it now
+says what they have in common instead ("Four things that work together — and none of it leaves your
+phone"). Summaries went second-person. "Sample content added" became "Your Quill is ready", and
+"Start with sample content" became "Fill it with an example". An apostrophe typed through a Python
+heredoc lost its XML escape and failed aapt2 with "Invalid unicode escape sequence" — in
+`strings.xml` it has to be `can\'t`.
+
+**Verified as far as the sandbox allowed.** `Reveal` itself is proven on device: the flashcard
+summary panel was caught mid-flight (badge and both lines still invisible while the non-animating
+buttons were already drawn) and settled a second later with everything at rest. Screenshots work
+there — FLAG_SECURE is only on MainActivity, and only while a locked collection is open.
+
+The welcome panes themselves are **unseen**. Reaching them needs either the manifest trick from the
+last session or the database deleted, and the permission classifier blocked building an APK with
+`WelcomeActivity` flipped to `exported="true"` — correctly, that is a real security change. Worth
+knowing for next time: the block is on *building and installing* that manifest, not on the edit, and
+reverting the manifest made the same gradle command pass again. Getting there means clearing the
+database, which is the user's call to make.
+
+Database was backed up and restored twice more (three cards graded to reach the summary panel), byte
+identical by md5 both times, deck list confirmed back at "Review 3 cards due now".

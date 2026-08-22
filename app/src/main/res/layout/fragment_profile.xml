@@ -89,6 +89,93 @@
                 android:textStyle="bold"
                 tools:text="Sudarshan" />
 
+            <!-- ==================== Study ==================== -->
+
+            <TextView
+                style="@style/Widget.Quill.SettingsSectionLabel"
+                android:text="@string/profile_section_study" />
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Quill.SettingsCard">
+
+                <!-- Padded here rather than by the card: Widget.Quill.SettingsCard sets only 4dp
+                     of content padding because the rows it usually holds bring their own, and this
+                     card holds text and a grid instead. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/spacing_md">
+
+                    <TextView
+                        android:id="@+id/study_streak"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_primary"
+                        android:textSize="17sp"
+                        android:textStyle="bold"
+                        tools:text="6 days in a row" />
+
+                    <TextView
+                        android:id="@+id/study_streak_detail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_xs"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        tools:text="12 cards today" />
+
+                    <mse.quill.ui.profile.StudyCalendarView
+                        android:id="@+id/study_calendar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_md" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_sm"
+                        android:text="@string/profile_study_calendar_caption"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Quill.SettingsCard"
+                android:layout_marginTop="@dimen/spacing_sm">
+
+                <LinearLayout
+                    android:id="@+id/row_haptics"
+                    style="@style/Widget.Quill.SettingsRow">
+
+                    <ImageView
+                        style="@style/Widget.Quill.SettingsRow.Icon"
+                        android:src="@drawable/ic_stars"
+                        android:contentDescription="@null" />
+
+                    <LinearLayout style="@style/Widget.Quill.SettingsRow.Text">
+
+                        <TextView
+                            style="@style/Widget.Quill.SettingsRow.Title"
+                            android:text="@string/profile_haptics" />
+
+                        <TextView
+                            style="@style/Widget.Quill.SettingsRow.Summary"
+                            android:text="@string/profile_haptics_summary" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_haptics"
+                        style="@style/Widget.Quill.SettingsRow.Switch" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- ==================== You ==================== -->
 
             <TextView

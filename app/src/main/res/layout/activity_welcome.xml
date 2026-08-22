@@ -36,6 +36,7 @@
                 <!-- The same mark the splash was animating a moment ago, so the two screens read
                      as one arrival rather than as an app that starts twice. -->
                 <mse.quill.ui.splash.QuillLogoView
+                    android:id="@+id/welcome_logo"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
@@ -44,6 +45,7 @@
                     android:textSize="@dimen/welcome_logo_size" />
 
                 <TextView
+                    android:id="@+id/welcome_title"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
@@ -53,6 +55,7 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/welcome_subtitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_sm"
@@ -79,16 +82,31 @@
                 android:visibility="gone"
                 tools:visibility="gone">
 
+                <!-- The one thing on this pane worth pointing at, so the one thing that pops
+                     rather than rising with everything else. Drawn as text rather than as a
+                     drawable: it is the same warm register as the name pane's emoji, and the two
+                     panes are meant to feel like the same hand. -->
                 <TextView
-                    android:layout_width="match_parent"
+                    android:id="@+id/welcome_summary_emoji"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
+                    android:importantForAccessibility="no"
+                    android:text="@string/welcome_done_emoji"
+                    android:textSize="@dimen/welcome_name_emoji_size" />
+
+                <TextView
+                    android:id="@+id/welcome_summary_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_md"
                     android:text="@string/welcome_done_title"
                     android:textColor="@color/text_primary"
                     android:textSize="28sp"
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/welcome_summary_subtitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_sm"
@@ -134,6 +152,7 @@
                     tools:text="👋" />
 
                 <TextView
+                    android:id="@+id/welcome_name_title"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_md"
@@ -144,6 +163,7 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/welcome_name_subtitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_sm"
@@ -161,6 +181,17 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
                     android:orientation="vertical" />
+
+                <!-- Rerolls the suggestion. A text button under the field rather than an icon
+                     inside it: the field's end slot is where a clear-text affordance is expected,
+                     and this is not that. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/welcome_name_shuffle"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_xs"
+                    android:text="@string/welcome_name_shuffle" />
 
             </LinearLayout>
 

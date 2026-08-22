@@ -259,4 +259,8 @@
     <!-- The two greeting lines are one text block in the design, so they sit almost touching; a
          full spacing step between them read as two unrelated sentences. -->
     <dimen name="home_header_line_gap">2dp</dimen>
+    <!-- Study calendar (StudyCalendarView). The gap is per side, so the visible space between two
+         cells is twice it. -->
+    <dimen name="study_cell_corner">2dp</dimen>
+    <dimen name="study_cell_gap">1.5dp</dimen>
 </resources>

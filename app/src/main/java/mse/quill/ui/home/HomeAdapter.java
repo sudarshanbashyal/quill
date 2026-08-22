@@ -65,7 +65,11 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         void onWhiteboardLongPressed(Whiteboard whiteboard);
     }
 
+    private static final java.util.Random RANDOM = new java.util.Random();
+
     private final Listener listener;
+    /** The line each empty section is currently showing, keyed by its array. See emptyMessage. */
+    private final java.util.Map<Integer, String> emptyMessages = new java.util.HashMap<>();
     private List<Collection> collections = new ArrayList<>();
     private List<Whiteboard> whiteboards = new ArrayList<>();
     private List<Note> notes = new ArrayList<>();
@@ -75,16 +79,19 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     public void submitCollections(List<Collection> collections) {
+        emptyMessages.clear();
         this.collections = collections;
         notifyDataSetChanged();
     }
 
     public void submitWhiteboards(List<Whiteboard> whiteboards) {
+        emptyMessages.clear();
         this.whiteboards = whiteboards;
         notifyDataSetChanged();
     }
 
     public void submitNotes(List<Note> notes) {
+        emptyMessages.clear();
         this.notes = notes;
         notifyDataSetChanged();
     }
@@ -234,7 +241,8 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             Whiteboard whiteboard = whiteboards.get(position - whiteboardsStart());
             ((WhiteboardCardViewHolder) holder).bind(whiteboard, listener);
         } else if (type == TYPE_EMPTY) {
-            ((EmptyViewHolder) holder).bind(emptyMessageRes(position));
+            ((EmptyViewHolder) holder).bind(
+                    emptyMessage(holder.itemView.getContext(), position));
         } else {
             Note note = notes.get(position - notesStart());
             ((NoteRowViewHolder) holder).bind(note, listener);
@@ -243,10 +251,29 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     /** Which section's empty row this is — the same three-way the header resources use, since an
      *  empty row only ever appears directly under its own header. */
-    private int emptyMessageRes(int position) {
-        if (position < notesHeaderPos()) return R.string.empty_collections;
-        if (position < whiteboardsHeaderPos()) return R.string.empty_notes;
-        return R.string.empty_whiteboards;
+    private int emptyMessageArrayRes(int position) {
+        if (position < notesHeaderPos()) return R.array.empty_collections_lines;
+        if (position < whiteboardsHeaderPos()) return R.array.empty_notes_lines;
+        return R.array.empty_whiteboards_lines;
+    }
+
+    /**
+     * One of that section's lines, held per section rather than drawn per bind.
+     *
+     * <p>A fresh line on every bind would reshuffle as the list scrolls or reloads, which reads as
+     * a glitch rather than as variety — the same reason Home's greeting is picked once per visit.
+     * Cleared whenever a section's contents change, so an emptied section can say something new
+     * next time.
+     */
+    private String emptyMessage(Context context, int position) {
+        int arrayRes = emptyMessageArrayRes(position);
+        String held = emptyMessages.get(arrayRes);
+        if (held != null) return held;
+
+        String[] lines = context.getResources().getStringArray(arrayRes);
+        String picked = lines[RANDOM.nextInt(lines.length)];
+        emptyMessages.put(arrayRes, picked);
+        return picked;
     }
 
     private void bindCollectionCard(CollectionCardViewHolder holder, int index) {
@@ -294,7 +321,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class EmptyViewHolder extends RecyclerView.ViewHolder {
         EmptyViewHolder(@NonNull View itemView) { super(itemView); }
-        void bind(int textRes) { ((TextView) itemView).setText(textRes); }
+        void bind(String text) { ((TextView) itemView).setText(text); }
     }
 
     static class NoteRowViewHolder extends RecyclerView.ViewHolder {

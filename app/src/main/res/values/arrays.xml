@@ -2,11 +2,7 @@
 <resources>
     <integer-array name="swatch_color_palette">
         <item>0xFFE57373</item>
-        <item>0xFFF06292</item>
         <item>0xFFBA68C8</item>
-        <item>0xFF9575CD</item>
-        <item>0xFF64B5F6</item>
-        <item>0xFF4DB6AC</item>
         <item>0xFF81C784</item>
         <item>0xFFFFB74D</item>
     </integer-array>
@@ -169,5 +165,28 @@
         <item>🐝</item>
         <item>🐙</item>
         <item>🛸</item>
+    </string-array>
+
+    <!-- Home's empty sections. A line is drawn per bind, so the three of them aren't the same
+         sentence with a different noun three times down one screen — which is what a brand-new
+         Quill used to look like.
+
+         Every line still says how to fix it, because that is the useful half; the variety is in
+         how it says it, not whether. -->
+    <string-array name="empty_collections_lines">
+        <item>No collections yet — tap + to make one</item>
+        <item>Nothing filed away yet. Tap + for your first collection</item>
+        <item>Collections group notes by subject. Tap + to start one</item>
+    </string-array>
+    <string-array name="empty_notes_lines">
+        <item>No notes yet — tap + to create one</item>
+        <item>A blank page is waiting. Tap + when you\'re ready</item>
+        <item>Nothing written down yet. Tap + to begin</item>
+        <item>This is where your notes will live. Tap + for the first</item>
+    </string-array>
+    <string-array name="empty_whiteboards_lines">
+        <item>No whiteboards yet — tap + to draw one</item>
+        <item>Nothing sketched yet. Tap + for a blank board</item>
+        <item>For what a sentence can\'t say. Tap + to draw</item>
     </string-array>
 </resources>

@@ -31,6 +31,8 @@ import mse.quill.ui.profile.DisplayName;
 import mse.quill.util.TextFieldUtils;
 import mse.quill.onboarding.SampleData;
 import mse.quill.ui.profile.ProfilePreferences;
+import mse.quill.util.Haptics;
+import mse.quill.util.Reveal;
 
 /**
  * The first screen of a brand-new Quill: what the app is, and a choice between starting with
@@ -100,11 +102,13 @@ public class WelcomeActivity extends AppCompatActivity {
         nameActions = findViewById(R.id.welcome_name_actions);
 
         showFeatures();
+        animateWelcomePane();
 
         // Both answers to the content question now lead to the name, not straight into the app.
         sampleButton.setOnClickListener(v -> addSampleContent());
         skipButton.setOnClickListener(v -> showNamePane());
         findViewById(R.id.welcome_start).setOnClickListener(v -> showNamePane());
+        findViewById(R.id.welcome_name_shuffle).setOnClickListener(v -> shuffleSuggestedName(v));
         findViewById(R.id.welcome_name_continue).setOnClickListener(v -> saveNameAndOpenMain());
         findViewById(R.id.welcome_name_skip).setOnClickListener(v -> openMain());
 
@@ -120,6 +124,27 @@ public class WelcomeActivity extends AppCompatActivity {
     }
 
     // ---------- Pane one ----------
+
+    /**
+     * The screen introducing itself: the mark, then the pitch, then the four things Quill does,
+     * and last of all the choice.
+     *
+     * <p><b>The order is the argument.</b> The buttons rise in after the feature list rather than
+     * with it, so the question is only asked once there is something on screen to answer it with.
+     * A choice sitting there while the reasons are still arriving invites a tap before reading,
+     * and the tap it invites is the one that leaves the new user with an empty app.
+     *
+     * <p>The logo is the only thing that pops rather than rising. It is also the one element the
+     * splash was just animating, so it lands as the same object continuing rather than as a new
+     * screen's first item.
+     */
+    private void animateWelcomePane() {
+        Reveal.popIn(findViewById(R.id.welcome_logo), 0);
+        Reveal.riseIn(findViewById(R.id.welcome_title), 120);
+        Reveal.riseIn(findViewById(R.id.welcome_subtitle), 180);
+        long afterRows = Reveal.staggerChildren(featureList, 240);
+        Reveal.riseIn(welcomeActions, afterRows);
+    }
 
     private void showFeatures() {
         addRow(featureList, R.drawable.ic_section_note,
@@ -202,6 +227,16 @@ public class WelcomeActivity extends AppCompatActivity {
         summaryPane.setVisibility(View.VISIBLE);
         summaryActions.setVisibility(View.VISIBLE);
         backAfterSeeding.setEnabled(true);
+
+        // The rows land one after another rather than all at once, which is the difference between
+        // a receipt and a tally being counted out. Each line is a thing the app just made for the
+        // user, and arriving in sequence is what makes it read that way.
+        Haptics.confirm(summaryPane);
+        Reveal.popIn(findViewById(R.id.welcome_summary_emoji), 0);
+        Reveal.riseIn(findViewById(R.id.welcome_summary_title), 90);
+        Reveal.riseIn(findViewById(R.id.welcome_summary_subtitle), 150);
+        long afterRows = Reveal.staggerChildren(summaryList, 210);
+        Reveal.riseIn(summaryActions, afterRows);
     }
 
     // ---------- Pane three ----------
@@ -241,9 +276,27 @@ public class WelcomeActivity extends AppCompatActivity {
         summaryActions.setVisibility(View.GONE);
         namePane.setVisibility(View.VISIBLE);
         nameActions.setVisibility(View.VISIBLE);
+
+        Reveal.popIn(findViewById(R.id.welcome_name_emoji), 0);
+        Reveal.stagger(90, findViewById(R.id.welcome_name_title),
+                findViewById(R.id.welcome_name_subtitle), nameField, nameActions);
         // Back from here means "get on with it": the content question has already been answered and
         // acted on, and there is a name stored either way.
         backAfterSeeding.setEnabled(true);
+    }
+
+    /**
+     * Draws another suggestion into the field.
+     *
+     * <p>Not written to preferences: this is someone trying names on, and only the one they leave
+     * with should be stored. The first suggestion already is — see {@link #showNamePane} — so
+     * shuffling and then backing out still leaves a named install.
+     */
+    private void shuffleSuggestedName(View source) {
+        String suggested = ProfilePreferences.generateName(this);
+        nameField.getEditText().setText(suggested);
+        nameField.getEditText().setSelection(suggested.length());
+        Haptics.tick(source);
     }
 
     /** Keeps whatever is in the field, falling back to the suggestion if it was emptied — leaving
