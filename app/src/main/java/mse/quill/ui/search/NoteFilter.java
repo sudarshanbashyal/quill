@@ -18,9 +18,15 @@ import mse.quill.data.model.Whiteboard;
  * What the search bar is currently asking for, and the one place that answers it.
  *
  * <p>Held by the screen rather than by {@link SearchFilterBar}: Home and a collection both filter
- * their own lists, and the bar is a control, not a source of truth. Filtering runs in memory
- * because both screens already hold every note they display — pushing it into SQL would mean a
- * round trip per keystroke for lists this size.
+ * their own lists, and the bar is a control, not a source of truth. Tags and sorting run in memory,
+ * because both screens already hold every note they display.
+ *
+ * <p>The text match does not. A note's body is only in memory as its <em>preview</em> — the first
+ * line or two — so matching in memory could never find a word further down, which is most of what
+ * a search box is for. The screen hands in {@code notes_fts}'s answer via
+ * {@link #setFullTextMatches}, and the in-memory title match stays as the fallback for notes the
+ * index doesn't have: one saved before the index existed, one in a collection that was locked and
+ * has since been opened, or a device whose SQLite was built without FTS5.
  */
 public final class NoteFilter {
 
@@ -41,11 +47,37 @@ public final class NoteFilter {
     private String query = "";
     private Sort sort = Sort.RECENT;
     private final Set<String> tagIds = new HashSet<>();
+    /** Ids the index matched, or null for "didn't ask / couldn't answer". */
+    private Set<String> fullTextMatches;
+    /** The query {@link #fullTextMatches} was computed for, so a slow answer to an older keystroke
+     *  can be recognised as stale and ignored rather than filtering against the wrong word. */
+    private String fullTextQuery;
 
     // ── State ──────────────────────────────────────────────────────────────
 
     public void setQuery(String raw) {
         query = raw == null ? "" : raw.trim().toLowerCase(Locale.getDefault());
+        // The previous answer was about a different word. Dropped rather than kept, so a
+        // half-typed query never filters against what was typed before it.
+        if (!query.equals(fullTextQuery)) {
+            fullTextMatches = null;
+            fullTextQuery = null;
+        }
+    }
+
+    /** The raw query as typed — what the screen hands to the index. */
+    public String query() { return query; }
+
+    /**
+     * Records the index's answer for {@code forQuery}. A result for anything other than the
+     * current query is discarded: keystrokes each start their own lookup and they can come back
+     * out of order.
+     */
+    public void setFullTextMatches(String forQuery, Set<String> matches) {
+        String normalised = forQuery == null ? "" : forQuery.trim().toLowerCase(Locale.getDefault());
+        if (!normalised.equals(query)) return;
+        fullTextQuery = normalised;
+        fullTextMatches = matches;
     }
 
     public Sort sort() { return sort; }
@@ -165,7 +197,11 @@ public final class NoteFilter {
 
     private boolean matchesQuery(Note note) {
         if (query.isEmpty()) return true;
-        return lower(note.title).contains(query) || lower(note.preview).contains(query);
+        // Title first, and always: it is the one field guaranteed to be in memory and current,
+        // which is what makes an unindexed note still findable by name.
+        if (lower(note.title).contains(query)) return true;
+        if (fullTextMatches != null) return fullTextMatches.contains(note.id);
+        return lower(note.preview).contains(query);
     }
 
     private void sortNotes(List<Note> notes) {

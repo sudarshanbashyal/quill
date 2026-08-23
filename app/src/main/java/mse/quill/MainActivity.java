@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -42,6 +43,7 @@ import mse.quill.reminders.StudyReminders;
 import mse.quill.security.AppLock;
 import mse.quill.security.CollectionLock;
 import mse.quill.ui.audio.MiniPlayerView;
+import mse.quill.util.SwipeToDelete;
 import mse.quill.util.WindowInsetsUtils;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
@@ -642,6 +644,106 @@ public class MainActivity extends AppCompatActivity {
      * anywhere deeper: a note editor or a review session is somewhere you arrived from a tab, and
      * offering to jump away mid-note is noise.
      */
+    // ── Swiping between tabs ─────────────────────────────────────────────
+
+    /** The bottom bar's items in order, which is also the order a swipe walks them. */
+    private static final int[] TAB_DESTINATIONS = {
+            R.id.homeFragment,
+            R.id.flashcardDecksFragment,
+            R.id.quizzesFragment,
+            R.id.profileFragment,
+    };
+
+    /** How much of the screen's width a drag has to cross to count as turning the page. */
+    private static final float SWIPE_TAB_FRACTION = 0.3f;
+
+    private float swipeDownX;
+    private float swipeDownY;
+    /** False once the gesture has disqualified itself — went vertical, or a second finger landed. */
+    private boolean swipeCandidate;
+
+    /**
+     * Moves to the next or previous tab on a horizontal drag across the screen.
+     *
+     * <p>Watched at the activity rather than claimed by a view, and never consuming the event: the
+     * gesture is read alongside whatever the screen underneath is already doing, and acts only on
+     * release. That is what lets it share the horizontal axis with swipe-to-delete instead of
+     * fighting it for interception — the row's gesture runs normally, and this one stands down
+     * because {@link SwipeToDelete#isSwipeInProgress()} says a row has already claimed the drag.
+     *
+     * <p>The distance threshold is several times a row's, for the same reason. A row commits to
+     * being dragged after about a finger's width; asking for a third of the screen here means that
+     * by the time this gesture would qualify, any row that was going to claim it already has.
+     *
+     * <p>Only between the four top-level destinations. Deeper screens — a note, a review session, a
+     * whiteboard — hide the bar entirely, and a horizontal drag on a whiteboard is a pen stroke.
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                swipeDownX = event.getX();
+                swipeDownY = event.getY();
+                swipeCandidate = true;
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                // A second finger means a pinch or a scroll, not a page turn.
+                swipeCandidate = false;
+                break;
+            case MotionEvent.ACTION_UP:
+                if (swipeCandidate) {
+                    handleHorizontalSwipe(event.getX() - swipeDownX, event.getY() - swipeDownY);
+                }
+                swipeCandidate = false;
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                swipeCandidate = false;
+                break;
+            default:
+                break;
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void handleHorizontalSwipe(float dx, float dy) {
+        // A row is mid-swipe, or was: the drag belongs to it either way, including the case where
+        // it was released short of deleting and sprang back.
+        if (SwipeToDelete.isSwipeInProgress()) return;
+
+        float minDistance = getResources().getDisplayMetrics().widthPixels * SWIPE_TAB_FRACTION;
+        if (Math.abs(dx) < minDistance) return;
+        // Comfortably horizontal, so a diagonal flick while scrolling a list doesn't change tab.
+        if (Math.abs(dx) < Math.abs(dy) * 2) return;
+
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+        if (host == null) return;
+        NavController navController = host.getNavController();
+        if (navController.getCurrentDestination() == null) return;
+
+        int current = indexOfTab(navController.getCurrentDestination().getId());
+        if (current < 0) return;
+
+        // Swiping left carries the screen forward, the way a page does.
+        int target = current + (dx < 0 ? 1 : -1);
+        // No wrap-around: running off the end of the bar should feel like the end of the bar, not
+        // like being thrown back to the start.
+        if (target < 0 || target >= TAB_DESTINATIONS.length) return;
+
+        BottomNavigationView bottomNav = findViewById(R.id.bottom_nav);
+        if (bottomNav == null || bottomNav.getVisibility() != View.VISIBLE) return;
+        // Through the bar rather than the controller, so the selected item moves with the screen
+        // and the back stack is popped exactly as a tap would have done it.
+        bottomNav.setSelectedItemId(TAB_DESTINATIONS[target]);
+    }
+
+    private static int indexOfTab(int destinationId) {
+        for (int i = 0; i < TAB_DESTINATIONS.length; i++) {
+            if (TAB_DESTINATIONS[i] == destinationId) return i;
+        }
+        return -1;
+    }
+
     private void setupBottomNavigation() {
         NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.nav_host_fragment);

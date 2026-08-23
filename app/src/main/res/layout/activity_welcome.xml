@@ -36,6 +36,7 @@
                 <!-- The same mark the splash was animating a moment ago, so the two screens read
                      as one arrival rather than as an app that starts twice. -->
                 <mse.quill.ui.splash.QuillLogoView
+                    android:id="@+id/welcome_logo"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
@@ -44,6 +45,7 @@
                     android:textSize="@dimen/welcome_logo_size" />
 
                 <TextView
+                    android:id="@+id/welcome_title"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
@@ -53,6 +55,7 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/welcome_subtitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_sm"
@@ -79,16 +82,31 @@
                 android:visibility="gone"
                 tools:visibility="gone">
 
+                <!-- The one thing on this pane worth pointing at, so the one thing that pops
+                     rather than rising with everything else. Drawn as text rather than as a
+                     drawable: it is the same warm register as the name pane's emoji, and the two
+                     panes are meant to feel like the same hand. -->
                 <TextView
-                    android:layout_width="match_parent"
+                    android:id="@+id/welcome_summary_emoji"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
+                    android:importantForAccessibility="no"
+                    android:text="@string/welcome_done_emoji"
+                    android:textSize="@dimen/welcome_name_emoji_size" />
+
+                <TextView
+                    android:id="@+id/welcome_summary_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_md"
                     android:text="@string/welcome_done_title"
                     android:textColor="@color/text_primary"
                     android:textSize="28sp"
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/welcome_summary_subtitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_sm"
@@ -102,6 +120,78 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_lg"
                     android:orientation="vertical" />
+
+            </LinearLayout>
+
+            <!-- Pane three: the name. Comes after the content question rather than before it,
+                 because "what should we call you" is a friendlier thing to be asked once the app
+                 has shown what it is than as the first thing a stranger says. -->
+            <!-- Centred, unlike the other two panes. They are lists that start at the top and run
+                 down the screen; this one is a single question with a single field, and pinned to
+                 the top it left most of the screen empty below it — which reads as a form someone
+                 forgot to finish rather than as a moment. -->
+            <LinearLayout
+                android:id="@+id/welcome_name_pane"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="gone">
+
+                <!-- Set in code, from a short list — the screen says hello in a slightly different
+                     way each time it is seen, which for a screen seen once is really just a way of
+                     not looking machine-made. -->
+                <TextView
+                    android:id="@+id/welcome_name_emoji"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:importantForAccessibility="no"
+                    android:textSize="@dimen/welcome_name_emoji_size"
+                    tools:text="👋" />
+
+                <TextView
+                    android:id="@+id/welcome_name_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_md"
+                    android:gravity="center_horizontal"
+                    android:text="@string/welcome_name_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/welcome_name_subtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:gravity="center_horizontal"
+                    android:lineSpacingExtra="3sp"
+                    android:text="@string/welcome_name_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="15sp" />
+
+                <!-- The field itself is added in code, so it shares TextFieldUtils' outlined style
+                     and DisplayName's filter with the Profile screen rather than restating either. -->
+                <LinearLayout
+                    android:id="@+id/welcome_name_field_holder"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:orientation="vertical" />
+
+                <!-- Rerolls the suggestion. A text button under the field rather than an icon
+                     inside it: the field's end slot is where a clear-text affordance is expected,
+                     and this is not that. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/welcome_name_shuffle"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_xs"
+                    android:text="@string/welcome_name_shuffle" />
 
             </LinearLayout>
 
@@ -151,6 +241,34 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/welcome_done_action" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/welcome_name_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/spacing_lg"
+        android:paddingTop="@dimen/spacing_md"
+        android:paddingBottom="@dimen/spacing_lg"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/welcome_name_continue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/welcome_name_action_continue" />
+
+        <!-- Skipping keeps the suggested name rather than leaving the user nameless — the point of
+             suggesting one was that a greeting and a shared whiteboard both read better with it. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/welcome_name_skip"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:text="@string/welcome_name_action_skip" />
 
     </LinearLayout>
 

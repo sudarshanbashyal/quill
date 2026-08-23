@@ -118,13 +118,15 @@ public class CollectionRepository {
         // Flashcards and quizzes hang off notes, not collections, so both counts reach the
         // collection through the note that owns them — and skip deleted notes for the same
         // reason note_count does, or a collection emptied into the trash would still claim
-        // to hold cards.
+        // to hold cards. Orphaned cards are skipped for the same reason again: the card exists
+        // as a row, but there is nothing behind it to review.
         Cursor c = db.rawQuery(
                 "SELECT c.id, c.name, c.color, c.created_at, c.biometric_locked, " +
                         "(SELECT COUNT(*) FROM notes n WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS note_count, " +
                         "(SELECT MAX(n.updated_at) FROM notes n WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS last_activity, " +
                         "(SELECT COUNT(*) FROM flashcards f JOIN notes n ON f.note_id = n.id " +
-                        "   WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS flashcard_count, " +
+                        "   WHERE n.collection_id = c.id AND n.deleted_at IS NULL " +
+                        "     AND f.orphaned_at IS NULL) AS flashcard_count, " +
                         "(SELECT COUNT(*) FROM quizzes q JOIN notes n ON q.note_id = n.id " +
                         "   WHERE n.collection_id = c.id AND n.deleted_at IS NULL) AS quiz_count " +
                         "FROM collections c ORDER BY c.created_at ASC",

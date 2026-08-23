@@ -63,12 +63,16 @@ public final class ImageExporter {
         Uri target = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
         if (target == null) return false;
 
-        try (InputStream in = new FileInputStream(source);
-             OutputStream out = resolver.openOutputStream(target)) {
+        // Decrypted on the way out, not copied byte for byte: an image in a locked collection is
+        // ciphertext on disk, and "save to Photos" that produced an unopenable file would be a
+        // strange way to find that out. Saving one out is a deliberate act by someone who has
+        // already unlocked the collection, so it leaves as an ordinary picture.
+        byte[] plaintext = mse.quill.security.MediaFiles.readPlaintext(source.getAbsolutePath());
+        if (plaintext == null) return false;
+
+        try (OutputStream out = resolver.openOutputStream(target)) {
             if (out == null) throw new IOException("no output stream for " + target);
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
+            out.write(plaintext);
         } catch (IOException | SecurityException e) {
             // Leaving the row behind would show as a permanently empty image in the gallery.
             resolver.delete(target, null, null);

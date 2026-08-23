@@ -23,7 +23,9 @@ import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -354,12 +356,23 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
                     }
 
                     @Override public void onQaBlockRequested() {
-                        noteEditorView.insertQaBlockAfterFocused();
-                        updateToolbarState();
+                        insertQaBlock();
                     }
 
                     @Override public void onWhiteboardRequested() {
                         showWhiteboardSourceDialog();
+                    }
+
+                    /** Only headings reach this: everything else in the bar works everywhere the
+                     *  caret can go. Named from the control's own label so the sentence can't drift
+                     *  from the button that produced it. */
+                    @Override public void onUnavailableRequested(
+                            FormattingToolbarController.Item item) {
+                        Snackbar.make(requireView(),
+                                        getString(R.string.formatting_unavailable_in_qa,
+                                                getString(item.descriptionRes)),
+                                        Snackbar.LENGTH_SHORT)
+                                .show();
                     }
                 }
         );
@@ -976,17 +989,16 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
      *
      * <p>Only blocks with <em>both</em> halves filled in become cards — a question with no answer
      * has nothing to turn over — so a note can hold Q&amp;A and still have no deck, and that's the
-     * case the message covers. The save is forced through first because the review screen reads the
-     * note back from storage: it needs the blocks' ids, and for a brand-new note, a row to read at
-     * all.
+     * case the hint dialog covers. The save is forced through first because the review screen reads
+     * the note back from storage: it needs the blocks' ids, and for a brand-new note, a row to read
+     * at all.
      */
     private void openFlashcards() {
         List<NoteSegment> segments = noteEditorView.exportSegments();
         // A note whose blocks have all been emptied still has its old cards, so the deck is worth
         // opening even when there's nothing left to generate from.
         if (!hasFlashcards && FlashcardRepository.reviewableQa(segments).isEmpty()) {
-            Snackbar.make(requireView(), R.string.flashcards_no_qa_message, Snackbar.LENGTH_LONG)
-                    .show();
+            QaBlockHintDialog.showForFlashcards(requireContext(), this::insertQaBlock);
             return;
         }
 
@@ -1005,16 +1017,14 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
      * sake: every wrong option is another block's answer, so a note with four of them can only ever
      * offer the same three distractors and the quiz becomes a memory game about the note's layout.
      * A note that already has a quiz opens it regardless — that screen can explain a shortfall
-     * better than a Snackbar on the way out can.
+     * better than a message on the way out can.
      */
     private void openQuiz() {
         List<NoteSegment> segments = noteEditorView.exportSegments();
         int usable = FlashcardRepository.reviewableQa(segments).size();
         if (!hasQuiz && usable < QuizRules.MIN_QA_BLOCKS) {
-            Snackbar.make(requireView(),
-                            getString(R.string.quiz_not_enough_qa_message, QuizRules.MIN_QA_BLOCKS),
-                            Snackbar.LENGTH_LONG)
-                    .show();
+            QaBlockHintDialog.showForQuiz(requireContext(), usable, QuizRules.MIN_QA_BLOCKS,
+                    this::insertQaBlock);
             return;
         }
 
@@ -1028,6 +1038,54 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
                 NavHostFragment.findNavController(this).navigate(R.id.quizDetailFragment, args);
             });
         });
+    }
+
+    /**
+     * Inserts a Q&amp;A block from somewhere other than the toolbar — currently the hint dialog's
+     * "add one" button.
+     *
+     * <p>Identical to the toolbar item's action, and deliberately so: the block lands at the caret
+     * (or at the end of the note when nothing is focused), and focusing its question field raises
+     * the keyboard, which brings the real formatting bar into view with the icon the dialog was
+     * just pointing at now genuinely on screen. That last part is why the hint dialog defers this
+     * to its dismiss rather than running it from the button — see QaBlockHintDialog.
+     */
+    private void insertQaBlock() {
+        noteEditorView.insertQaBlockAfterFocused();
+        updateToolbarState();
+        showKeyboardOnceWindowFocused();
+    }
+
+    /**
+     * Re-asks for the keyboard once this window actually has focus again.
+     *
+     * <p>Focusing the new block asks for the IME itself, and that is enough when the insert came
+     * from the toolbar — the keyboard is already up. It is not enough coming from the hint dialog:
+     * the dialog's window is still being torn down at that point, and {@code showSoftInput} against
+     * a window without focus is discarded. The block would arrive focused, with a caret, and no
+     * keyboard — and so no formatting bar, which is the one thing the dialog had been pointing at.
+     *
+     * <p>A no-op when focus is already here, so the toolbar's own path costs nothing.
+     */
+    private void showKeyboardOnceWindowFocused() {
+        View root = getView();
+        if (root == null || root.hasWindowFocus()) return;
+
+        root.getViewTreeObserver().addOnWindowFocusChangeListener(
+                new ViewTreeObserver.OnWindowFocusChangeListener() {
+                    @Override
+                    public void onWindowFocusChanged(boolean hasFocus) {
+                        if (!hasFocus) return;
+                        root.getViewTreeObserver().removeOnWindowFocusChangeListener(this);
+                        View focused = root.findFocus();
+                        if (focused == null || !isAdded()) return;
+                        InputMethodManager imm = (InputMethodManager)
+                                requireContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (imm != null) {
+                            imm.showSoftInput(focused, InputMethodManager.SHOW_IMPLICIT);
+                        }
+                    }
+                });
     }
 
     /** The body only — the title is often just the auto-generated "Untitled Note - <date>"

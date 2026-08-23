@@ -24,6 +24,10 @@
          plain greeting above is what an unnamed user gets, rather than a trailing comma. -->
     <string name="home_greeting_named">Welcome back, %1$s</string>
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
+    <!-- %1$s is one of the home_greetings_* lines, %2$s the display name. Kept as a format string
+         rather than concatenated so a translation can put the name first if its language does. -->
+    <string name="home_greeting_with_name">%1$s, %2$s</string>
+    <string name="home_header_stars_description">Night sky</string>
     <!-- Whiteboards joined the searchable set on master, so the hint names them too. -->
     <string name="search_hint">Search notes, whiteboards or collections…</string>
     <string name="search_hint_collection">Search notes in this collection…</string>
@@ -95,6 +99,13 @@
     <string name="delete_note_title">Delete note?</string>
     <string name="delete_note_message">This note will be moved to trash.</string>
     <string name="delete_collection_title_format">Delete \"%s\"?</string>
+    <!-- Moving a note into a locked collection. It encrypts the note, which costs its flashcards
+         for the same reason locking a whole collection does — the cards hold the question and
+         answer as plaintext columns. Locking warns about this; moving used to do it silently. -->
+    <string name="collection_locked_option">%1$s · Locked</string>
+    <string name="move_into_locked_title">Move into \"%1$s\"?</string>
+    <string name="move_into_locked_message">This note will be encrypted, and will stop appearing on Home, in search and in quizzes until you unlock the collection.\n\nIts flashcards are emptied while it is locked — the cards store the question and answer in plain text. Your review progress is kept: re-open the note after unlocking and its deck comes back where you left it.</string>
+    <string name="action_move">Move</string>
     <string name="delete_collection_message">Notes in this collection will become Uncategorized.</string>
 
     <string name="action_rename">Rename</string>
@@ -137,6 +148,10 @@
 
     <!-- Error messages for media handling in the editor -->
     <string name="image_load_failed">Could not load image</string>
+    <!-- A recording in a locked collection whose key window has closed since the note was opened.
+         The note text is already in memory by then, so only the media notices. -->
+    <string name="audio_locked_needs_unlock">Unlock this collection again to play its recordings.</string>
+    <string name="audio_playback_failed">Couldn\'t play this recording.</string>
     <string name="record_audio_failed">Could not record audio</string>
     <string name="microphone_permission_required">Microphone permission is required to record audio</string>
 
@@ -243,7 +258,36 @@
     <string name="collab_error_cannot_search">Couldn\'t start looking for the session. Turn Bluetooth and Wi-Fi off and on again, then retry.</string>
     <string name="collab_end_session">End session</string>
     <string name="collab_leaving_locks_others_out">Ending the session disconnects everyone.</string>
+    <string name="collab_exit_warning_title">Leave whiteboard?</string>
+    <string name="collab_exit_host_message">You\'re hosting this session. Leaving ends it for everyone — the board as it stands now stays on this phone.</string>
+    <string name="collab_exit_joiner_message">Leaving takes you out of the session. The board as it stands now stays on this phone, and you can scan the code again to rejoin.</string>
+    <string name="collab_exit_confirm">Leave and end session</string>
     <string name="collab_permission_denied">Nearby needs Bluetooth/Wi-Fi permissions to find another device</string>
+    <string name="collab_leave_session">Leave session</string>
+    <string name="collab_peer_left">A collaborator left the session</string>
+    <string name="collab_host_ended">The host ended the session</string>
+    <string name="collab_peer_connecting">Connecting…</string>
+    <string name="collab_you">%1$s (you)</string>
+    <string name="collab_already_in_session_title">Already in a session</string>
+    <string name="collab_already_hosting_message">You\'re hosting a whiteboard session. Joining another one ends it for everyone in it.</string>
+    <string name="collab_already_joined_message">You\'re in a whiteboard session. Joining another one leaves it.</string>
+    <string name="collab_leave_and_join">Leave and join</string>
+    <string name="collab_join_replaces_title">Joining replaces this board</string>
+    <string name="collab_join_replaces_message">You\'ll be drawing on the host\'s whiteboard, so everything on this one is replaced when you join. You can keep a copy of it first.</string>
+    <string name="collab_join_save_copy">Save a copy and join</string>
+    <string name="collab_join_discard">Discard and join</string>
+    <string name="collab_join_copy_name">%1$s (copy)</string>
+    <string name="collab_join_copy_saved">Copy saved to your whiteboards</string>
+    <plurals name="collab_people_count">
+        <item quantity="one">%d person on this board</item>
+        <item quantity="other">%d people on this board</item>
+    </plurals>
+    <string name="collab_host_done">Done</string>
+    <string name="collab_show_code">Show code</string>
+    <plurals name="collab_hosting_connected">
+        <item quantity="one">%d person connected — anyone else can still scan this code</item>
+        <item quantity="other">%d people connected — anyone else can still scan this code</item>
+    </plurals>
 
     <!-- Sharing a whole collection: a .quillpack, a zip of each member note's own .quill bundle. -->
     <string name="action_export_collection">Share collection</string>
@@ -266,8 +310,14 @@
 
     <!-- Flashcards -->
     <string name="flashcards_title">Flashcards</string>
+    <!-- The global session: every card due now, whichever note it came from. -->
+    <string name="flashcards_due_title">Due now</string>
+    <plurals name="flashcards_review_all">
+        <item quantity="one">Review %d card due now</item>
+        <item quantity="other">Review %d cards due now</item>
+    </plurals>
     <string name="flashcards_decks_subtitle">Decks made from your notes\' Q&amp;A blocks</string>
-    <string name="flashcards_decks_empty">No flashcards yet — open a note with Q&amp;A blocks and choose "Turn into flashcards".</string>
+    <string name="flashcards_decks_empty">No flashcards yet. Make a deck from any note that has Q&amp;A blocks with both halves filled in.</string>
     <string name="flashcards_deck_due_format">%1$d due now · %2$d cards</string>
     <string name="flashcards_deck_none_due_format">All caught up · %1$d cards</string>
     <string name="flashcards_deck_next_format">Next: %1$s</string>
@@ -279,7 +329,12 @@
     <string name="delete_flashcards_title_format">Delete flashcards for \"%1$s\"?</string>
     <string name="delete_flashcards_message">The cards and their review progress will be gone. The note\'s Q&amp;A blocks stay, so you can make them again later — starting from scratch.</string>
     <string name="flashcards_deleted">Flashcards deleted</string>
-    <string name="flashcards_no_qa_message">Add a question and answer block first — flashcards are made from Q&amp;A pairs that have both halves filled in.</string>
+    <!-- Undo. Every delete in a list defers the write for as long as this bar is up, so the word
+         is literal: nothing has been removed yet. -->
+    <string name="action_undo">Undo</string>
+    <string name="note_deleted">Note deleted</string>
+    <string name="whiteboard_deleted">Whiteboard deleted</string>
+    <string name="collection_deleted">Collection deleted</string>
     <string name="flashcard_label_question">QUESTION</string>
     <string name="flashcard_label_answer">ANSWER</string>
     <string name="flashcard_tap_to_reveal">Tap to reveal the answer</string>
@@ -300,10 +355,23 @@
     <string name="flashcards_action_review_anyway">Review anyway</string>
     <string name="flashcards_action_back">Back to note</string>
 
+    <!-- Making a deck or a quiz from the Flashcards / Quizzes tabs, rather than from inside a
+         note. The picker lists notes that could produce one and says how many blocks each has. -->
+    <string name="action_make_flashcards">Make flashcards</string>
+    <string name="qa_picker_flashcards_title">Make flashcards from</string>
+    <string name="qa_picker_quiz_title">Make a quiz from</string>
+    <string name="qa_picker_no_match">No note matches that.</string>
+    <plurals name="qa_picker_blocks">
+        <item quantity="one">%d Q&amp;A block</item>
+        <item quantity="other">%d Q&amp;A blocks</item>
+    </plurals>
+    <string name="qa_picker_all_have_flashcards">Every note with Q&amp;A blocks already has flashcards.</string>
+    <string name="qa_picker_all_have_quizzes">Every note with enough Q&amp;A blocks already has a quiz.</string>
+
     <!-- Quizzes -->
     <string name="quizzes_title">Quizzes</string>
     <string name="quizzes_subtitle">Multiple choice, built from your notes\' Q&amp;A blocks</string>
-    <string name="quizzes_empty">No quizzes yet — open a note with at least %1$d Q&amp;A blocks and choose "Make quiz".</string>
+    <string name="quizzes_empty">No quizzes yet. Make one from any note with at least %1$d Q&amp;A blocks.</string>
     <string name="quiz_row_never_taken">Not taken yet</string>
     <string name="quiz_row_best_format">Best %1$d%%</string>
     <string name="quiz_row_last_taken_format">Last taken %1$s</string>
@@ -317,8 +385,36 @@
     <string name="delete_quiz_title_format">Delete the quiz for \"%1$s\"?</string>
     <string name="delete_quiz_message">Every attempt and score will be gone. The note\'s Q&amp;A blocks stay, so you can make the quiz again later — with an empty history.</string>
     <string name="quiz_deleted">Quiz deleted</string>
-    <!-- Kept under ~100 characters: it is shown in a Snackbar, which ellipsises at two lines. -->
+    <!-- Reopening a past sitting. %1$d is the score it was recorded with, %2$d the number of
+         questions on the paper. -->
+    <string name="quiz_marked_paper_title">Scored %1$d of %2$d</string>
+    <string name="quiz_attempt_not_kept">This attempt was taken before Quill started keeping answers, so there\'s no paper to show.</string>
+    <!-- The quiz session\'s "can\'t build this" panel, for a note that has since lost blocks. The
+         same shortfall found before the quiz opens is explained by the Q&amp;A hint dialog instead,
+         which can show where the button is. -->
     <string name="quiz_not_enough_qa_message">A quiz needs %1$d Q&amp;A blocks with both halves filled in — wrong options come from the others.</string>
+
+    <!-- Q&A hint dialog: shown instead of a bare "not enough blocks" message when flashcards or a
+         quiz are asked for and the note can\'t supply them. The point of the dialog is the picture,
+         so the words stay short — they name the rule, and the toolbar replica shows the way out. -->
+    <string name="qa_hint_flashcards_title">Flashcards come from Q&amp;A blocks</string>
+    <string name="qa_hint_flashcards_message">This note doesn\'t have any yet. Add one, fill in both the question and the answer, and it becomes a card.</string>
+    <string name="qa_hint_quiz_title">A quiz needs %1$d Q&amp;A blocks</string>
+    <string name="qa_hint_quiz_message">Every wrong option in a quiz is another block\'s answer, so there have to be a few to draw from. Only blocks with both halves filled in count.</string>
+    <string name="qa_hint_quiz_progress_format">This note has %1$d of %2$d.</string>
+    <string name="qa_hint_caption">It\'s in the formatting bar that appears above the keyboard while you write.</string>
+    <string name="qa_hint_strip_description">The note\'s formatting bar, with the question and answer block button highlighted</string>
+    <string name="qa_hint_action_add">Add a Q&amp;A block</string>
+    <string name="qa_hint_action_dismiss">Not now</string>
+    <!-- The same dialog asked for from the Flashcards / Quizzes tabs, where no note is open, so
+         there is nothing to add a block to and it only teaches. -->
+    <string name="qa_hint_action_got_it">Got it</string>
+    <string name="qa_hint_no_notes_message">No note has a Q&amp;A block with both halves filled in yet. Add one while you\'re writing — the question and the answer both have to say something — and it becomes a card.</string>
+    <!-- Two different shortfalls on the Quizzes tab, and the difference is worth saying: a user
+         with no Q&amp;A blocks at all is being told what one is, a user with three is being told the
+         bar is five. -->
+    <string name="qa_hint_quiz_none_message">No note has a Q&amp;A block with both halves filled in yet. Add some while you\'re writing — every wrong option in a quiz is another block\'s answer, so it needs a few to draw from.</string>
+    <string name="qa_hint_quiz_not_enough_message">No note has that many yet. Every wrong option in a quiz is another block\'s answer, so there have to be enough blocks to draw from — and only ones with both halves filled in count.</string>
 
     <!-- Quiz detail -->
     <!-- %2$s is the whole run's budget as m:ss — the same figure the session's clock counts down,
@@ -375,6 +471,10 @@
 
     <string name="delete_image_title">Delete image?</string>
     <string name="delete_image_message">This image will be removed from the note.</string>
+    <string name="action_delete_qa_block">Delete this question and answer</string>
+    <!-- %1$s is the control's own name, e.g. "Heading 1". Shown when a dimmed toolbar control is
+         tapped: dimming says it can\'t be used, and this says why. -->
+    <string name="formatting_unavailable_in_qa">%1$s isn\'t available inside a Q&amp;A block.</string>
     <string name="delete_qa_title">Delete question?</string>
     <string name="delete_qa_message">This question and its answer will be removed from the note.</string>
     <!-- Audio playback: the note's own card, the floating pill, and the notification the two share
@@ -425,6 +525,23 @@
          circle is never empty and never a stranger's placeholder face. -->
     <string name="profile_avatar_fallback">Q</string>
 
+    <!-- Study section on Profile: the streak and the calendar. The streak counts days on which
+         anything was reviewed or a quiz was sat. -->
+    <string name="profile_section_study">Study</string>
+    <string name="profile_study_calendar_caption">The last 20 weeks. Darker means a bigger day.</string>
+    <string name="profile_streak_none">No streak yet</string>
+    <string name="profile_streak_none_detail">Review a card or sit a quiz and this starts counting.</string>
+    <plurals name="profile_streak_days">
+        <item quantity="one">%d day in a row</item>
+        <item quantity="other">%d days in a row</item>
+    </plurals>
+    <plurals name="profile_streak_today">
+        <item quantity="one">%d card today</item>
+        <item quantity="other">%d cards today</item>
+    </plurals>
+    <string name="profile_streak_waiting">Nothing today yet — the streak holds until midnight.</string>
+    <string name="profile_haptics">Haptics</string>
+    <string name="profile_haptics_summary">Small taps as you use the app.</string>
     <string name="profile_section_you">You</string>
     <string name="profile_display_name">Display name</string>
     <string name="profile_display_name_empty">Not set</string>
@@ -482,7 +599,7 @@
     <string name="collection_lock_title_format">Lock \"%s\"?</string>
     <!-- Says what it does and what it costs, in that order. The flashcard sentence is here because
          losing a review schedule is the one consequence a user would not otherwise predict. -->
-    <string name="collection_lock_message">Notes in this collection will be encrypted with a key held by this device and unlocked with your fingerprint or screen lock.\n\nThey\'ll stop appearing on Home, in search, and in flashcards and quizzes until you unlock the collection.\n\nFlashcards made from these notes are removed — they store the question and answer in plain text. Re-open a note after unlocking to build its deck again.</string>
+    <string name="collection_lock_message">Notes in this collection will be encrypted with a key held by this device and unlocked with your fingerprint or screen lock.\n\nThey\'ll stop appearing on Home, in search, and in flashcards and quizzes until you unlock the collection.\n\nTheir flashcards are emptied while the collection is locked — the cards store the question and answer in plain text. Your review progress is kept: re-open a note after unlocking and its deck comes back where you left it.</string>
     <string name="collection_lock_confirm">Lock</string>
     <string name="collection_locking">Encrypting…</string>
     <string name="collection_locked">Collection locked</string>
@@ -554,25 +671,36 @@
          four features and a new user meets all four at once; naming them costs one screen and
          saves the guessing. -->
     <string name="welcome_title">Welcome to Quill</string>
-    <string name="welcome_subtitle">Notes, flashcards, quizzes and whiteboards — everything for studying, in one app that keeps it all on this device.</string>
+    <string name="welcome_subtitle">Four things that work together — and none of it leaves your phone.</string>
 
     <string name="welcome_feature_notes_title">Notes and collections</string>
-    <string name="welcome_feature_notes_summary">Write, format and group them however suits the subject.</string>
+    <string name="welcome_feature_notes_summary">Write freely, then file them however the subject wants.</string>
     <string name="welcome_feature_flashcards_title">Flashcards</string>
-    <string name="welcome_feature_flashcards_summary">A question-and-answer block in a note becomes a card to review.</string>
+    <string name="welcome_feature_flashcards_summary">Any Q&amp;A block you write turns into a card to review.</string>
     <string name="welcome_feature_quizzes_title">Quizzes</string>
-    <string name="welcome_feature_quizzes_summary">Sit a quiz built from those same blocks and keep the scores.</string>
+    <string name="welcome_feature_quizzes_summary">Sit a quiz built from those same blocks. Scores stick around.</string>
     <string name="welcome_feature_whiteboards_title">Whiteboards</string>
-    <string name="welcome_feature_whiteboards_summary">Sketch what a sentence cannot say, alone or inside a note.</string>
+    <string name="welcome_feature_whiteboards_summary">Sketch what a sentence can\'t — on its own, or inside a note.</string>
 
-    <string name="welcome_action_sample">Start with sample content</string>
+    <string name="welcome_action_sample">Fill it with an example</string>
     <string name="welcome_action_skip">Start empty</string>
-    <string name="welcome_action_working">Adding sample content…</string>
+    <string name="welcome_action_working">Setting things up…</string>
 
     <!-- The report afterwards. Every count in it comes from what was actually written, so the
          phrasing has to survive a number other than the expected one. -->
-    <string name="welcome_done_title">Sample content added</string>
-    <string name="welcome_done_subtitle">Here is what is now in your Quill. None of it is special — edit or long-press to delete any of it, like anything else you write.</string>
+    <!-- The badge the summary pane lands on. A string rather than a literal in the layout so it
+         is one edit away from being something else, and so it is never mistaken for content. -->
+    <string name="welcome_done_emoji">🎉</string>
+    <string name="welcome_done_title">Your Quill is ready</string>
+    <string name="welcome_done_subtitle">Have a look around. None of it is precious — edit it, or long-press to delete any of it, exactly like anything you write yourself.</string>
+    <!-- Pane three of the welcome flow: the name. The field arrives pre-filled with a suggestion,
+         so both buttons leave with a name — "Skip" means "this one is fine", not "no name". -->
+    <string name="welcome_name_title">What should we call you?</string>
+    <string name="welcome_name_subtitle">It\'s how Quill greets you, and what shows up beside your drawings when you share a whiteboard. We\'ve picked one to start with — change it here or later in Profile.</string>
+    <string name="welcome_name_hint">Your name</string>
+    <string name="welcome_name_shuffle">🎲 Try another</string>
+    <string name="welcome_name_action_continue">Continue</string>
+    <string name="welcome_name_action_skip">Keep this one</string>
     <string name="welcome_done_action">Start exploring</string>
 
     <string name="welcome_summary_collection_where">“%1$s” — open it from Home</string>

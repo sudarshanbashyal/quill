@@ -14,7 +14,8 @@
         android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingHorizontal="@dimen/spacing_md"
         android:paddingTop="@dimen/spacing_lg"
         android:paddingBottom="@dimen/spacing_sm"
@@ -22,23 +23,61 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="@string/flashcards_title"
-            android:textColor="@color/text_primary"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <TextView
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/flashcards_title"
+                android:textColor="@color/text_primary"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="@string/flashcards_decks_subtitle"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+        </LinearLayout>
+
+        <!-- The same action as the empty state's button, kept reachable once the list has rows in
+             it: a deck or a quiz is made from a note, and until now the only way in was to open
+             that note and find the menu item. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/create_deck"
+            style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_xs"
-            android:text="@string/flashcards_decks_subtitle"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            android:contentDescription="@string/action_make_flashcards"
+            app:icon="@drawable/ic_add"
+            app:iconTint="@color/text_primary" />
 
     </LinearLayout>
+
+    <!-- Only when something is actually due. A permanent "review everything" button that mostly
+         says nothing is due is a button you learn to stop reading; this one appears because there
+         is work, and its label is the work. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/review_all_due"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/spacing_md"
+        android:layout_marginTop="@dimen/spacing_sm"
+        android:visibility="gone"
+        app:icon="@drawable/ic_flashcard"
+        app:layout_constraintTop_toBottomOf="@id/header"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Review 7 cards due now"
+        tools:visibility="visible" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_decks"
@@ -47,23 +86,42 @@
         android:clipToPadding="false"
         android:paddingTop="@dimen/spacing_sm"
         android:paddingBottom="@dimen/spacing_lg"
-        app:layout_constraintTop_toBottomOf="@id/header"
+        app:layout_constraintTop_toBottomOf="@id/review_all_due"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <TextView
+    <LinearLayout
         android:id="@+id/empty_decks"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="@dimen/spacing_lg"
-        android:gravity="center"
-        android:text="@string/flashcards_decks_empty"
-        android:textColor="@color/text_secondary"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
         android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/header"
+        app:layout_constraintTop_toBottomOf="@id/review_all_due"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <TextView
+            android:id="@+id/empty_decks_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/flashcards_decks_empty"
+            android:textColor="@color/text_secondary" />
+
+        <!-- Nothing here is the moment the offer is most useful, so the empty state carries the
+             action rather than only describing where it lives. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/create_deck_empty"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:text="@string/action_make_flashcards" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -29,6 +29,11 @@ public class NotesAdapter extends RecyclerView.Adapter<NotesAdapter.NoteViewHold
         this.listener = listener;
     }
 
+    /** The note at a position, for the swipe handler; null for a position no longer in the list. */
+    public Note noteAt(int position) {
+        return position < 0 || position >= notes.size() ? null : notes.get(position);
+    }
+
     public void submitList(List<Note> newNotes) {
         notes.clear();
         notes.addAll(newNotes);

@@ -30,6 +30,8 @@ import android.text.format.DateFormat;
 import java.util.Calendar;
 
 import mse.quill.R;
+import mse.quill.data.StudyHistory;
+import mse.quill.util.Haptics;
 import mse.quill.data.AppExecutors;
 import mse.quill.reminders.StudyReminders;
 import mse.quill.security.AppLock;
@@ -138,8 +140,63 @@ public class ProfileFragment extends Fragment {
 
     private void render() {
         renderIdentity();
+        renderStudy();
+        renderHaptics();
         renderReminders();
         renderAppLock();
+    }
+
+    /**
+     * The streak and the calendar.
+     *
+     * <p>Read on every resume, like everything else here, because the answer changes while the user
+     * is away — reviewing a deck and coming back to Profile should show the day already filled in
+     * rather than the state it had before the session.
+     *
+     * <p>The wording never scolds. "Nothing today yet" says the streak is still standing rather
+     * than that it is about to break, because a study app that opens with a threat is one people
+     * stop opening.
+     */
+    private void renderStudy() {
+        StudyHistory.load(requireContext(), history -> {
+            if (!isAdded()) return;
+            View root = requireView();
+            TextView streak = root.findViewById(R.id.study_streak);
+            TextView detail = root.findViewById(R.id.study_streak_detail);
+
+            if (history.streakDays == 0) {
+                streak.setText(R.string.profile_streak_none);
+                detail.setText(R.string.profile_streak_none_detail);
+            } else {
+                streak.setText(getResources().getQuantityString(
+                        R.plurals.profile_streak_days, history.streakDays, history.streakDays));
+                detail.setText(history.reviewedToday > 0
+                        ? getResources().getQuantityString(R.plurals.profile_streak_today,
+                                history.reviewedToday, history.reviewedToday)
+                        : getString(R.string.profile_streak_waiting));
+            }
+
+            ((StudyCalendarView) root.findViewById(R.id.study_calendar)).setHistory(history);
+        });
+    }
+
+    /**
+     * The haptics switch. Set without its listener attached, then wired — otherwise restoring the
+     * stored state on every resume would read as the user having just flipped it, and the same
+     * mistake would write the value back on each visit.
+     */
+    private void renderHaptics() {
+        View root = requireView();
+        MaterialSwitch toggle = root.findViewById(R.id.switch_haptics);
+        toggle.setOnCheckedChangeListener(null);
+        toggle.setChecked(ProfilePreferences.hapticsEnabled(requireContext()));
+        toggle.setOnCheckedChangeListener((button, checked) -> {
+            ProfilePreferences.setHapticsEnabled(requireContext(), checked);
+            // Fired on the way on only: a tap that turns them off should be followed by silence,
+            // which is both the setting working and the clearest possible confirmation of it.
+            if (checked) Haptics.confirm(button);
+        });
+        root.findViewById(R.id.row_haptics).setOnClickListener(v -> toggle.toggle());
     }
 
     private void renderIdentity() {

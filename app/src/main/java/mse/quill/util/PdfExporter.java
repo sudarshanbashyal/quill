@@ -371,13 +371,18 @@ public final class PdfExporter {
         File file = new File(path);
         if (!file.exists()) return null;
 
+        // Same door as every other decode: an image in a locked collection is encrypted on disk,
+        // and an export of that note runs while the collection is open. See MediaFiles.
+        byte[] data = mse.quill.security.MediaFiles.readPlaintext(path);
+        if (data == null) return null;
+
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, bounds);
+        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
 
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight);
-        return BitmapFactory.decodeFile(path, options);
+        return BitmapFactory.decodeByteArray(data, 0, data.length, options);
     }
 
     private static int sampleSize(int width, int height) {

@@ -12,7 +12,9 @@
       "Bash(echo \"exit: $?\")",
       "Bash(grep -rn *)",
       "Bash(echo \"grep exit: $?\")",
-      "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :study:test -q)"
+      "Bash(./gradlew.bat :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :study:test -q)",
+      "Bash(./gradlew.bat compileDebugJavaWithJavac -q)",
+      "Bash(./gradlew.bat :app:compileDebugJavaWithJavac --console=plain -q)"
     ]
   }
 }

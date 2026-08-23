@@ -4,6 +4,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.text.TextUtils;
 
+import java.util.Random;
+
+import mse.quill.R;
+
 /**
  * Who the user is to Quill: a display name, and whether they want reminders.
  *
@@ -17,7 +21,9 @@ public final class ProfilePreferences {
 
     private static final String PREFS_NAME = "profile_prefs";
     private static final String KEY_DISPLAY_NAME = "display_name";
+    private static final String KEY_COLLAB_NAME = "collab_display_name";
     private static final String KEY_NOTIFICATIONS_ENABLED = "notifications_enabled";
+    private static final String KEY_HAPTICS_ENABLED = "haptics_enabled";
     private static final String KEY_REMINDER_HOUR = "reminder_hour";
     private static final String KEY_REMINDER_MINUTE = "reminder_minute";
 
@@ -40,6 +46,69 @@ public final class ProfilePreferences {
     }
 
     /**
+     * Gives a brand-new install a name of its own, and returns whatever the name now is.
+     *
+     * <p>A generated name beats no name for the same reason a new document is called "Untitled" and
+     * not left blank: Home's greeting has a shape, and the version without a name is the lesser half
+     * of it. It is a starting point, not an identity — the Profile screen's field shows it from the
+     * first visit, so changing it is one tap and obviously allowed.
+     *
+     * <p><b>Two words, not a number.</b> The name's real job is telling people apart in a shared
+     * whiteboard session, and a pair like "Amber Fox" is distinguishable at a glance where
+     * {@code quill_7692} and {@code quill_1043} are two strings that have to be read digit by
+     * digit. It also reads as a person rather than as an account, which is what a label beside
+     * someone's strokes should do.
+     *
+     * <p>Only when nothing is set, and only called from the welcome screen — an existing notebook
+     * whose owner never filled the field in has deliberately been greeted plainly for weeks, and an
+     * update that started calling them "Quiet Heron" would be an odd thing to do to them.
+     */
+    public static String ensureDefaultName(Context context) {
+        String existing = displayName(context);
+        if (existing != null) return existing;
+
+        String generated = generateName(context);
+        setDisplayName(context, generated);
+        return generated;
+    }
+
+    /**
+     * The name the other phones in a live whiteboard session see.
+     *
+     * <p>Falls back to a generated two-word name rather than to {@code Build.MODEL}, which is what
+     * used to happen: a chip reading "SM-A546B" beside someone's strokes names a handset, not a
+     * person, and every collaborator on the same model gets the same label.
+     *
+     * <p>Kept under its own key rather than routed through {@link #ensureDefaultName} on purpose.
+     * That one is the welcome screen's to call, and a notebook old enough to predate it has been
+     * greeted plainly on Home ever since — joining someone's whiteboard is not a reason to start
+     * calling them "Quiet Heron" there too. Setting a real name in Profile still wins here from
+     * the moment it is set, since {@link #displayName} is checked first.
+     */
+    public static String collabDisplayName(Context context) {
+        String own = displayName(context);
+        if (own != null) return own;
+
+        String fallback = prefs(context).getString(KEY_COLLAB_NAME, null);
+        if (!TextUtils.isEmpty(fallback)) return fallback;
+
+        // Stored rather than generated per session: a collaborator who leaves and rejoins should
+        // come back as the same person, and the host's roster should not gain a stranger.
+        String generated = generateName(context);
+        prefs(context).edit().putString(KEY_COLLAB_NAME, generated).apply();
+        return generated;
+    }
+
+    /** One suggestion, stored nowhere — the welcome screen's shuffle button tries them on. */
+    public static String generateName(Context context) {
+        Random random = new Random();
+        String[] adjectives = context.getResources().getStringArray(R.array.default_name_adjectives);
+        String[] nouns = context.getResources().getStringArray(R.array.default_name_nouns);
+        return adjectives[random.nextInt(adjectives.length)]
+                + " " + nouns[random.nextInt(nouns.length)];
+    }
+
+    /**
      * Sanitized on the way in as well as filtered at the field, so the stored value obeys
      * {@link DisplayName}'s rule whichever route it arrived by — notably a paste the IME commits
      * wholesale rather than keystroke by keystroke.
@@ -49,6 +118,19 @@ public final class ProfilePreferences {
         prefs(context).edit()
                 .putString(KEY_DISPLAY_NAME, TextUtils.isEmpty(cleaned) ? null : cleaned)
                 .apply();
+    }
+
+    /**
+     * Whether the app's own small vibrations are on. Default true — they are part of how the
+     * reviewing screens feel, and a feature nobody discovers because it ships off is not a feature.
+     * The switch exists because haptics are genuinely unwanted by some people, not as a hedge.
+     */
+    public static boolean hapticsEnabled(Context context) {
+        return prefs(context).getBoolean(KEY_HAPTICS_ENABLED, true);
+    }
+
+    public static void setHapticsEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_HAPTICS_ENABLED, enabled).apply();
     }
 
     /** Whether the daily study reminder is on. Acted on by {@code StudyReminders}. */
