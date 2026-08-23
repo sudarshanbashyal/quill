@@ -3390,6 +3390,51 @@ stops at the gate; unlocking opens a fresh board with "Connecting…"; twenty se
 five options and "Join session" opens Play Services' scanner. The one thing not verifiable here is
 two devices actually drawing together — that needs the second phone.
 
+## 2026-08-20 (later still) — Feature implementation: N-peer whiteboard collaboration
+
+**Asked:** scale live whiteboard collaboration past two devices, and make sessions persist across
+leaving the whiteboard screen rather than ending the moment the fragment is torn down. Built on
+`feat/multiUserWhiteboard`.
+
+**`CollabSessionHolder` — session ownership moved out of the fragment.** A new static singleton
+holds the live `CollabSession` independent of any one `WhiteboardFragment` instance, so the session
+survives that fragment being destroyed and recreated (back-and-forth nav, rotation) instead of
+dying with the screen that opened it. Fragments talk to it through `attach`/`detach`; events that
+arrive with no screen attached (ink drawn while the host had the board closed) are buffered — up to
+a generous but bounded queue — and replayed on the next `attach` rather than dropped. Ends only on
+an explicit `end()` (host) or `leave()` (joiner), or a real Nearby connection loss.
+
+**This is a deliberate scope reduction from the plan**, not the full redesign: `memory/
+whiteboard_collab_redesign_plan.md` called for a bound foreground `Service` (persistent
+notification, survives the process itself being backgrounded — Nearby throttles once that
+happens). `CollabSessionHolder` gets session persistence across fragment teardown/recreate but
+*not* survival once the whole app is backgrounded or killed by the OS. Documented in the holder's
+own class doc as the piece of the redesign implemented today, with promoting it into a real
+`Service` left as the described next step.
+
+**Protocol grew from "two peers, implicit roles" to a real star topology.** `CollabSession` went
+from assuming exactly one peer everywhere to a peer map, unbounded, with the host continuing to
+advertise after the first connection so a third (and further) device can still find it. Four new
+`CollabMessage` types carry what a two-device version could leave implicit: `TYPE_PEER_INFO` (name
+handshake, relayed by the host so every peer's display name converges across the whole star),
+`TYPE_HOST_ENDED` (lets a joiner tell "the host ended it" apart from a bare connection drop),
+`TYPE_PEER_LEFT` (a joiner's explicit "Leave" relayed to the rest rather than dropping the whole
+session), and `TYPE_PRESENCE` (whether a peer is actually looking at the board right now, versus
+merely still connected). `SNAPSHOT` — the host's whole board, sent to a newly-joined peer — now
+arrives in numbered chunks (`CollabMessage.snapshotChunks`, budgeted at 3/4 of Nearby's
+`MAX_BYTES_DATA_SIZE` per chunk) instead of one payload, since a long-lived board full of ink can
+exceed the ~1 MB `BYTES` payload cap that a two-peer prototype never had to worry about.
+
+**UI: a people count replaced the per-peer chip row.** `collabPeople`, a small tonal button in the
+top bar next to the title, shows the number of people currently viewing the board and opens the
+full roster (names) on tap — visible only during a live session. This replaced an earlier
+chip-per-collaborator design (`item_collab_chip.xml`, deleted) with something that doesn't grow the
+top bar as a session gets bigger and reads at a glance rather than as a row to scan.
+
+**Status:** compiles clean (`:app:compileDebugJavaWithJavac`); **not verified on a real device** —
+no adb in this environment, and an N-peer session specifically needs three-plus physical phones to
+exercise the star topology, which two-device testing can't cover even where it's available.
+
 ## 2026-08-20 — Bug fix: whiteboard collab crash on exit, non-host
 
 **Reported:** while collaborating live on a whiteboard, quitting the collab session as the
@@ -3902,3 +3947,41 @@ database, which is the user's call to make.
 
 Database was backed up and restored twice more (three cards graded to reach the summary panel), byte
 identical by md5 both times, deck list confirmed back at "Review 3 cards due now".
+
+## 2026-08-23 — Feature implementation: whiteboard Picture-in-Picture
+
+**Asked:** finish "the whiteboard with pip function" on `feat/pip`, an empty branch. Ambiguous
+enough to ask first — offered system PIP, an in-app floating overlay, or a reference-image overlay
+as the three plausible readings. User picked real Android system PIP.
+
+**Built:** a `btnPip` toolbar button plus auto-enter on `MainActivity.onUserLeaveHint()` when the
+whiteboard is the front screen (the video-app pattern — leaving shrinks rather than just pausing).
+`MainActivity.enterWhiteboardPip(w, h)` builds `PictureInPictureParams` with an aspect ratio taken
+from the canvas, clamped to Android's 1:2.39–2.39:1 range. A new `mse.quill.util.PipAware`
+interface lets `WhiteboardFragment` hide its toolbar/tool-rail while in PIP and restore them on the
+way out. Manifest gained `supportsPictureInPicture` + PIP's `configChanges` on `MainActivity`.
+
+**Caught before shipping:** `MainActivity.onPause()` unconditionally sets `FLAG_SECURE` when App
+Lock is on — entering PIP also fires `onPause`, so without a guard the floating window would have
+rendered solid black for anyone with App Lock enabled. Added an `isInPip()` check.
+
+**Follow-up asks, answered without more code first:**
+- *"Draw while in PIP?"* — not possible by platform design: a system PIP window is touch-inert,
+  taps on it only move/resize/expand it, never reach the app's views. Real interactivity would mean
+  dropping system PIP for a custom `SYSTEM_ALERT_WINDOW` overlay instead — a materially bigger
+  rework needing the "draw over other apps" permission. Asked which the user wanted; **they chose
+  to keep system PIP and rely on tap-to-expand**, which already worked with no extra code. Worth
+  remembering if a future ask revives "let me draw in PIP" — start from that fork, don't re-derive it.
+- *"Why does PIP show the top-left of the canvas, I want the middle"* — asked first whether this
+  meant the floating window's screen position or the canvas content shown inside it (the second,
+  confirmed). Root cause: hiding the toolbar/sidebar to make room for PIP resizes `WhiteboardView`
+  without re-centring it, so whatever corner was on screen before (top-left, where a board opens)
+  just gets bigger. Fixed with `whiteboardView.centreOnContent()` in `onPipModeChanged(true)`,
+  posted so it runs after the resize layout pass rather than measuring against the pre-resize
+  bounds; the original scroll position is saved and restored on the way back out of PIP so normal
+  editing isn't disturbed by the temporary re-centre.
+
+**Status:** compiles clean (`:app:compileDebugJavaWithJavac`) at every step; **nothing in this
+session was verified on-device** — no adb in this environment. The PIP transition itself, whether
+the FLAG_SECURE fix actually clears the black-thumbnail case, and whether the `view.post()` timing
+for re-centring holds up across devices all still need the user's confirmation on a real phone.

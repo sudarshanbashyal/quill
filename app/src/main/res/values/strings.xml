@@ -119,6 +119,7 @@
     <string name="action_centre_canvas">Centre on drawing</string>
     <string name="action_hide_tools">Hide tools</string>
     <string name="action_show_tools">Show tools</string>
+    <string name="action_enter_pip">Picture in picture</string>
     <string name="action_move_tool">Move the canvas</string>
     <string name="action_text_tool">Add text</string>
     <string name="action_background">Paper style</string>
