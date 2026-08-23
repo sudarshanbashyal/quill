@@ -3902,3 +3902,104 @@ database, which is the user's call to make.
 
 Database was backed up and restored twice more (three cards graded to reach the summary panel), byte
 identical by md5 both times, deck list confirmed back at "Review 3 cards due now".
+
+## 2026-08-23 — A refactoring plan, and the whole of Epic A (Architecture / Feature implementation)
+
+Two halves. First an architecture sweep of `feat/multiUserWhiteboard` — what is left to build, and
+what does not follow good practice — written up as a plan to tackle later. Then everything
+outstanding in Epic A, implemented.
+
+**The sweep found seven structural problems and one bug class.** They live in the new
+`memory/refactoring_plan.md` as cause → solution → steps, `OPEN` except the one done here. In
+order of leverage: `WhiteboardFragment` is a god class (1421 lines, ~90 methods, four
+responsibilities, with snapshot-reassembly state as *fragment fields*, so a half-received board
+belongs to an object Android may destroy mid-transfer); the domain model (`NoteSegment` and its six
+subclasses) sits in `ui/notes/editor/model/` and is imported by eleven packages including
+`data/` and `share/`, so persistence and the export format depend on the editor's package; the data
+layer calls *upward* into `widget/` — `NoteRepository` alone has eight inline fully-qualified
+`WidgetUpdater` calls, written fully-qualified rather than imported, which is the tell it was
+bolted on; three different repository constructor conventions; no abstraction boundary between UI
+and data (ten fragments `new` their concrete repositories, `NoteEditorFragment` six of them), which
+is precisely why repository tests had to be instrumented; and `data/` is a grab bag holding eight
+Wear transport classes among the repositories.
+
+Deliberately *not* on the list, recorded so a later sweep doesn't re-discover them: `NoteCrypto`
+living in `data/` rather than `security/` (it is the notes-table side of `CollectionCrypto` and
+says so), the `:study`/`:app` split packages (a documented trade from the extraction — noted that
+the cost has since accrued, and to fix it only when something else forces the files open), and the
+things that are already right: zero hardcoded strings across 27 layouts, `isAdded()` guards in
+every fragment, `ensureAdditiveSchema` checking for columns rather than trusting version numbers.
+
+**The migration was possible because of what the deleted `SpanSerializer` turned out to be.**
+Epic A's oldest item was the destructive `onUpgrade`. The obstacle looked fatal: a pre-v3 database
+stores note bodies as `note_segments` rows with formatted text in a `text_content` BLOB, and the
+class that wrote that blob was deleted in `1aa1045`. Recovering it from git showed the format was
+`Html.toHtml` output — plain HTML, not a custom binary encoding — so the decode is ten lines and
+the conversion is lossless for everything v2 could express. It lives inside `AppDatabase` with the
+migration rather than as a resurrected class, because it decodes a format nothing writes any more.
+
+`rebuild()` is now **deleted, not merely unreachable**: leaving a drop-and-recreate branch in place
+is leaving somewhere for a later edit to fall.
+
+Three things the migration turned up that were not on anyone's list. The old table declares
+`position INTEGER NOT NULL` and nothing since v3 supplies a position, so *not* reshaping it would
+have produced a database that upgraded successfully and then failed every image insert afterwards.
+`onDowngrade` was inherited from `SQLiteOpenHelper`, which throws — meaning anyone installing an
+older Quill over a newer one gets a crash on every launch with their notes intact and unreachable.
+And `biometric_locked` was added to `collections` *after* `ensureNotesFts` ran, while
+`backfillNotesFts` joins on that column — so every database old enough to lack it silently skipped
+the search backfill and came out with an empty index. Moving one line up fixed it.
+
+`DatabaseMigrationTest` needed a seam: the real helper is a singleton bound to `quill.db`, so a
+test seeding an old-shaped database there would be upgrading — and on failure destroying — the
+notes actually on the device. `AppDatabase.openForTest(context, name)` is that seam and does not
+route through `getInstance`, so a test connection is never handed to app code.
+
+**The threading port was a correctness fix, not tidying.** All 21 `new Thread` sites (20 in
+`WhiteboardFragment`, one in `CollabSessionHolder`) now go through `AppExecutors`' single disk
+thread. A thread was being spawned per completed stroke and another to delete on undo, with nothing
+ordering them — a fast undo could issue its delete on a thread that beat the insert. Several of
+those threads also called `requireActivity().runOnUiThread(...)` and `requireContext()` *from the
+background thread*, which throws once the fragment detaches: the same crash class the collab crash
+fix patched at the listener level, still sitting here. `AppExecutors.mainThread` needs no activity,
+so the port removed it.
+
+`StrokeRepository` and `WhiteboardTextRepository` gained the async/`Sync` split the other
+repositories already had, so the convention now covers every repository rather than all but two.
+The DAO-era `strokeDao`/`textDao` field names finally went.
+
+The main-thread audit found exactly **one** real offender: `WhiteboardFragment.onCreate`'s
+`insertSync` of a new board, justified when it was written because `strokes` has a foreign key onto
+that row and the stroke inserts ran on unordered threads. Unifying the threading is what made it
+removable — one FIFO thread means queueing it first is enough.
+
+**Two JVM tests had been red and nobody noticed.** `DisplayNameTest` still asserted that spaces are
+stripped from a display name; that stopped being true when spaces were deliberately allowed
+("Sudarshan Bashyal" is a name a person has, and excluding the space quietly meant nobody could
+type their own). The tests were never updated. Fixed to assert the documented rule, plus the space
+handling that had no coverage at all — runs collapsed, ends trimmed, a dropped leading space not
+charged against the length budget.
+
+**Writing the editor test found an undocumented fallback.** `getFocusedSegmentIndex` defaults to
+the *last* segment rather than returning -1, so a block inserted with nothing focused lands *above*
+the final paragraph rather than after it. Pinned down as a test rather than changed — it is
+reachable only before the user has touched the editor. Two other traps for anyone writing view
+tests here: segment views inflate Material widgets, so the bare application context fails with
+"requires your app theme to be Theme.MaterialComponents" and needs a `ContextThemeWrapper`; and
+`requestFocus()` does work on a detached hierarchy, which is what makes caret-position tests
+possible without an Activity.
+
+**CI was built and then removed** — the user said they don't need it, mid-turn. Worth knowing if it
+returns: `:app:lintDebug` currently fails with 5 errors (a `MediaStore.Downloads` field above
+minSdk in `NoteExportStore`, a FINE/COARSE location pair in the manifest, `RichTextField` not
+extending `AppCompatEditText`, two `android:tint` uses wanting `app:tint`), so a lint gate would be
+red on day one.
+
+**Verification, and its limit.** 139 instrumented tests and the full JVM suite pass — 26 of those
+instrumented tests are new. The connected suite uninstalls the app each run, so `quill.db`,
+`shared_prefs` and `files` were tarred out through `run-as` beforehand and restored after each of
+the four runs, md5-identical every time (`19a04b99037df05ab270f8fdb9b072d3`). The app launches
+clean afterwards. What could **not** be checked: the whiteboard fragment's live persistence and
+collab paths by hand — this install has App Lock on and opens straight onto the PIN sheet, and no
+PIN was supplied this session. The whiteboard tests that pass cover `WhiteboardView`, not the
+fragment's database path.

@@ -143,8 +143,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             });
 
     // ── Data ──────────────────────────────────────────────────────────────────
-    private StrokeRepository     strokeDao;
-    private WhiteboardTextRepository textDao;
+    private StrokeRepository     strokeRepo;
+    private WhiteboardTextRepository textRepo;
+    private final AppExecutors executors = AppExecutors.getInstance();
     private WhiteboardRepository whiteboardRepo;
     private String        whiteboardId;
     private String        noteId;
@@ -196,8 +197,8 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         // 2. Get access to the database (singleton — safe to call anywhere)
         AppDatabase db = AppDatabase.getInstance(requireContext());
-        strokeDao      = new StrokeRepository(db);
-        textDao        = new WhiteboardTextRepository(db);
+        strokeRepo     = new StrokeRepository(db);
+        textRepo       = new WhiteboardTextRepository(db);
         whiteboardRepo = new WhiteboardRepository(db);
 
         // 3. If no whiteboard_id was passed, this is a brand-new whiteboard —
@@ -210,10 +211,11 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             wb.createdAt    = System.currentTimeMillis();
             wb.updatedAt    = wb.createdAt;
             wb.background   = WhiteboardPreferences.defaultBackground(requireContext());
-            // Synchronous on purpose: `strokes` has a foreign key onto this row, and the stroke
-            // inserts below run on their own unordered threads, so the parent row has to exist
-            // before the canvas is even shown.
-            whiteboardRepo.insertSync(wb);
+            // `strokes` has a foreign key onto this row, so it has to exist before the first
+            // stroke insert — but that no longer needs a blocking write on the main thread to
+            // arrange. Every write on this screen now goes through AppExecutors' single disk
+            // thread, which runs them in submission order, so queueing this one first is enough.
+            executors.diskIO(() -> whiteboardRepo.insertSync(wb));
         }
     }
 
@@ -225,7 +227,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private void touchWhiteboard() {
         final String id = whiteboardId;
         final long now = System.currentTimeMillis();
-        new Thread(() -> whiteboardRepo.touchSync(id, now)).start();
+        executors.diskIO(() -> whiteboardRepo.touchSync(id, now));
     }
 
     @Nullable
@@ -271,10 +273,10 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         // Load any strokes already saved for this whiteboard (e.g. reopening a note)
         // Runs on a background thread because SQLite reads should not block the UI thread.
-        new Thread(() -> {
-            List<Stroke> existing = strokeDao.getByWhiteboard(whiteboardId);
-            List<WhiteboardText> existingText = textDao.getByWhiteboard(whiteboardId);
-            requireActivity().runOnUiThread(() -> {
+        executors.diskIO(() -> {
+            List<Stroke> existing = strokeRepo.getByWhiteboardSync(whiteboardId);
+            List<WhiteboardText> existingText = textRepo.getByWhiteboardSync(whiteboardId);
+            executors.mainThread(() -> {
                 if (whiteboardView == null) return;
                 whiteboardView.loadTexts(existingText);
                 whiteboardView.loadStrokes(existing);
@@ -288,7 +290,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
                 all.sort((a, b) -> Long.compare(a.createdAt, b.createdAt));
                 for (Undoable u : all) undoStack.push(u);
             });
-        }).start();
+        });
     }
 
     /**
@@ -303,16 +305,16 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     public void onResume() {
         super.onResume();
         final String id = whiteboardId;
-        new Thread(() -> {
+        executors.diskIO(() -> {
             if (whiteboardRepo.getByIdSync(id) != null) return;
-            requireActivity().runOnUiThread(() -> {
+            executors.mainThread(() -> {
                 if (!isAdded()) return;
                 // The board is gone or shut away, so the session on it has nothing left to be
                 // about. No warning here — this exit was never the user's choice to make.
                 if (collabSession != null) endCollabSession();
                 androidx.navigation.fragment.NavHostFragment.findNavController(this).navigateUp();
             });
-        }).start();
+        });
     }
 
     @Override
@@ -517,20 +519,23 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private void setUpTitle() {
         if (titleInput == null) return;
         final String id = whiteboardId;
-        new Thread(() -> {
+        // The context is resolved here, on the main thread: requireContext() from a background
+        // thread throws the moment the fragment detaches, which is exactly when a slow read lands.
+        final Context context = requireContext().getApplicationContext();
+        executors.diskIO(() -> {
             Whiteboard board = whiteboardRepo.getByIdSync(id);
             if (board == null) return;
             String name = board.title;
-            String hint = NoteDisplayUtils.resolveWhiteboardTitle(requireContext(), board);
+            String hint = NoteDisplayUtils.resolveWhiteboardTitle(context, board);
             int background = board.background;
-            requireActivity().runOnUiThread(() -> {
+            executors.mainThread(() -> {
                 if (titleInput == null) return;
                 loadedTitle = name;
                 titleInput.setHint(hint);
                 if (name != null && !name.trim().isEmpty()) titleInput.setText(name);
                 applyBackground(background);
             });
-        }).start();
+        });
     }
 
     /**
@@ -548,7 +553,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         loadedTitle = value;
         final String id = whiteboardId;
-        new Thread(() -> whiteboardRepo.renameSync(id, value)).start();
+        executors.diskIO(() -> whiteboardRepo.renameSync(id, value));
     }
 
     /**
@@ -565,7 +570,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             applyBackground(style);
             WhiteboardPreferences.setDefaultBackground(requireContext(), style);
             final String id = whiteboardId;
-            new Thread(() -> whiteboardRepo.setBackgroundSync(id, style)).start();
+            executors.diskIO(() -> whiteboardRepo.setBackgroundSync(id, style));
             return true;
         });
         menu.show();
@@ -627,7 +632,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         whiteboardView.addText(item);
         undoStack.push(new Undoable(item.id, true, item.createdAt));
-        new Thread(() -> textDao.insert(item)).start();
+        textRepo.insert(item);
         touchWhiteboard();
         if (collabSession != null && collabSession.isConnected()) {
             collabSession.send(CollabMessage.text(item));
@@ -705,7 +710,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         undoStack.push(new Undoable(stroke.id, false, stroke.createdAt));
 
         // Save to SQLite on a background thread (never touch DB on the UI thread)
-        new Thread(() -> strokeDao.insertStroke(stroke)).start();
+        strokeRepo.insertStroke(stroke);
         touchWhiteboard();
         if (collabSession != null && collabSession.isConnected()) {
             collabSession.send(CollabMessage.stroke(stroke));
@@ -738,10 +743,10 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         if (last.text) {
             whiteboardView.removeText(last.id);
-            new Thread(() -> textDao.delete(last.id)).start();
+            textRepo.delete(last.id);
         } else {
             whiteboardView.removeStroke(last.id);
-            new Thread(() -> strokeDao.deleteStroke(last.id)).start();
+            strokeRepo.deleteStroke(last.id);
         }
         touchWhiteboard();
         // Undo only ever pops something *this device* added — received strokes/text are never
@@ -763,10 +768,8 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private void clearWhiteboard() {
         whiteboardView.clearAll();
         undoStack.clear(); // nothing left to undo once everything is wiped
-        new Thread(() -> {
-            strokeDao.deleteAllForWhiteboard(whiteboardId);
-            textDao.deleteAllForWhiteboard(whiteboardId);
-        }).start();
+        strokeRepo.deleteAllForWhiteboard(whiteboardId);
+        textRepo.deleteAllForWhiteboard(whiteboardId);
         touchWhiteboard();
         // Clear is destructive to everyone in a live session, so only the host may trigger it —
         // btnClear is disabled for a joiner (see applyCollabRoleToUi) — and the host tells the
@@ -781,10 +784,8 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private void applyRemoteClear() {
         whiteboardView.clearAll();
         undoStack.clear();
-        new Thread(() -> {
-            strokeDao.deleteAllForWhiteboard(whiteboardId);
-            textDao.deleteAllForWhiteboard(whiteboardId);
-        }).start();
+        strokeRepo.deleteAllForWhiteboard(whiteboardId);
+        textRepo.deleteAllForWhiteboard(whiteboardId);
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -816,15 +817,16 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private void shareWhiteboard() {
         String id = whiteboardId;
         String name = titleInput != null ? titleInput.getText().toString().trim() : "";
-        new Thread(() -> {
+        final Context exportContext = requireContext().getApplicationContext();
+        executors.diskIO(() -> {
             Whiteboard board = whiteboardRepo.getByIdSync(id);
             if (board == null) return;
-            List<Stroke> strokes = strokeDao.getByWhiteboard(id);
-            List<WhiteboardText> texts = textDao.getByWhiteboard(id);
+            List<Stroke> strokes = strokeRepo.getByWhiteboardSync(id);
+            List<WhiteboardText> texts = textRepo.getByWhiteboardSync(id);
             String title = name.isEmpty() ? board.title : name;
 
             mse.quill.util.NoteExportStore.Saved saved = mse.quill.util.NoteExportStore.save(
-                    requireContext().getApplicationContext(),
+                    exportContext,
                     title == null ? "" : title,
                     mse.quill.share.WhiteboardBundle.EXTENSION,
                     mse.quill.share.WhiteboardBundle.MIME_TYPE,
@@ -832,7 +834,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
                             title, board.background, board.createdAt, board.updatedAt,
                             strokes, texts, out));
 
-            requireActivity().runOnUiThread(() -> {
+            executors.mainThread(() -> {
                 if (!isAdded()) return;
                 if (saved == null) {
                     Toast.makeText(requireContext(), R.string.share_failed, Toast.LENGTH_SHORT).show();
@@ -850,7 +852,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
                     Toast.makeText(requireContext(), R.string.share_no_target, Toast.LENGTH_LONG).show();
                 }
             });
-        }).start();
+        });
     }
 
     /** Renders the current canvas to a PNG file in the device's Pictures folder. */
@@ -1013,33 +1015,34 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         final String copyTitle = typed.isEmpty()
                 ? null : getString(R.string.collab_join_copy_name, typed);
         final Context appContext = requireContext().getApplicationContext();
-        new Thread(() -> {
+        executors.diskIO(() -> {
             Whiteboard source = whiteboardRepo.getByIdSync(sourceId);
-            List<Stroke> strokes = strokeDao.getByWhiteboard(sourceId);
-            List<WhiteboardText> texts = textDao.getByWhiteboard(sourceId);
+            List<Stroke> strokes = strokeRepo.getByWhiteboardSync(sourceId);
+            List<WhiteboardText> texts = textRepo.getByWhiteboardSync(sourceId);
             int background = source != null
                     ? source.background : WhiteboardPreferences.defaultBackground(appContext);
-            // The callback lands on the main thread, so the row copying gets a thread of its own.
-            whiteboardRepo.createWhiteboard(copyTitle, null, background, copyId -> new Thread(() -> {
+            // The callback lands on the main thread, so the row copying goes back to the disk
+            // thread — where it queues behind this very block rather than racing it.
+            whiteboardRepo.createWhiteboard(copyTitle, null, background, copyId -> executors.diskIO(() -> {
                 // New ids: these rows are a second board now, not the same one twice.
                 for (Stroke stroke : strokes) {
                     stroke.id = UUID.randomUUID().toString();
                     stroke.whiteboardId = copyId;
-                    strokeDao.insertStroke(stroke);
+                    strokeRepo.insertStrokeSync(stroke);
                 }
                 for (WhiteboardText text : texts) {
                     text.id = UUID.randomUUID().toString();
                     text.whiteboardId = copyId;
-                    textDao.insert(text);
+                    textRepo.insertSync(text);
                 }
-                AppExecutors.getInstance().mainThread(() -> {
+                executors.mainThread(() -> {
                     if (!isAdded()) return;
                     Toast.makeText(requireContext(), R.string.collab_join_copy_saved,
                             Toast.LENGTH_SHORT).show();
                     scanForSession();
                 });
-            }).start());
-        }).start();
+            }));
+        });
     }
 
     private void scanForSession() {
@@ -1223,22 +1226,22 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
                 // real two-device run surfaced.
                 message.stroke.whiteboardId = whiteboardId;
                 whiteboardView.addStroke(message.stroke);
-                new Thread(() -> strokeDao.insertStroke(message.stroke)).start();
+                strokeRepo.insertStroke(message.stroke);
                 touchWhiteboard();
                 break;
             case CollabMessage.TYPE_TEXT:
                 message.text.whiteboardId = whiteboardId;
                 whiteboardView.addText(message.text);
-                new Thread(() -> textDao.insert(message.text)).start();
+                textRepo.insert(message.text);
                 touchWhiteboard();
                 break;
             case CollabMessage.TYPE_RETRACT:
                 if (message.retractIsText) {
                     whiteboardView.removeText(message.retractId);
-                    new Thread(() -> textDao.delete(message.retractId)).start();
+                    textRepo.delete(message.retractId);
                 } else {
                     whiteboardView.removeStroke(message.retractId);
-                    new Thread(() -> strokeDao.deleteStroke(message.retractId)).start();
+                    strokeRepo.deleteStroke(message.retractId);
                 }
                 touchWhiteboard();
                 break;
@@ -1292,12 +1295,14 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         for (Stroke s : strokes) whiteboardView.addStroke(s);
         for (WhiteboardText t : texts) whiteboardView.addText(t);
         whiteboardView.centreOnContent();
-        new Thread(() -> {
-            strokeDao.deleteAllForWhiteboard(whiteboardId);
-            textDao.deleteAllForWhiteboard(whiteboardId);
-            for (Stroke s : strokes) strokeDao.insertStroke(s);
-            for (WhiteboardText t : texts) textDao.insert(t);
-        }).start();
+        // One block on the disk thread, using the blocking calls: the clear has to be finished
+        // before the first insert lands, and four independent async calls would not promise that.
+        executors.diskIO(() -> {
+            strokeRepo.deleteAllForWhiteboardSync(whiteboardId);
+            textRepo.deleteAllForWhiteboardSync(whiteboardId);
+            for (Stroke s : strokes) strokeRepo.insertStrokeSync(s);
+            for (WhiteboardText t : texts) textRepo.insertSync(t);
+        });
     }
 
     /** Clear is host-only in a live session — a joiner sees the button disabled entirely, rather

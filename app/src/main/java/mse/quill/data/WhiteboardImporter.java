@@ -95,13 +95,13 @@ public final class WhiteboardImporter {
                 stroke.id = UUID.randomUUID().toString();
                 stroke.whiteboardId = whiteboardId;
                 stroke.authorId = null;
-                strokeRepository.insertStroke(stroke);
+                strokeRepository.insertStrokeSync(stroke);
             }
             for (WhiteboardText text : contents.texts) {
                 text.id = UUID.randomUUID().toString();
                 text.whiteboardId = whiteboardId;
                 text.authorId = null;
-                textRepository.insert(text);
+                textRepository.insertSync(text);
             }
             db.setTransactionSuccessful();
         } catch (SQLiteException e) {

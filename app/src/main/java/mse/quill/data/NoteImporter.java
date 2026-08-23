@@ -228,13 +228,13 @@ public final class NoteImporter {
                 stroke.id = UUID.randomUUID().toString();
                 stroke.whiteboardId = whiteboardId;
                 stroke.authorId = null;
-                strokeRepository.insertStroke(stroke);
+                strokeRepository.insertStrokeSync(stroke);
             }
             for (WhiteboardText text : entry.texts) {
                 text.id = UUID.randomUUID().toString();
                 text.whiteboardId = whiteboardId;
                 text.authorId = null;
-                textRepository.insert(text);
+                textRepository.insertSync(text);
             }
         }
     }

@@ -141,8 +141,8 @@ public final class BundleWriter {
         Whiteboard board = new WhiteboardRepository(db).getByIdSync(whiteboardId);
         if (board == null) return;
 
-        List<Stroke> strokes = new StrokeRepository(db).getByWhiteboard(whiteboardId);
-        List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboard(whiteboardId);
+        List<Stroke> strokes = new StrokeRepository(db).getByWhiteboardSync(whiteboardId);
+        List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboardSync(whiteboardId);
 
         ByteArrayOutputStream boardBytes = new ByteArrayOutputStream();
         WhiteboardBundleWriter.write(board.title, board.background, board.createdAt, board.updatedAt,

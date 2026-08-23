@@ -9,6 +9,7 @@ import java.util.Deque;
 import java.util.List;
 
 import mse.quill.data.AppDatabase;
+import mse.quill.data.AppExecutors;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.WhiteboardTextRepository;
 import mse.quill.data.model.Stroke;
@@ -203,15 +204,15 @@ public final class CollabSessionHolder {
         final Context context = appContext;
         final String id = boardId;
         if (live == null || context == null || id == null) return;
-        new Thread(() -> {
+        AppExecutors.getInstance().diskIO(() -> {
             AppDatabase db = AppDatabase.getInstance(context);
-            List<Stroke> strokes = new StrokeRepository(db).getByWhiteboard(id);
-            List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboard(id);
+            List<Stroke> strokes = new StrokeRepository(db).getByWhiteboardSync(id);
+            List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboardSync(id);
             List<CollabMessage> chunks = CollabMessage.snapshotChunks(strokes, texts);
             Log.i(TAG, "sending board to " + peerId + ": " + strokes.size() + " strokes, "
                     + texts.size() + " texts, in " + chunks.size() + " chunk(s)");
             for (CollabMessage chunk : chunks) live.sendTo(peerId, chunk);
-        }).start();
+        });
     }
 
     /** Delivers one callback to the attached screen, or keeps it until there is one. */

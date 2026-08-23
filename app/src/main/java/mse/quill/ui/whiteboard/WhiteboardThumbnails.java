@@ -70,8 +70,8 @@ public final class WhiteboardThumbnails {
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
             AppDatabase db = AppDatabase.getInstance(appContext);
-            List<Stroke> strokes = new StrokeRepository(db).getByWhiteboard(whiteboard.id);
-            List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboard(whiteboard.id);
+            List<Stroke> strokes = new StrokeRepository(db).getByWhiteboardSync(whiteboard.id);
+            List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboardSync(whiteboard.id);
             if (strokes.isEmpty() && texts.isEmpty()) {
                 executors.mainThread(() -> onReady.onThumbnail(null));
                 return;

@@ -186,17 +186,17 @@ public final class SampleData {
         new WhiteboardRepository(appContext).insertSync(board);
 
         StrokeRepository strokes = new StrokeRepository(AppDatabase.getInstance(appContext));
-        strokes.insertStroke(stroke(whiteboardId, AXIS_COLOUR, 6f, now,
+        strokes.insertStrokeSync(stroke(whiteboardId, AXIS_COLOUR, 6f, now,
                 line(LEFT, TOP, LEFT, BASE)));
-        strokes.insertStroke(stroke(whiteboardId, AXIS_COLOUR, 6f, now + 1,
+        strokes.insertStrokeSync(stroke(whiteboardId, AXIS_COLOUR, 6f, now + 1,
                 line(LEFT, BASE, RIGHT, BASE)));
-        strokes.insertStroke(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 2,
+        strokes.insertStrokeSync(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 2,
                 decay(LEFT, REVIEW_X, TOP + 20f, BASE - 40f, 3.2f)));
         // The review itself: straight back up to where it started.
-        strokes.insertStroke(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 3,
+        strokes.insertStrokeSync(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 3,
                 line(REVIEW_X, BASE - 40f, REVIEW_X, TOP + 20f)));
         // Shallower, because a reviewed memory decays more slowly — the whole point of the curve.
-        strokes.insertStroke(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 4,
+        strokes.insertStrokeSync(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 4,
                 decay(REVIEW_X, RIGHT, TOP + 20f, BASE - 140f, 1.4f)));
     }
 
