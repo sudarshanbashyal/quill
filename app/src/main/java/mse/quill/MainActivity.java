@@ -1,13 +1,16 @@
 package mse.quill;
 
 import android.Manifest;
+import android.app.PictureInPictureParams;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Rational;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -43,6 +46,7 @@ import mse.quill.reminders.StudyReminders;
 import mse.quill.security.AppLock;
 import mse.quill.security.CollectionLock;
 import mse.quill.ui.audio.MiniPlayerView;
+import mse.quill.util.PipAware;
 import mse.quill.util.SwipeToDelete;
 import mse.quill.util.WindowInsetsUtils;
 
@@ -586,9 +590,74 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        if (AppLock.isEnabled(this)) {
+        // Not while shrinking into Picture-in-Picture: entering PIP pauses the activity too, and
+        // FLAG_SECURE blacks out the surface the system is about to screenshot for that floating
+        // window — the board would open into PIP showing nothing at all.
+        if (AppLock.isEnabled(this) && !isInPip()) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         }
+    }
+
+    private boolean isInPip() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode();
+    }
+
+    /**
+     * The whiteboard's PIP toggle, and the same path {@link #onUserLeaveHint} takes when the user
+     * leaves (home button / recents) while a board is open — see {@link WhiteboardFragment}.
+     *
+     * <p>{@code aspectWidth}/{@code aspectHeight} come from the canvas itself, clamped to what
+     * {@link PictureInPictureParams} accepts (between 1:2.39 and 2.39:1), so a very tall or very
+     * wide board still gets a window shaped roughly like it rather than the system's default.
+     */
+    public void enterWhiteboardPip(float aspectWidth, float aspectHeight) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return;
+
+        float ratio = aspectWidth / aspectHeight;
+        ratio = Math.max(1f / 2.39f, Math.min(ratio, 2.39f));
+        // Rational wants whole numbers; scaling up keeps enough precision without the max-int
+        // range PictureInPictureParams rejects.
+        Rational aspect = new Rational(Math.round(ratio * 1000), 1000);
+        PictureInPictureParams params = new PictureInPictureParams.Builder()
+                .setAspectRatio(aspect)
+                .build();
+        try {
+            enterPictureInPictureMode(params);
+        } catch (IllegalStateException e) {
+            // Not resumed, or the manufacturer's PIP is unavailable right now — the button simply
+            // does nothing rather than crashing the screen it was pressed from.
+        }
+    }
+
+    /** Auto-enters PIP the way a video app does: leaving the whiteboard for another app or Recents
+     *  shrinks it instead of pausing it out of sight, so the board is still there to glance at. Any
+     *  other screen leaves normally — a note or a quiz has nothing useful to show at that size. */
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        Fragment current = currentPrimaryFragment();
+        if (current instanceof mse.quill.ui.whiteboard.WhiteboardFragment) {
+            ((mse.quill.ui.whiteboard.WhiteboardFragment) current).enterPipIfPossible();
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        Fragment current = currentPrimaryFragment();
+        if (current instanceof PipAware) {
+            ((PipAware) current).onPipModeChanged(isInPictureInPictureMode);
+        }
+    }
+
+    /** The screen actually on top inside the nav host — same lookup {@link #runWhenNavHostReady}
+     *  and the widget-tap handling use, kept in one place since PIP needs it twice more. */
+    private Fragment currentPrimaryFragment() {
+        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment);
+        return host == null ? null
+                : host.getChildFragmentManager().getPrimaryNavigationFragment();
     }
 
     @Override

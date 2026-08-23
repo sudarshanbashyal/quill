@@ -86,7 +86,8 @@ import java.util.UUID;
  *   "whiteboard_id"  — String, optional. Pass this to reopen an existing whiteboard;
  *                       omit it to create a new one.
  */
-public class WhiteboardFragment extends Fragment implements WhiteboardView.StrokeListener {
+public class WhiteboardFragment extends Fragment
+        implements WhiteboardView.StrokeListener, mse.quill.util.PipAware {
 
     private static final String TAG = "WhiteboardFragment";
 
@@ -108,8 +109,12 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private ImageButton    btnColorBlack, btnColorRed, btnColorBlue, btnColorGreen, btnColorYellow;
     private ImageButton    btnWidthThin, btnWidthMedium, btnWidthThick, btnWidthExtraThick;
     private ImageButton    btnCentre, btnUndo, btnClear, btnExport, btnToggleTools;
-    private ImageButton    btnBackground, btnCollab;
+    private ImageButton    btnBackground, btnCollab, btnPip;
     private View           leftSidebar;
+    private View           topToolbar;
+    /** Whatever the tool rail's own visibility was before PIP hid it, so coming back out of PIP
+     *  restores it rather than always forcing it open. */
+    private boolean        sidebarVisibleBeforePip;
 
     // ── Live collaboration (Epic C) ──────────────────────────────────────────
     /** Mirrors {@code CollabSessionHolder.session()} — re-synced in {@link #onStart()} so a
@@ -449,7 +454,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnClear        = root.findViewById(R.id.btnClear);
         btnExport       = root.findViewById(R.id.btnExport);
         btnCollab       = root.findViewById(R.id.btnCollab);
+        btnPip          = root.findViewById(R.id.btnPip);
         collabPeople    = root.findViewById(R.id.collabPeople);
+        topToolbar      = root.findViewById(R.id.topToolbar);
     }
 
     /** Attaches click listeners to every toolbar button. */
@@ -497,6 +504,8 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnExport.setOnClickListener(this::showExportMenu);
         btnCollab.setOnClickListener(v -> showCollabEntry());
         collabPeople.setOnClickListener(v -> showCollabRoster());
+        btnPip.setOnClickListener(v -> enterPipIfPossible());
+        btnPip.setVisibility(pipSupported() ? View.VISIBLE : View.GONE);
 
         // Set sensible defaults on screen open
         selectTool(WhiteboardView.TOOL_PEN, btnPen);
@@ -886,6 +895,43 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             // Clean up the empty MediaStore entry if writing the bytes failed
             resolver.delete(itemUri, null, null);
             Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ── Picture-in-Picture ───────────────────────────────────────────────────────
+
+    private boolean pipSupported() {
+        return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
+                && getActivity() != null
+                && requireActivity().getPackageManager()
+                        .hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE);
+    }
+
+    /** Shrinks the board into Android's floating PIP window, sized to whatever this board's canvas
+     *  actually looks like — see {@code MainActivity#enterWhiteboardPip}. Also what {@code
+     *  MainActivity#onUserLeaveHint} calls when the user leaves the app while this screen is up. */
+    public void enterPipIfPossible() {
+        if (!pipSupported() || getActivity() == null || whiteboardView == null) return;
+        int w = whiteboardView.getWidth();
+        int h = whiteboardView.getHeight();
+        if (w <= 0 || h <= 0) return; // not laid out yet
+        ((mse.quill.MainActivity) requireActivity()).enterWhiteboardPip(w, h);
+    }
+
+    /** Nothing on the tool rail or top bar is reachable at PIP size — touch input doesn't even
+     *  reach the floating window — so it comes off entirely rather than sitting there unusable,
+     *  leaving just the drawing itself to look at. Restored exactly as it was on the way back. */
+    @Override
+    public void onPipModeChanged(boolean isInPictureInPictureMode) {
+        if (leftSidebar == null || topToolbar == null) return;
+        if (isInPictureInPictureMode) {
+            sidebarVisibleBeforePip = leftSidebar.getVisibility() == View.VISIBLE;
+            leftSidebar.setVisibility(View.GONE);
+            topToolbar.setVisibility(View.GONE);
+            commitText(); // the on-screen keyboard has nowhere to go in a floating window
+        } else {
+            leftSidebar.setVisibility(sidebarVisibleBeforePip ? View.VISIBLE : View.GONE);
+            topToolbar.setVisibility(View.VISIBLE);
         }
     }
 
