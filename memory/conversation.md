@@ -3985,3 +3985,26 @@ rendered solid black for anyone with App Lock enabled. Added an `isInPip()` chec
 session was verified on-device** — no adb in this environment. The PIP transition itself, whether
 the FLAG_SECURE fix actually clears the black-thumbnail case, and whether the `view.post()` timing
 for re-centring holds up across devices all still need the user's confirmation on a real phone.
+
+## 2026-08-23 (later) — Feature implementation: PIP follows the last edit, including a peer's
+
+**Asked:** could PIP centre on wherever the last edit happened — the user's own, or a
+collaborator's in a live session — instead of the whole board's centre of mass (from the previous
+entry's fix). The two diverge badly on a big shared board where someone is working in a corner far
+from where the ink's overall midpoint sits.
+
+**Built:** `WhiteboardView.centreOn(x, y)`, a new sibling to `centreOnContent()` that scrolls to
+one specific canvas point instead of the bounding box of all the ink, reusing the same clamp
+logic. `WhiteboardFragment` tracks `lastEditX`/`lastEditY` via a new `noteLastEdit(...)`, called
+from four places: local `onStrokeComplete` (the stroke's last point — where the pen lifted, more
+"where the drawing is" than the touch-down for anything but a short mark), local `commitText`, and
+— the part that makes this actually track a collaborator — the `applyIncoming` branches for
+incoming `TYPE_STROKE`/`TYPE_TEXT` messages during a live session (see the 2026-08-20 N-peer
+collab entry above for that protocol). `onPipModeChanged(true)` now calls `centreOn(lastEditX,
+lastEditY)` when something's been edited this session, falling back to `centreOnContent()` only
+for a board nobody's touched yet.
+
+**Status:** compiles clean (`:app:compileDebugJavaWithJavac`). **Not verified on-device**, and this
+one specifically needs a live two-plus-device collab session to exercise the part that matters —
+whether a peer's stroke landing in a far corner actually re-aims this device's PIP window the way
+it's meant to.

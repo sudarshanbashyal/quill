@@ -636,6 +636,7 @@ public class WhiteboardFragment extends Fragment
 
         whiteboardView.addText(item);
         undoStack.push(new Undoable(item.id, true, item.createdAt));
+        noteLastEdit(item.x, item.y);
         new Thread(() -> textDao.insert(item)).start();
         touchWhiteboard();
         if (collabSession != null && collabSession.isConnected()) {
@@ -712,6 +713,7 @@ public class WhiteboardFragment extends Fragment
     public void onStrokeComplete(Stroke stroke) {
         stroke.whiteboardId = whiteboardId;
         undoStack.push(new Undoable(stroke.id, false, stroke.createdAt));
+        noteLastEdit(stroke);
 
         // Save to SQLite on a background thread (never touch DB on the UI thread)
         new Thread(() -> strokeDao.insertStroke(stroke)).start();
@@ -923,14 +925,39 @@ public class WhiteboardFragment extends Fragment
     private int scrollXBeforePip;
     private int scrollYBeforePip;
 
+    /** Where the most recent stroke or text landed, local or from a collaborator — see
+     *  {@link #noteLastEdit}. Null until something has actually been drawn this session, since a
+     *  freshly opened board has no "last edit" to favour over the middle of the page. */
+    private Float lastEditX;
+    private Float lastEditY;
+
+    /** Records where an edit landed, so PIP can favour "wherever the ink is happening" over the
+     *  centre of everything ever drawn — the two agree on a board with one thing on it, and
+     *  diverge on a big shared one where a collaborator is working in a corner nowhere near the
+     *  board's overall centre of mass. Called for both local edits and ones received over a live
+     *  collab session, so a peer's strokes can re-aim this device's PIP window too. */
+    private void noteLastEdit(float canvasX, float canvasY) {
+        lastEditX = canvasX;
+        lastEditY = canvasY;
+    }
+
+    /** Last point of the stroke — where the pen lifted, which is more "where the drawing is" than
+     *  its first touch-down for anything but a short mark. */
+    private void noteLastEdit(Stroke stroke) {
+        if (stroke.points == null || stroke.points.isEmpty()) return;
+        android.graphics.PointF last = stroke.points.get(stroke.points.size() - 1);
+        noteLastEdit(last.x, last.y);
+    }
+
     /** Nothing on the tool rail or top bar is reachable at PIP size — touch input doesn't even
      *  reach the floating window — so it comes off entirely rather than sitting there unusable,
      *  leaving just the drawing itself to look at. Restored exactly as it was on the way back.
      *
      * <p>Hiding them also widens the canvas view to fill the space they took, which on its own
      * would leave whatever corner was on screen before still on screen — most often the top-left,
-     * since that's where a board opens. Centring on the drawing (or the middle of the page, if it's
-     * still blank) is what actually makes a floating window worth glancing at. */
+     * since that's where a board opens. Centring on the most recent edit — whoever made it — is
+     * what actually makes a floating window worth glancing at; falling back to all the ink's
+     * centre of mass only for a board nothing has been drawn on yet this session. */
     @Override
     public void onPipModeChanged(boolean isInPictureInPictureMode) {
         if (leftSidebar == null || topToolbar == null || whiteboardView == null) return;
@@ -943,8 +970,12 @@ public class WhiteboardFragment extends Fragment
             commitText(); // the on-screen keyboard has nowhere to go in a floating window
             // Posted: the rail/toolbar going away only resizes whiteboardView once this layout pass
             // runs, and centring before that measures against the old, narrower bounds.
+            final Float editX = lastEditX;
+            final Float editY = lastEditY;
             whiteboardView.post(() -> {
-                if (whiteboardView != null) whiteboardView.centreOnContent();
+                if (whiteboardView == null) return;
+                if (editX != null && editY != null) whiteboardView.centreOn(editX, editY);
+                else whiteboardView.centreOnContent();
             });
         } else {
             leftSidebar.setVisibility(sidebarVisibleBeforePip ? View.VISIBLE : View.GONE);
@@ -1291,12 +1322,14 @@ public class WhiteboardFragment extends Fragment
                 whiteboardView.addStroke(message.stroke);
                 new Thread(() -> strokeDao.insertStroke(message.stroke)).start();
                 touchWhiteboard();
+                noteLastEdit(message.stroke);
                 break;
             case CollabMessage.TYPE_TEXT:
                 message.text.whiteboardId = whiteboardId;
                 whiteboardView.addText(message.text);
                 new Thread(() -> textDao.insert(message.text)).start();
                 touchWhiteboard();
+                noteLastEdit(message.text.x, message.text.y);
                 break;
             case CollabMessage.TYPE_RETRACT:
                 if (message.retractIsText) {
