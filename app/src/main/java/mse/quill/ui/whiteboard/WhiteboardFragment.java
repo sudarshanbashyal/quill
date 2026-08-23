@@ -918,20 +918,40 @@ public class WhiteboardFragment extends Fragment
         ((mse.quill.MainActivity) requireActivity()).enterWhiteboardPip(w, h);
     }
 
+    /** Where the canvas was scrolled to before PIP took over, so leaving PIP puts the window back
+     *  where the user left it rather than wherever centring for PIP happened to land. */
+    private int scrollXBeforePip;
+    private int scrollYBeforePip;
+
     /** Nothing on the tool rail or top bar is reachable at PIP size — touch input doesn't even
      *  reach the floating window — so it comes off entirely rather than sitting there unusable,
-     *  leaving just the drawing itself to look at. Restored exactly as it was on the way back. */
+     *  leaving just the drawing itself to look at. Restored exactly as it was on the way back.
+     *
+     * <p>Hiding them also widens the canvas view to fill the space they took, which on its own
+     * would leave whatever corner was on screen before still on screen — most often the top-left,
+     * since that's where a board opens. Centring on the drawing (or the middle of the page, if it's
+     * still blank) is what actually makes a floating window worth glancing at. */
     @Override
     public void onPipModeChanged(boolean isInPictureInPictureMode) {
-        if (leftSidebar == null || topToolbar == null) return;
+        if (leftSidebar == null || topToolbar == null || whiteboardView == null) return;
         if (isInPictureInPictureMode) {
             sidebarVisibleBeforePip = leftSidebar.getVisibility() == View.VISIBLE;
+            scrollXBeforePip = whiteboardView.getScrollX();
+            scrollYBeforePip = whiteboardView.getScrollY();
             leftSidebar.setVisibility(View.GONE);
             topToolbar.setVisibility(View.GONE);
             commitText(); // the on-screen keyboard has nowhere to go in a floating window
+            // Posted: the rail/toolbar going away only resizes whiteboardView once this layout pass
+            // runs, and centring before that measures against the old, narrower bounds.
+            whiteboardView.post(() -> {
+                if (whiteboardView != null) whiteboardView.centreOnContent();
+            });
         } else {
             leftSidebar.setVisibility(sidebarVisibleBeforePip ? View.VISIBLE : View.GONE);
             topToolbar.setVisibility(View.VISIBLE);
+            whiteboardView.post(() -> {
+                if (whiteboardView != null) whiteboardView.scrollTo(scrollXBeforePip, scrollYBeforePip);
+            });
         }
     }
 
