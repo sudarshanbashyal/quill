@@ -33,6 +33,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
+    lint {
+        // See app/lint.xml — IconDensities is switched off there, with the reasoning.
+        lintConfig = file("lint.xml")
+    }
 }
 
 dependencies {

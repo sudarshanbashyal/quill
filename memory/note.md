@@ -1831,3 +1831,42 @@ is so a reader can tell the two apart at a glance.
 **A callback-taking method must never invoke its callback before it returns.**
 `CollectionRepository.isLocked` was the one violation and is fixed; the rule is written into
 its comment.
+
+## Drawables — the convention
+
+`res/drawable/` was one flat folder of 95 files doing four different jobs, which is what made
+"some are XML, some are PNG" feel arbitrary. It isn't a format question; it's a job question.
+
+| Job | Where | Format |
+|---|---|---|
+| Shapes, gradients, selectors, layered backgrounds | `drawable/` | XML — no choice |
+| Icons | `drawable/` | **vector XML**, `ic_*`, 24dp viewport |
+| Raster icons not yet converted | `drawable-xxxhdpi/` | PNG, `ic_*` |
+| Size-pinning wrappers around raster icons | `drawable/` | `<layer-list>` |
+| Launcher assets | `mipmap-*` / `drawable-*dpi` | as generated |
+
+**New icons go in as vectors.** That is the whole rule. A vector reports its own size, tints
+cleanly, and costs a kilobyte.
+
+**Why the PNGs moved to `drawable-xxxhdpi/` (2026-08-26).** `res/drawable/` with no qualifier
+means **mdpi**, so Android treats a 1024px PNG as being 1024dp and upscales it for the device.
+`ic_mic.png` was decoding to 3072×3072 — **37.7 MB of heap** — to be drawn at 40dp. In
+`drawable-xxxhdpi/` the same file decodes to 768px, 2.4 MB, and is downsampled rather than
+upscaled. Nothing on screen changed: every one of the 41 icons is drawn at a fixed size (a layout
+dimension, a style, or one of the wrappers), so none of them was consulting its intrinsic size.
+
+`ic_stars.png` is the exception and lives in `drawable-xxhdpi/`: at 58×62 px it is genuinely a 3x
+asset for the 20dp box it sits in, and calling it 4x would have it upscaling.
+
+**Lint's `IconDensities` is switched off** in `app/lint.xml`, with the reasoning in the file. It
+wants five copies of every icon; that is right for a per-density icon set and wrong for single
+high-resolution exports drawn at 18–40dp.
+
+**The 14 `<layer-list>` wrappers** (`ic_menu_*`, `ic_section_*`, `ic_option_*`) exist because a
+menu item or a compound drawable asks a drawable how big it is and believes the answer. They are
+a symptom of the icons being raster — converting an icon to a vector deletes its wrapper.
+
+**Known, not fixed:** `ic_stop.png` has no references. `ic_mic` and `ic_flashcard` are used as
+notification small icons and lint flags them as not entirely white (`IconColors`) — the system
+uses only the alpha channel, so they render, but a white-on-transparent asset is the correct thing
+there.

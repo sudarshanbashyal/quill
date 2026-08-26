@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The stopwatch at menu-item size. Same wrapper trick as ic_menu_flashcard.xml — a menu item
-     asks the drawable how big it is and believes the answer, and these icons ship as density-less
-     PNGs whose intrinsic size would blow the popup out to 85dp on a 3x screen. -->
+     asks the drawable how big it is and believes the answer, and a raster icon's answer is its
+     own resolution, not the 22dp the popup wants. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:drawable="@drawable/ic_stopwatch"
