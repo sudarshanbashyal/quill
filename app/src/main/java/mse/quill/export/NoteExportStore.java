@@ -1,4 +1,4 @@
-package mse.quill.util;
+package mse.quill.export;
 
 import android.content.ContentResolver;
 import android.content.ContentValues;
@@ -15,6 +15,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Locale;
+import mse.quill.util.TimeStamps;
 
 /**
  * Writes an exported note into the device's shared Downloads collection, under a {@code Quill}

@@ -37,7 +37,7 @@ import mse.quill.data.WhiteboardTextRepository;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.model.WhiteboardText;
-import mse.quill.util.ImageExporter;
+import mse.quill.export.ImageExporter;
 import mse.quill.util.NoteDisplayUtils;
 
 import java.util.ArrayList;
@@ -45,6 +45,10 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
+import mse.quill.bundle.WhiteboardBundle;
+import mse.quill.bundle.WhiteboardBundleWriter;
+import mse.quill.export.NoteExportStore;
+import mse.quill.export.ShareIntents;
 
 /**
  * WhiteboardFragment  (SINGLE-DEVICE VERSION — no networking)
@@ -759,7 +763,7 @@ public class WhiteboardFragment extends Fragment
 
     /**
      * Packs the board into a {@code .quillboard} bundle and hands it to the system share sheet —
-     * the same {@code ACTION_SEND} + FileProvider path a note's "Share to another Quill" uses, since
+     * the same {@link ShareIntents#sendFile} path a note's "Share to another Quill" uses, since
      * Quick Share, Bluetooth and mail are share <em>targets</em> here too, not APIs to integrate
      * with.
      */
@@ -774,12 +778,12 @@ public class WhiteboardFragment extends Fragment
             List<WhiteboardText> texts = textRepo.getByWhiteboardSync(id);
             String title = name.isEmpty() ? board.title : name;
 
-            mse.quill.util.NoteExportStore.Saved saved = mse.quill.util.NoteExportStore.save(
+            NoteExportStore.Saved saved = NoteExportStore.save(
                     exportContext,
                     title == null ? "" : title,
-                    mse.quill.share.WhiteboardBundle.EXTENSION,
-                    mse.quill.share.WhiteboardBundle.MIME_TYPE,
-                    out -> mse.quill.share.WhiteboardBundleWriter.write(
+                    WhiteboardBundle.EXTENSION,
+                    WhiteboardBundle.MIME_TYPE,
+                    out -> WhiteboardBundleWriter.write(
                             title, board.background, board.createdAt, board.updatedAt,
                             strokes, texts, out));
 
@@ -789,15 +793,10 @@ public class WhiteboardFragment extends Fragment
                     Toast.makeText(requireContext(), R.string.share_failed, Toast.LENGTH_SHORT).show();
                     return;
                 }
-                android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND)
-                        .setType(mse.quill.share.WhiteboardBundle.MIME_TYPE)
-                        .putExtra(android.content.Intent.EXTRA_STREAM, saved.uri)
-                        .putExtra(android.content.Intent.EXTRA_TITLE, saved.displayName)
-                        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                try {
-                    startActivity(android.content.Intent.createChooser(
-                            send, getString(R.string.whiteboard_share_chooser)));
-                } catch (android.content.ActivityNotFoundException e) {
+                boolean opened = ShareIntents.sendFile(requireContext(), saved.uri,
+                        WhiteboardBundle.MIME_TYPE, saved.displayName,
+                        getString(R.string.whiteboard_share_chooser));
+                if (!opened) {
                     Toast.makeText(requireContext(), R.string.share_no_target, Toast.LENGTH_LONG).show();
                 }
             });

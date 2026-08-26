@@ -1,4 +1,4 @@
-package mse.quill.share;
+package mse.quill.bundle;
 
 import org.json.JSONArray;
 import org.json.JSONException;

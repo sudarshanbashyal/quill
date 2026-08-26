@@ -1,7 +1,6 @@
 package mse.quill.ui.collections;
 
 import android.content.Context;
-import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -32,8 +31,8 @@ import mse.quill.data.model.Collection;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
-import mse.quill.share.CollectionBundle;
-import mse.quill.share.CollectionBundleWriter;
+import mse.quill.bundle.CollectionBundle;
+import mse.quill.bundle.CollectionBundleWriter;
 import mse.quill.ui.home.CollectionDialogs;
 import mse.quill.ui.home.NotesAdapter;
 import mse.quill.ui.notes.NoteEditorFragment;
@@ -42,7 +41,8 @@ import mse.quill.util.UndoDelete;
 import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
-import mse.quill.util.NoteExportStore;
+import mse.quill.export.NoteExportStore;
+import mse.quill.export.ShareIntents;
 
 public class CollectionDetailFragment extends Fragment {
 
@@ -264,14 +264,10 @@ public class CollectionDetailFragment extends Fragment {
                     Toast.makeText(requireContext(), R.string.share_failed, Toast.LENGTH_SHORT).show();
                     return;
                 }
-                Intent send = new Intent(Intent.ACTION_SEND)
-                        .setType(CollectionBundle.MIME_TYPE)
-                        .putExtra(Intent.EXTRA_STREAM, saved.uri)
-                        .putExtra(Intent.EXTRA_TITLE, saved.displayName)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                try {
-                    startActivity(Intent.createChooser(send, getString(R.string.share_collection_chooser)));
-                } catch (android.content.ActivityNotFoundException e) {
+                boolean opened = ShareIntents.sendFile(requireContext(), saved.uri,
+                        CollectionBundle.MIME_TYPE, saved.displayName,
+                        getString(R.string.share_collection_chooser));
+                if (!opened) {
                     Toast.makeText(requireContext(), R.string.share_no_target, Toast.LENGTH_LONG).show();
                 }
             });

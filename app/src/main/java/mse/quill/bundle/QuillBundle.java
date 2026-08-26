@@ -1,4 +1,4 @@
-package mse.quill.share;
+package mse.quill.bundle;
 
 /**
  * The {@code .quill} container — one note, losslessly, as a zip another copy of Quill can rebuild.
@@ -11,7 +11,7 @@ package mse.quill.share;
  *                     standalone {@link WhiteboardBundle} uses
  * </pre>
  *
- * <p>Deliberately not the Markdown export ({@link mse.quill.util.MarkdownExporter}), which is lossy
+ * <p>Deliberately not the Markdown export ({@link mse.quill.export.MarkdownExporter}), which is lossy
  * by design: it flattens images and audio to italic placeholders and Q&amp;A fences to bold
  * paragraphs, because its job is being readable in someone else's editor. That is the right answer
  * when the destination is another tool and the wrong one when the destination is another Quill —

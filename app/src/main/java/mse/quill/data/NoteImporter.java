@@ -25,8 +25,8 @@ import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.model.WhiteboardText;
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.share.BundleReader;
-import mse.quill.share.QuillBundle;
+import mse.quill.bundle.BundleReader;
+import mse.quill.bundle.QuillBundle;
 import mse.quill.data.model.NoteSegment;
 
 /**
@@ -204,7 +204,7 @@ public final class NoteImporter {
      * Rebuilds each embedded whiteboard as a new, note-attached board — the same "new id, new rows"
      * rule {@link #insertBundle} applies to the note itself. {@code authorId} isn't carried: it's a
      * live-collaboration field with no meaning for a board arriving by file, the same reason
-     * {@link mse.quill.share.WhiteboardBundleReader} never wrote one.
+     * {@link mse.quill.bundle.WhiteboardBundleReader} never wrote one.
      */
     private void insertWhiteboards(String noteId, List<BundleReader.WhiteboardEntry> whiteboards,
                                    Map<String, String> newIdByOldId, long now) {

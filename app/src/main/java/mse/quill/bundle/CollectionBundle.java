@@ -1,4 +1,4 @@
-package mse.quill.share;
+package mse.quill.bundle;
 
 /**
  * The {@code .quillpack} container — a whole collection, as a zip of {@link QuillBundle}s.

@@ -473,7 +473,7 @@ the token and stops.
 
 ---
 
-## R10 — Export and share are one feature split across two packages, three fragments, and a bug `OPEN`
+## R10 — Export and share are one feature split across two packages, three fragments, and a bug `DONE 2026-08-26`
 
 **Cause.** Writing something out of Quill is spread over:
 
@@ -517,6 +517,33 @@ another app.
    emulator, which is the only way to see it.
 4. While there: the four hardcoded English strings in that method
    (`"Export failed"` ×2, `"Saved to Pictures/Quill/" + filename`) go to `strings.xml`.
+
+**What landed — and step 1 was wrong.** The plan said to rename `share/` to `export/` and
+move the four exporters in. Opening `share/` showed why that would have been a mistake: all
+nine files are the `.quill`/`.quillboard`/`.quillpack` **format**, and three of them are
+*readers*, which serve import, not export. Calling that package `export` would have been a
+worse lie than `share`.
+
+So it split three ways instead, by what each thing is:
+
+- **`bundle/`** (renamed from `share/`) — the file format, read and write. Used by export
+  *and* by `data/`'s three importers.
+- **`export/`** (new) — `PdfExporter`, `MarkdownExporter`, `ImageExporter`,
+  `NoteExportStore`, moved out of `util/`, plus `ShareIntents`. Producing a file and getting
+  it to the user.
+- **`data/*Importer`** — unchanged. Writing a parsed bundle into the database.
+
+`NoteEditorFragment.writeExport` still touches `export.PdfExporter` and
+`bundle.QuillBundle` in one method, and that is now correct rather than a smell: exporting a
+`.quill` *is* the export path using the bundle format.
+
+`ShareIntents.sendFile`/`view` replaced the three `ACTION_SEND` copies and the one
+`ACTION_VIEW`. It takes a `Context` and returns whether a chooser opened rather than being a
+Fragment helper, so each screen keeps reporting failure the way it already does — a Snackbar
+in the note editor, a Toast in the other two.
+
+Steps 3 and 4 (the API 26–28 bug and the hardcoded strings) landed first, in their own
+commit — they were defects, not tidying, and did not deserve to wait behind a package move.
 
 ---
 

@@ -13,7 +13,7 @@ import java.util.UUID;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.model.WhiteboardText;
-import mse.quill.share.WhiteboardBundleReader;
+import mse.quill.bundle.WhiteboardBundleReader;
 
 /**
  * Turns a {@code .quillboard} bundle into a new whiteboard on this device.

@@ -2,7 +2,6 @@ package mse.quill.ui.notes;
 
 import android.Manifest;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
@@ -53,8 +52,8 @@ import mse.quill.security.CollectionLock;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
-import mse.quill.share.BundleWriter;
-import mse.quill.share.QuillBundle;
+import mse.quill.bundle.BundleWriter;
+import mse.quill.bundle.QuillBundle;
 import mse.quill.ui.flashcards.FlashcardsFragment;
 import mse.quill.ui.quiz.QuizDetailFragment;
 import mse.quill.ui.quiz.QuizRules;
@@ -73,11 +72,11 @@ import mse.quill.data.model.WhiteboardSegment;
 import mse.quill.data.model.TextSegment;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.tags.TagPickerDialog;
-import mse.quill.util.ImageExporter;
-import mse.quill.util.MarkdownExporter;
+import mse.quill.export.ImageExporter;
+import mse.quill.export.MarkdownExporter;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.NoteExportStore;
-import mse.quill.util.PdfExporter;
+import mse.quill.export.NoteExportStore;
+import mse.quill.export.PdfExporter;
 import android.widget.Toast;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import mse.quill.data.WhiteboardRepository;
@@ -85,6 +84,7 @@ import mse.quill.ui.whiteboard.WhiteboardFragment;
 import mse.quill.ui.whiteboard.WhiteboardPickerDialog;
 import mse.quill.ui.whiteboard.WhiteboardPreferences;
 import mse.quill.util.WindowInsetsUtils;
+import mse.quill.export.ShareIntents;
 
 public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
 
@@ -533,7 +533,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
     }
 
     /** PDF and Markdown leave Quill for another tool and are lossy on purpose; BUNDLE leaves for
-     *  another Quill and is not. See {@link mse.quill.share.QuillBundle}. */
+     *  another Quill and is not. See {@link mse.quill.bundle.QuillBundle}. */
     private enum ExportFormat { PDF, MARKDOWN, BUNDLE }
 
     /**
@@ -694,32 +694,16 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
      * already draws. What arrives on the other phone is a file, which the receiving Quill imports
      * through the picker.
      *
-     * <p>{@code FLAG_GRANT_READ_URI_PERMISSION} is what makes the uri usable by whichever app the
-     * user picks; without it the chooser opens and every target fails on read.
+     * <p>See {@link ShareIntents} for the flag that makes the uri readable by the target.
      */
     private void shareExport(NoteExportStore.Saved saved) {
-        Intent send = new Intent(Intent.ACTION_SEND)
-                .setType(QuillBundle.MIME_TYPE)
-                .putExtra(Intent.EXTRA_STREAM, saved.uri)
-                .putExtra(Intent.EXTRA_TITLE, saved.displayName)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try {
-            startActivity(Intent.createChooser(send, getString(R.string.share_export_chooser)));
-        } catch (android.content.ActivityNotFoundException e) {
-            Snackbar.make(requireView(), R.string.share_no_target, Snackbar.LENGTH_LONG).show();
-        }
+        boolean opened = ShareIntents.sendFile(requireContext(), saved.uri, QuillBundle.MIME_TYPE,
+                saved.displayName, getString(R.string.share_export_chooser));
+        if (!opened) Snackbar.make(requireView(), R.string.share_no_target, Snackbar.LENGTH_LONG).show();
     }
 
     private boolean startViewer(Uri uri, String mimeType) {
-        Intent intent = new Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, mimeType)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try {
-            startActivity(intent);
-            return true;
-        } catch (android.content.ActivityNotFoundException e) {
-            return false;
-        }
+        return ShareIntents.view(requireContext(), uri, mimeType);
     }
 
     private void noViewer() {

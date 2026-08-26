@@ -1,4 +1,4 @@
-package mse.quill.share;
+package mse.quill.bundle;
 
 /**
  * The {@code .quillboard} container — one whiteboard, losslessly, as JSON.

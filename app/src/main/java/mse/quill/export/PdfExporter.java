@@ -1,4 +1,4 @@
-package mse.quill.util;
+package mse.quill.export;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
