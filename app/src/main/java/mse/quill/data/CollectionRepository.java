@@ -56,20 +56,26 @@ public class CollectionRepository {
      * device as a plaintext bundle, and wiring that in later means remembering to.
      *
      * <p>A null id — a note filed nowhere — is not locked. There is no collection to lock it.
+     * The answer is still posted to the main thread rather than handed back inline, so that this
+     * method keeps one shape: <b>a callback-taking method must never invoke its callback before it
+     * returns.</b> Answering a null id synchronously and everything else asynchronously meant a
+     * caller could not know which it would get, which is exactly the arrangement that produces a
+     * re-entrancy bug once and then hides.
      */
     public void isLocked(String collectionId, OnLockChecked cb) {
+        if (cb == null) return;
         if (collectionId == null) {
-            if (cb != null) cb.onChecked(false);
+            executors.mainThread(() -> cb.onChecked(false));
             return;
         }
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             boolean locked;
             try (Cursor c = db.rawQuery("SELECT biometric_locked FROM collections WHERE id = ?",
                     new String[]{collectionId})) {
                 locked = c.moveToFirst() && c.getInt(0) != 0;
             }
-            if (cb != null) executors.mainThread(() -> cb.onChecked(locked));
+            executors.mainThread(() -> cb.onChecked(locked));
         });
     }
 
@@ -115,7 +121,7 @@ public class CollectionRepository {
     /** Synchronous form of {@link #loadCollections}, for the collections widget's
      *  RemoteViewsFactory, which Android already runs off the main thread. */
     public List<Collection> loadCollectionsSync() {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         // Flashcards and quizzes hang off notes, not collections, so both counts reach the
         // collection through the note that owns them — and skip deleted notes for the same
         // reason note_count does, or a collection emptied into the trash would still claim

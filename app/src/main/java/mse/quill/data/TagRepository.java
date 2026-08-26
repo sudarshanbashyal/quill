@@ -49,7 +49,7 @@ public class TagRepository {
 
     public void loadAllTags(OnTagsLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Cursor c = db.rawQuery(
                     "SELECT id, name, color, created_at FROM tags ORDER BY name COLLATE NOCASE ASC", null);
             List<Tag> tags = new ArrayList<>();
@@ -64,7 +64,7 @@ public class TagRepository {
 
     public void loadTagsForNote(String noteId, OnTagsLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Cursor c = db.rawQuery(
                     "SELECT t.id, t.name, t.color, t.created_at FROM note_tags nt " +
                             "JOIN tags t ON t.id = nt.tag_id " +

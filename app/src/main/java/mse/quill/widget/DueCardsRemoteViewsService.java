@@ -13,6 +13,7 @@ import mse.quill.MainActivity;
 import mse.quill.R;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.serialization.MarkdownSerializer;
+import mse.quill.DeepLinkRouter;
 
 public class DueCardsRemoteViewsService extends RemoteViewsService {
 
@@ -63,7 +64,7 @@ public class DueCardsRemoteViewsService extends RemoteViewsService {
                 views.setTextViewText(R.id.widget_item_title, front.isEmpty() ? "Untitled card" : front);
 
                 Intent fillIn = new Intent();
-                fillIn.putExtra(MainActivity.EXTRA_OPEN_FLASHCARD_NOTE_ID, card.noteId);
+                fillIn.putExtra(DeepLinkRouter.EXTRA_OPEN_FLASHCARD_NOTE_ID, card.noteId);
                 views.setOnClickFillInIntent(R.id.widget_item_root, fillIn);
                 return views;
             } catch (RuntimeException e) {

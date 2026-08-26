@@ -7,7 +7,6 @@ import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Rational;
@@ -37,7 +36,6 @@ import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.NavigationUI;
 
-import mse.quill.collab.SessionCode;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.wear.WearNoteListPublisher;
 import mse.quill.data.wear.WearProjectionPublisher;
@@ -86,21 +84,16 @@ public class MainActivity extends AppCompatActivity {
             return insets;
         });
 
-        // Before handleViewIntent below, which is the thing that reads them.
-        if (savedInstanceState != null) {
-            pendingImportUri = savedInstanceState.getParcelable(STATE_PENDING_IMPORT);
-            viewIntentConsumed = savedInstanceState.getBoolean(STATE_IMPORT_CONSUMED, false);
-            pendingJoinToken = savedInstanceState.getString(STATE_PENDING_JOIN);
-        }
+        // Before anything reads an intent: restores what was pending and starts watching for
+        // Home, so a file or a session link that outlived a rotation is still delivered.
+        deepLinks = new DeepLinkRouter(this);
+        deepLinks.onCreate(savedInstanceState);
 
         applyTopInsetToEveryScreen();
         setupNowPlayingBar();
         setupBottomNavigation();
         setupAppLock();
-        deliverSharedFileWhenHomeIsReady();
-        handleViewIntent(getIntent());
-        handleReminderIntent(getIntent());
-        handleWidgetIntent(getIntent());
+        deepLinks.route(getIntent());
 
         // Re-arms the daily reminder if it's on. Cheap, idempotent, and the recovery path for a
         // WorkManager queue that a force stop or a "clear data" wiped out — see StudyReminders.
@@ -119,26 +112,8 @@ public class MainActivity extends AppCompatActivity {
         WearReadStatePublisher.ensureAttached(this);
     }
 
-    /** Extra on the reminder notification's intent: land on the Flashcards tab. */
-    public static final String EXTRA_OPEN_FLASHCARDS = "open_flashcards";
-
-    /**
-     * Sends the user to the decks when they tap the study reminder.
-     *
-     * <p>Goes through the bottom bar's own destination rather than a bare {@code navigate}, so the
-     * tab comes up selected and the back stack looks the way it would if they had tapped it
-     * themselves — arriving on Flashcards with Home highlighted is the sort of thing that makes an
-     * app feel like it was assembled from two halves.
-     */
-    private void handleReminderIntent(Intent intent) {
-        if (intent == null || !intent.getBooleanExtra(EXTRA_OPEN_FLASHCARDS, false)) return;
-        // Consumed, or a configuration change would re-deliver the same intent and yank the user
-        // back to Flashcards from wherever they had since navigated.
-        intent.removeExtra(EXTRA_OPEN_FLASHCARDS);
-
-        BottomNavigationView bottomNav = findViewById(R.id.bottom_nav);
-        bottomNav.setSelectedItemId(R.id.flashcardDecksFragment);
-    }
+    /** Everything that arrives from outside and names a place to go — see {@link DeepLinkRouter}. */
+    private DeepLinkRouter deepLinks;
 
     /**
      * A {@code .quill}/{@code .quillboard}/{@code .quillpack} opened from outside the app (a file
@@ -152,228 +127,14 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        // A new intent is a new request, whatever the last one was — see viewIntentConsumed.
-        viewIntentConsumed = false;
-        handleViewIntent(intent);
-        handleReminderIntent(intent);
-        handleWidgetIntent(intent);
+        deepLinks.onNewIntent(intent);
     }
 
-    /** Extras a home-screen widget tap arrives with — see {@code mse.quill.widget}. Exactly one is
-     *  ever set on a given intent. */
-    public static final String EXTRA_OPEN_NOTE_ID = "widget_open_note_id";
-    public static final String EXTRA_OPEN_COLLECTION_ID = "widget_open_collection_id";
-    public static final String EXTRA_OPEN_COLLECTION_NAME = "widget_open_collection_name";
-    public static final String EXTRA_OPEN_WHITEBOARD_ID = "widget_open_whiteboard_id";
-    /** Separate from {@link #EXTRA_OPEN_NOTE_ID}: that one opens the note editor, this one opens
-     *  the note's flashcard review screen — same note id, different destination. */
-    public static final String EXTRA_OPEN_FLASHCARD_NOTE_ID = "widget_open_flashcard_note_id";
-
-    /**
-     * Sends the user straight to whatever they tapped in a widget — a pinned note, a collection,
-     * or a whiteboard — rather than dropping them on Home to find it themselves.
-     *
-     * <p>Follows {@link #deliverSharedFileWhenHomeIsReady}'s shape: a cold start may not have
-     * inflated the nav host yet, so this waits for Home to be resumed before navigating, the same
-     * way a shared file's import waits.
-     */
-    private void handleWidgetIntent(Intent intent) {
-        if (intent == null) return;
-        String noteId = intent.getStringExtra(EXTRA_OPEN_NOTE_ID);
-        String collectionId = intent.getStringExtra(EXTRA_OPEN_COLLECTION_ID);
-        String whiteboardId = intent.getStringExtra(EXTRA_OPEN_WHITEBOARD_ID);
-        String flashcardNoteId = intent.getStringExtra(EXTRA_OPEN_FLASHCARD_NOTE_ID);
-        if (noteId == null && collectionId == null && whiteboardId == null
-                && flashcardNoteId == null) return;
-
-        intent.removeExtra(EXTRA_OPEN_NOTE_ID);
-        intent.removeExtra(EXTRA_OPEN_COLLECTION_ID);
-        intent.removeExtra(EXTRA_OPEN_COLLECTION_NAME);
-        intent.removeExtra(EXTRA_OPEN_WHITEBOARD_ID);
-        intent.removeExtra(EXTRA_OPEN_FLASHCARD_NOTE_ID);
-        String collectionName = intent.getStringExtra(EXTRA_OPEN_COLLECTION_NAME);
-
-        runWhenNavHostReady(host -> {
-            NavController nav = host.getNavController();
-            Bundle args = new Bundle();
-            if (noteId != null) {
-                args.putString("note_id", noteId);
-                nav.navigate(R.id.noteEditorFragment, args);
-            } else if (collectionId != null) {
-                args.putString("collection_id", collectionId);
-                args.putString("collection_name", collectionName == null ? "" : collectionName);
-                nav.navigate(R.id.collectionDetailFragment, args);
-            } else if (whiteboardId != null) {
-                args.putString("whiteboard_id", whiteboardId);
-                nav.navigate(R.id.whiteboardFragment, args);
-            } else {
-                args.putString("note_id", flashcardNoteId);
-                nav.navigate(R.id.flashcardsFragment, args);
-            }
-        });
-    }
-
-    /** Runs {@code action} once the nav host exists and Home is its resumed fragment — the point
-     *  {@link #deliverPendingImportIfReady} already waits for, reused here so a widget tap arriving
-     *  before Home has inflated still lands correctly instead of silently doing nothing. */
-    private void runWhenNavHostReady(java.util.function.Consumer<NavHostFragment> action) {
-        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.nav_host_fragment);
-
-        // A widget tap has to land on the item it named regardless of where the user left the
-        // app — mid-note, on a quiz, anywhere. Without this, waiting below for Home to become the
-        // resumed fragment would wait forever: nothing else drives the back stack there. Mirrors
-        // handleViewIntent's own popBackStack call for the same reason.
-        if (host != null) host.getNavController().popBackStack(R.id.homeFragment, false);
-
-        Fragment current = host == null ? null
-                : host.getChildFragmentManager().getPrimaryNavigationFragment();
-        if (host != null && current instanceof mse.quill.ui.home.HomeFragment
-                && current.isResumed()) {
-            action.accept(host);
-            return;
-        }
-        getSupportFragmentManager().registerFragmentLifecycleCallbacks(
-                new FragmentManager.FragmentLifecycleCallbacks() {
-                    @Override
-                    public void onFragmentResumed(@NonNull FragmentManager fm, @NonNull Fragment fragment) {
-                        if (!(fragment instanceof mse.quill.ui.home.HomeFragment)) return;
-                        fm.unregisterFragmentLifecycleCallbacks(this);
-                        NavHostFragment readyHost = (NavHostFragment) getSupportFragmentManager()
-                                .findFragmentById(R.id.nav_host_fragment);
-                        if (readyHost != null) action.accept(readyHost);
-                    }
-                }, true);
-    }
-
-    /** Set once a VIEW intent names a file, and cleared once {@code HomeFragment} has it — Home may
-     *  not be the resumed fragment yet (a cold start still has to inflate the nav host), and this is
-     *  what lets {@link #deliverSharedFileWhenHomeIsReady} deliver it the moment it is. */
-    private Uri pendingImportUri;
-
-    /**
-     * Whether the file named by the <em>current</em> intent has already been handed to Home.
-     *
-     * <p>The activity's intent outlives the activity: a rotation recreates this Activity and
-     * {@link #getIntent()} still returns the VIEW intent that started it, so without this the file
-     * would be imported a second time and the user would find two copies of the note they opened
-     * once. Reset in {@link #onNewIntent}, because a new intent is a new request — the same file
-     * tapped twice on purpose is two imports, and that is the user's call to make.
-     */
-    private boolean viewIntentConsumed;
-
-    private static final String STATE_PENDING_IMPORT = "pending_import_uri";
-    private static final String STATE_IMPORT_CONSUMED = "view_intent_consumed";
-    private static final String STATE_PENDING_JOIN = "pending_join_token";
-
-    /** Carries both across a rotation: the flag so an imported file isn't imported again, and the
-     *  uri so one that arrived in the moment before Home was ready isn't dropped instead. */
+    /** Carries the router's pending file and session link across a rotation. */
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
-        outState.putParcelable(STATE_PENDING_IMPORT, pendingImportUri);
-        outState.putBoolean(STATE_IMPORT_CONSUMED, viewIntentConsumed);
-        outState.putString(STATE_PENDING_JOIN, pendingJoinToken);
-    }
-
-    private void handleViewIntent(Intent intent) {
-        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return;
-        Uri uri = intent.getData();
-        if (uri == null || viewIntentConsumed) return;
-        viewIntentConsumed = true;
-
-        // Two kinds of thing arrive as a VIEW: a file to import, and a whiteboard session's link.
-        // The scheme settles it before either is attempted — a quill:// link handed to the
-        // importers would be opened, found to contain no bundle, and reported as a broken file.
-        if ("quill".equals(uri.getScheme())) {
-            String token = SessionCode.parse(uri.getLastPathSegment());
-            if (token == null) {
-                android.widget.Toast.makeText(this, R.string.collab_error_not_a_session,
-                        android.widget.Toast.LENGTH_LONG).show();
-                return;
-            }
-            joinSessionWhenUnlocked(token);
-            return;
-        }
-
-        pendingImportUri = uri;
-
-        // The file's result belongs on Home (that's where a manually-picked import already lands),
-        // so a VIEW intent arriving while the user is elsewhere in the app — mid-note, on a quiz —
-        // has to surface there first. A no-op if Home is already the top of the back stack.
-        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.nav_host_fragment);
-        if (host != null) host.getNavController().popBackStack(R.id.homeFragment, false);
-
-        deliverPendingImportIfReady();
-    }
-
-    /**
-     * Opens a board joined to the scanned session — but not until the app is unlocked.
-     *
-     * <p>The lock gate is a view over this window rather than a screen of its own, so Home goes on
-     * resuming behind it: without the wait, a link scanned while Quill was locked would create a
-     * board, join a stranger's session and start drawing it onto the screen underneath the words
-     * "Quill is locked". The gate has to come down first, and if the user walks away from it,
-     * nothing has happened at all.
-     */
-    private void joinSessionWhenUnlocked(String token) {
-        if (AppLock.shouldPrompt(this)) {
-            pendingJoinToken = token;
-            return;
-        }
-        runWhenNavHostReady(host -> {
-            Bundle args = new Bundle();
-            args.putBoolean(mse.quill.ui.whiteboard.WhiteboardFragment.ARG_CREATED_NOW, true);
-            args.putString(mse.quill.ui.whiteboard.WhiteboardFragment.ARG_JOIN_TOKEN, token);
-            // No whiteboard_id: the screen mints one for itself, which is exactly what a joiner
-            // needs — an empty board of its own for the host's snapshot to fill.
-            host.getNavController().navigate(R.id.whiteboardFragment, args);
-        });
-    }
-
-    /** A session link that arrived while the gate was up, waiting for it to come down. */
-    private String pendingJoinToken;
-
-    /** Home is resumed as soon as it exists, cold start or not, so watching for that (rather than
-     *  e.g. a fixed delay) is what makes this reliable regardless of how long the nav host takes to
-     *  inflate it. */
-    private void deliverSharedFileWhenHomeIsReady() {
-        getSupportFragmentManager().registerFragmentLifecycleCallbacks(
-                new FragmentManager.FragmentLifecycleCallbacks() {
-                    @Override
-                    public void onFragmentResumed(@NonNull FragmentManager fm, @NonNull Fragment fragment) {
-                        if (fragment instanceof mse.quill.ui.home.HomeFragment) {
-                            deliverPendingImportIfReady();
-                        }
-                    }
-                }, true);
-    }
-
-    private void deliverPendingImportIfReady() {
-        if (pendingImportUri == null) return;
-        NavHostFragment host = (NavHostFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.nav_host_fragment);
-        if (host == null) return;
-        Fragment current = host.getChildFragmentManager().getPrimaryNavigationFragment();
-        if (!(current instanceof mse.quill.ui.home.HomeFragment)) return;
-
-        // Resumed, not merely present — the check this used to be missing, and the difference
-        // between the two ways a file can arrive. Tapping a .quill in a file manager while Quill is
-        // already running finds a Home with a view, so it worked; doing it with Quill closed does
-        // not. A cold start restores the fragment during onCreate, so the instanceof above already
-        // passes while onCreateView is still ahead of it — and Home's first act on being handed a
-        // file is to show a Snackbar, which needs the view it does not yet have. That threw
-        // IllegalStateException out of onCreate, which is to say Quill crashed on launch and the
-        // user was dropped back in the file manager with nothing imported.
-        //
-        // Nothing is lost by waiting: deliverSharedFileWhenHomeIsReady is registered before the
-        // intent is ever read, and calls back here the moment Home resumes.
-        if (!current.isResumed()) return;
-
-        Uri uri = pendingImportUri;
-        pendingImportUri = null;
-        ((mse.quill.ui.home.HomeFragment) current).handleSharedFile(uri);
+        deepLinks.onSaveInstanceState(outState);
     }
 
     /**
@@ -570,7 +331,7 @@ public class MainActivity extends AppCompatActivity {
             // Also here, not only in hideLockGate: the gate may already be down by the time a
             // waiting link is noticed — the device-credential fallback runs in its own Activity,
             // so coming back from it resumes this one rather than dismissing anything.
-            deliverPendingJoin();
+            deepLinks.onUnlocked();
         }
     }
 
@@ -692,16 +453,8 @@ public class MainActivity extends AppCompatActivity {
         if (lockGate == null || lockGate.getVisibility() == View.GONE) return;
         lockGate.setVisibility(View.GONE);
         setLockBackCallbackEnabled(false);
-        deliverPendingJoin();
-    }
-
-    /** The other half of {@link #joinSessionWhenUnlocked}: the gate is down, so the session link
-     *  that was waiting behind it can go ahead. */
-    private void deliverPendingJoin() {
-        if (pendingJoinToken == null) return;
-        String token = pendingJoinToken;
-        pendingJoinToken = null;
-        joinSessionWhenUnlocked(token);
+        // The gate is down, so a session link that was waiting behind it can go ahead.
+        deepLinks.onUnlocked();
     }
 
     /**

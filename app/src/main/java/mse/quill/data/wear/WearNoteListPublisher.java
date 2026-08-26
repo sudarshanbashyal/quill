@@ -52,7 +52,7 @@ public final class WearNoteListPublisher {
 
     private static void publishSyncOrThrow(Context context) {
         Context appContext = context.getApplicationContext();
-        SQLiteDatabase db = AppDatabase.getInstance(appContext).getWritableDatabase();
+        SQLiteDatabase db = AppDatabase.getInstance(appContext).getReadableDatabase();
 
         Set<String> locked = NoteCrypto.lockedCollectionIds(db);
         List<String> args = new ArrayList<>(locked);

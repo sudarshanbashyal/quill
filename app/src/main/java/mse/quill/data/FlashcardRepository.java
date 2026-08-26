@@ -290,7 +290,7 @@ public class FlashcardRepository {
     }
 
     private List<FlashcardDeck> loadDecksSync(boolean excludeAllLocked) {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             long now = System.currentTimeMillis();
             List<FlashcardDeck> decks = new ArrayList<>();
 
@@ -372,7 +372,7 @@ public class FlashcardRepository {
      */
     public void loadDueAcrossNotes(long now, OnDeckLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
 
             List<String> args = new ArrayList<>();
@@ -414,7 +414,7 @@ public class FlashcardRepository {
     /** How many cards a note has — what decides whether it offers "turn into" or "review". */
     public void countForNote(String noteId, OnCounted cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Cursor c = db.rawQuery(
                     "SELECT COUNT(*) FROM flashcards WHERE note_id = ? AND orphaned_at IS NULL",
                     new String[]{noteId});
@@ -458,7 +458,7 @@ public class FlashcardRepository {
      * collection exists and that they have been neglecting it.
      */
     public DueSummary countDueSync(long now) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
 
         List<String> args = new ArrayList<>();
@@ -512,7 +512,7 @@ public class FlashcardRepository {
     }
 
     private List<DueCardPreview> loadDueCardsSync(long now, int limit, boolean excludeAllLocked) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> excluded = excludeAllLocked
                 ? NoteCrypto.lockedCollectionIds(db) : NoteCrypto.hiddenCollectionIds(db);
 
@@ -559,7 +559,7 @@ public class FlashcardRepository {
      * <p>The horizon is end-of-day rather than {@code now} — see {@link DueProjection#select}.
      */
     public List<DueCard> dueProjectionSync(long now, TimeZone zone) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> locked = NoteCrypto.lockedCollectionIds(db);
         long horizon = DueProjection.endOfDayExclusive(now, zone);
 
@@ -669,7 +669,7 @@ public class FlashcardRepository {
      * then simply out of date. The caller drops it.
      */
     public Flashcard loadByIdSync(String cardId) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         try (Cursor c = db.rawQuery(
                 "SELECT id, note_id, source_segment_id, front, back, interval, repetitions, " +
                         "easiness, next_review, last_reviewed_at " +

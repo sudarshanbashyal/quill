@@ -16,6 +16,7 @@ import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.RelativeTime;
+import mse.quill.DeepLinkRouter;
 
 public class WhiteboardsRemoteViewsService extends RemoteViewsService {
     @Override
@@ -74,7 +75,7 @@ public class WhiteboardsRemoteViewsService extends RemoteViewsService {
                 }
 
                 Intent fillIn = new Intent();
-                fillIn.putExtra(MainActivity.EXTRA_OPEN_WHITEBOARD_ID, board.id);
+                fillIn.putExtra(DeepLinkRouter.EXTRA_OPEN_WHITEBOARD_ID, board.id);
                 views.setOnClickFillInIntent(R.id.widget_item_root, fillIn);
                 return views;
             } catch (RuntimeException e) {

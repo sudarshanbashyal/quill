@@ -76,7 +76,7 @@ public class QuizRepository {
     /** Whether this note already has a quiz — what decides between "Make quiz" and "Open quiz". */
     public void existsForNote(String noteId, OnExists cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Cursor c = db.rawQuery("SELECT COUNT(*) FROM quizzes WHERE note_id = ?",
                     new String[]{noteId});
             boolean exists = false;
@@ -296,7 +296,7 @@ public class QuizRepository {
      */
     public void loadAttemptAnswers(String attemptId, OnAnswersLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<QuizSession.Result> results = new ArrayList<>();
             try (Cursor c = db.rawQuery(
                     "SELECT source_id, prompt, options, correct_index, selected_index "

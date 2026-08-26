@@ -109,7 +109,7 @@ public class NoteRepository {
      * instead — silently, and to a place the user did not choose.
      */
     public boolean noteExistsSync(String noteId) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         try (Cursor c = db.rawQuery(
                 "SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL",
                 new String[]{noteId})) {
@@ -153,7 +153,7 @@ public class NoteRepository {
 
     public void loadNote(String noteId, OnNoteLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Note note = getNoteSync(db, noteId);
             List<NoteSegment> segments = note == null ? new ArrayList<>() : getSegmentsSync(db, noteId);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(note, segments));
@@ -505,7 +505,7 @@ public class NoteRepository {
     /** filter: null = all notes, else a collection id. */
     public void loadNotes(String filter, OnNotesLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<Note> notes = getAllNotesSync(db, filter, false);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(notes));
         });
@@ -514,7 +514,7 @@ public class NoteRepository {
     /** Up to {@link #MAX_PINNED_NOTES} pinned notes, most-recently-pinned first. */
     public void loadPinnedNotes(OnNotesLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<Note> notes = getAllNotesSync(db, null, true);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(notes));
         });
@@ -522,7 +522,7 @@ public class NoteRepository {
 
     /** Synchronous form of {@link #loadPinnedNotes}, for callers already off the main thread. */
     public List<Note> loadPinnedNotesSync() {
-        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true, false);
+        return getAllNotesSync(appDatabase.getReadableDatabase(), null, true, false);
     }
 
     /**
@@ -538,7 +538,7 @@ public class NoteRepository {
      * notes would sit on the home screen until the app was next backgrounded.
      */
     public List<Note> loadPinnedNotesForWidgetSync() {
-        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true, true);
+        return getAllNotesSync(appDatabase.getReadableDatabase(), null, true, true);
     }
 
     /** A note, paired with how many of its Q&amp;A blocks could become cards right now. */
@@ -570,7 +570,7 @@ public class NoteRepository {
      */
     public void loadQaCandidates(OnQaCandidatesLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<QaCandidate> candidates = new ArrayList<>();
             // getAllNotesSync rather than a query of its own: it is what already knows to leave
             // shut collections out and to decrypt the open ones, and a picker that offered a note
@@ -618,7 +618,7 @@ public class NoteRepository {
      *     that doesn't depend on them remembering to.
      */
     public NoteBundleData loadForBundleSync(String noteId) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Note note = getNoteSync(db, noteId);
         if (note == null) return null;
         List<NoteSegment> segments = getSegmentsSync(db, noteId);
@@ -946,7 +946,7 @@ public class NoteRepository {
      * on some phones.
      */
     private Set<String> searchNoteIdsSync(List<String> tokens) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> ids = new HashSet<>();
         try (Cursor c = db.rawQuery(
                 "SELECT note_id FROM notes_fts WHERE notes_fts MATCH ?",

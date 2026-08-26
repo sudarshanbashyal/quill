@@ -133,7 +133,7 @@ public final class WearReadStatePublisher {
             // A note that has never been saved has no collection to be private to.
             if (noteId == null) return title;
 
-            SQLiteDatabase db = AppDatabase.getInstance(appContext).getWritableDatabase();
+            SQLiteDatabase db = AppDatabase.getInstance(appContext).getReadableDatabase();
             try (Cursor c = db.rawQuery(
                     "SELECT collection_id FROM notes WHERE id = ?", new String[]{noteId})) {
                 if (!c.moveToFirst() || c.isNull(0)) return title;

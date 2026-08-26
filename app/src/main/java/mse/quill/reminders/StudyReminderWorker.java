@@ -20,6 +20,7 @@ import mse.quill.R;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.wear.WearProjectionPublisher;
 import mse.quill.ui.profile.ProfilePreferences;
+import mse.quill.DeepLinkRouter;
 
 /**
  * The daily reminder itself: count what's due, say so if there is anything, and re-arm for
@@ -107,7 +108,7 @@ public class StudyReminderWorker extends Worker {
      */
     private PendingIntent openFlashcards(Context context) {
         Intent intent = new Intent(context, MainActivity.class)
-                .putExtra(MainActivity.EXTRA_OPEN_FLASHCARDS, true)
+                .putExtra(DeepLinkRouter.EXTRA_OPEN_FLASHCARDS, true)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         return PendingIntent.getActivity(context, 0, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

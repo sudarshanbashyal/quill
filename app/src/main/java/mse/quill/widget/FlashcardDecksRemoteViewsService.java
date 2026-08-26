@@ -14,6 +14,7 @@ import mse.quill.R;
 import mse.quill.data.FlashcardRepository;
 import mse.quill.data.model.FlashcardDeck;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.DeepLinkRouter;
 
 public class FlashcardDecksRemoteViewsService extends RemoteViewsService {
     @Override
@@ -58,7 +59,7 @@ public class FlashcardDecksRemoteViewsService extends RemoteViewsService {
                 views.setTextViewText(R.id.widget_item_subtitle, deck.due + " due · " + deck.total + " total");
 
                 Intent fillIn = new Intent();
-                fillIn.putExtra(MainActivity.EXTRA_OPEN_FLASHCARD_NOTE_ID, deck.noteId);
+                fillIn.putExtra(DeepLinkRouter.EXTRA_OPEN_FLASHCARD_NOTE_ID, deck.noteId);
                 views.setOnClickFillInIntent(R.id.widget_item_root, fillIn);
                 return views;
             } catch (RuntimeException e) {

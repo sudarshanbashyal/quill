@@ -333,25 +333,44 @@ is unexercised.
 
 ---
 
-## R8 — Minor items `OPEN`
+## R8 — Minor items `DONE 2026-08-26`
 
 Not worth their own section; fix opportunistically when the file is open anyway.
 
 - **`getWritableDatabase()` for reads** — 16 times in `NoteRepository` alone, and in every
   other repository. Should be `getReadableDatabase()` on read paths. In practice SQLite
   hands back the same connection, so this is legibility rather than performance: a reader
-  cannot tell a read path from a write path at a glance.
+  cannot tell a read path from a write path at a glance. `DONE` — 28 sites converted, of
+  68 total. Classified per *method*, not per line, and then checked transitively: a method
+  qualifies only if neither it nor any helper it hands the handle to writes. That check
+  earned its keep. `CollectionLockRepository.lock`/`unlock` and three `QuizRepository`
+  loaders contain no write call of their own and would have been converted by the obvious
+  regex — they delegate to `writeNotes`, `relinkWhiteboards`,
+  `NoteRepository.convertNoteMediaSync` and `abandonStaleSync`, which do `execSQL`.
 - **`CollectionRepository.isLocked:61`** fires its callback *synchronously, on the calling
   thread* for a null id, and asynchronously on main otherwise. A caller cannot know which,
   which is exactly the kind of thing that produces a re-entrancy bug once. Make it always
   post to `mainThread`. It is the only instance of this in the tree — keep it that way:
-  **a callback-taking method must never invoke its callback before it returns.**
-- **`MainActivity` (764 lines)** carries intent routing, the app-lock gate, the now-playing
-  bar, insets, swipe nav and bottom nav. Most is genuinely Activity-shaped work, but
-  `handleReminderIntent` / `handleWidgetIntent` / `handleViewIntent` are an extractable
-  `DeepLinkRouter`.
+  **a callback-taking method must never invoke its callback before it returns.** `DONE` —
+  the rule is now written into the method's own comment, where the next person to edit it
+  will see it. Both callers only set a field, so nothing depended on the synchronous form.
+- **`MainActivity` (764 lines, 833 by the time this was done)** carries intent routing, the
+  app-lock gate, the now-playing bar, insets, swipe nav and bottom nav. Most is genuinely
+  Activity-shaped work, but `handleReminderIntent` / `handleWidgetIntent` /
+  `handleViewIntent` are an extractable `DeepLinkRouter`. `DONE` — 833 → 586 lines, router
+  335. It took more than the three handlers: they are inseparable from `pendingImportUri`,
+  `viewIntentConsumed`, `pendingJoinToken`, the saved-instance-state for all three,
+  `runWhenNavHostReady`, `joinSessionWhenUnlocked` and the two Home-delivery helpers. That
+  state is exactly why it wanted to be a class rather than three static methods. The six
+  `EXTRA_OPEN_*` constants moved with it — they are the protocol the router speaks — and
+  seven references in `widget/` and `reminders/` were repointed. The activity now drives it
+  through five calls: `onCreate`, `route`, `onNewIntent`, `onSaveInstanceState`,
+  `onUnlocked`.
 - **`strokeDao` / `textDao` field names** in `WhiteboardFragment` outlived the DAO →
   Repository rename. *(Fixed in R4's pass.)*
+
+*(The 40 `getWritableDatabase()` calls on genuine write paths are left as they are, which is
+correct — they write.)*
 
 ---
 

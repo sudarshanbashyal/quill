@@ -111,7 +111,7 @@ public class WhiteboardRepository {
      * rather than making the user find out afterwards.
      */
     public int embeddingNoteCountSync(String whiteboardId) {
-        try (Cursor c = appDatabase.getWritableDatabase().rawQuery(
+        try (Cursor c = appDatabase.getReadableDatabase().rawQuery(
                 "SELECT COUNT(*) FROM note_whiteboards nw JOIN notes n ON n.id = nw.note_id "
                         + "WHERE nw.whiteboard_id = ? AND n.deleted_at IS NULL",
                 new String[]{whiteboardId})) {
@@ -141,7 +141,7 @@ public class WhiteboardRepository {
 
     /** Synchronous form of {@link #loadWhiteboards}, for callers already off the main thread. */
     public List<Whiteboard> loadWhiteboardsSync() {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         return loadWhiteboardsSync(db, NoteCrypto.hiddenCollectionIds(db));
     }
 
@@ -156,7 +156,7 @@ public class WhiteboardRepository {
      * screen, thumbnail and all.
      */
     public List<Whiteboard> loadWhiteboardsForWidgetSync() {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         return loadWhiteboardsSync(db, NoteCrypto.lockedCollectionIds(db));
     }
 
