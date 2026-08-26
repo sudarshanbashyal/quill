@@ -15,7 +15,7 @@ Related: [requirements.md](requirements.md) (what to build), [note.md](note.md)
 
 ---
 
-## R1 — `WhiteboardFragment` is a god class `OPEN`
+## R1 — `WhiteboardFragment` is a god class `DONE 2026-08-26`
 
 **Cause.** 1421 lines, ~90 methods, four unrelated responsibilities in one object:
 drawing tools, board persistence (title/background/text/undo), export/share, and the
@@ -60,6 +60,22 @@ the fragment never sees a `CollabMessage` again.
 
 **Do not** attempt this in the same pass as R2 — both touch the same file and the
 combined diff stops being reviewable.
+
+**What landed.** `WhiteboardCanvas` (the five-method seam) and
+`WhiteboardCollabController` (597 lines) as planned; the fragment implements
+`WhiteboardCollabController.Host`, which is `WhiteboardCanvas` plus six things only a
+Fragment can do — permission launcher, roster chip, role UI, navigation, board content,
+board copy. Snapshot reassembly moved with it, so a half-received board is no longer
+owned by a UI object. The fragment no longer imports `CollabMessage`, `CollabSession`,
+`CollabSessionHolder`, `QrCodes`, `SessionCode` or `SessionScanner` at all.
+
+The fragment came out at **1124 lines, not the 800 targeted**, and the gap is honest
+rather than incomplete work: the 800 figure was measured against the 1421-line file, and
+Picture-in-Picture (~120 lines) landed on this screen afterwards. What remains is the
+canvas, tools, title, background, text entry, export/share, PIP, and the ~200-line `Host`
+implementation — which is genuinely canvas-and-database work and belongs here. Export and
+share are the next extractable seam if this file is opened again; they were not in R1's
+scope and were left alone deliberately.
 
 ---
 
