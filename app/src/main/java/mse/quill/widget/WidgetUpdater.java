@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 
 import mse.quill.R;
+import mse.quill.data.DataChangeNotifier;
 
 /**
  * Pushes a refresh to the home-screen widgets whenever the data they show changes, so a pin, a
@@ -13,12 +14,53 @@ import mse.quill.R;
  *
  * <p>Every call is a no-op if the widget isn't on the home screen — {@link
  * AppWidgetManager#getAppWidgetIds} answers an empty array rather than throwing — and a no-op if
- * {@code context} is null, which happens for repository instances built without one (see
- * {@code WhiteboardRepository}'s database-only constructor).
+ * {@code context} is null.
+ *
+ * <p>Which widget a change means is decided <em>here</em>, in {@link #listenForDataChanges}, not
+ * by the repository doing the writing. The data layer says "notes changed"; translating that into
+ * "the collections widget shows pinned notes, so refresh it" is this class's business and nobody
+ * else's.
  */
 public final class WidgetUpdater {
 
     private WidgetUpdater() {}
+
+    /** Guards against a second subscription if the process somehow runs onCreate twice. */
+    private static boolean listening;
+
+    /**
+     * Subscribes the widgets to the data layer, once per process — see
+     * {@code QuillApplication.onCreate}.
+     *
+     * <p>Holds the application context, which is what makes the inversion work: before this, every
+     * repository had to be handed a Context purely so it could pass one back to this class, and
+     * the ones built without one (whiteboards opened from the board screen) silently skipped the
+     * refresh entirely.
+     */
+    public static void listenForDataChanges(Context context) {
+        if (listening) return;
+        listening = true;
+        Context appContext = context.getApplicationContext();
+        DataChangeNotifier.getInstance().addListener(what -> {
+            switch (what) {
+                // The collections widget shows pinned notes above the collections themselves, so
+                // a note changing and a collection changing both land on it.
+                case NOTES:
+                case COLLECTIONS:
+                    notifyCollectionsChanged(appContext);
+                    break;
+                case WHITEBOARDS:
+                    notifyWhiteboardsChanged(appContext);
+                    break;
+                case FLASHCARDS:
+                    notifyFlashcardsChanged(appContext);
+                    break;
+                case EVERYTHING:
+                    notifyAllChanged(appContext);
+                    break;
+            }
+        });
+    }
 
     public static void notifyCollectionsChanged(Context context) {
         if (context == null) return;

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.model.Whiteboard;
 
 /**
@@ -27,24 +28,13 @@ public class WhiteboardRepository {
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
-    /** Null for the {@link #WhiteboardRepository(AppDatabase)} form — those callers (the
-     *  whiteboard screen, the thumbnailer) already run far more often than a widget needs to
-     *  refresh, so only the id-mutating methods below, reached through the Context constructor,
-     *  push a widget update. */
-    private final Context appContext;
-
     public WhiteboardRepository(Context context) {
-        this(AppDatabase.getInstance(context.getApplicationContext()), context.getApplicationContext());
+        this(AppDatabase.getInstance(context.getApplicationContext()));
     }
 
     /** For callers already holding the database — the whiteboard screen and the thumbnailer. */
     public WhiteboardRepository(AppDatabase appDatabase) {
-        this(appDatabase, null);
-    }
-
-    private WhiteboardRepository(AppDatabase appDatabase, Context appContext) {
         this.appDatabase = appDatabase;
-        this.appContext = appContext;
         this.executors = AppExecutors.getInstance();
     }
 
@@ -68,7 +58,7 @@ public class WhiteboardRepository {
             cv.put("updated_at", now);
             cv.put("background", background);
             appDatabase.getWritableDatabase().insert("whiteboards", null, cv);
-            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.WHITEBOARDS);
 
             if (cb != null) executors.mainThread(() -> cb.onCreated(id));
         });
@@ -79,7 +69,7 @@ public class WhiteboardRepository {
             ContentValues cv = new ContentValues();
             cv.put("title", newTitle);
             appDatabase.getWritableDatabase().update("whiteboards", cv, "id = ?", new String[]{id});
-            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.WHITEBOARDS);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -114,7 +104,7 @@ public class WhiteboardRepository {
             } finally {
                 db.endTransaction();
             }
-            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.WHITEBOARDS);
             if (onDone != null) executors.mainThread(onDone);
         });
     }

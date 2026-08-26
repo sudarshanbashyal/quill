@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.UUID;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.model.DueCard;
 import mse.quill.data.model.Flashcard;
 import mse.quill.data.model.FlashcardDeck;
@@ -130,7 +131,7 @@ public class FlashcardRepository {
             } finally {
                 db.endTransaction();
             }
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
 
             if (cb != null) executors.mainThread(() -> cb.onLoaded(deck));
 
@@ -610,7 +611,7 @@ public class FlashcardRepository {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             int deleted = db.delete("flashcards", "note_id = ?", new String[]{noteId});
-            if (deleted > 0) mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            if (deleted > 0) DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
             if (onDeleted != null) executors.mainThread(onDeleted);
 
             // The mirror of the publish in syncFromNote, and the more visible of the two if it is
@@ -646,7 +647,7 @@ public class FlashcardRepository {
             cv.put("next_review", card.nextReview);
             cv.put("last_reviewed_at", card.lastReviewedAt);
             db.update("flashcards", cv, "id = ?", new String[]{card.id});
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
             if (onDone != null) executors.mainThread(onDone);
 
             // After the callback, not before: the review screen should advance at the speed of the

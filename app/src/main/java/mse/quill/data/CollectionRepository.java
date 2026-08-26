@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.model.Collection;
 
 public class CollectionRepository {
@@ -38,7 +39,7 @@ public class CollectionRepository {
             cv.put("created_at", System.currentTimeMillis());
             cv.put("biometric_locked", 0);
             db.insert("collections", null, cv);
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.COLLECTIONS);
 
             if (cb != null) executors.mainThread(() -> cb.onCreated(id));
         });
@@ -78,7 +79,7 @@ public class CollectionRepository {
             ContentValues cv = new ContentValues();
             cv.put("name", newName);
             db.update("collections", cv, "id = ?", new String[]{id});
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.COLLECTIONS);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -99,7 +100,7 @@ public class CollectionRepository {
             } finally {
                 db.endTransaction();
             }
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.COLLECTIONS);
             if (onDone != null) executors.mainThread(onDone);
         });
     }

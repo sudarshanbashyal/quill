@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.model.Note;
 import mse.quill.security.CollectionLock;
 import mse.quill.security.MediaFiles;
@@ -85,7 +86,7 @@ public class NoteRepository {
             // The Collections widget counts a collection's notes, so a new one changes a row that
             // is already on the home screen. Widgets have no periodic refresh (updatePeriodMillis
             // is 0), so a change that isn't pushed is a change that never arrives.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
 
             if (onCreated != null) executors.mainThread(onCreated);
         });
@@ -259,10 +260,10 @@ public class NoteRepository {
             // so can the whiteboards a note embeds, which is what decides whether a board counts as
             // belonging to a locked collection. Before the Wear publish below, which blocks on a
             // Data Layer round trip — the widgets shouldn't wait behind the watch.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
+            DataChangeNotifier.getInstance().notifyChanged(Change.WHITEBOARDS);
             if (flashcardsChanged) {
-                mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+                DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
             }
 
             // After the callback, matching recordReview and syncFromNote: the editor returns at
@@ -357,8 +358,8 @@ public class NoteRepository {
             // have had, its collection's note count — and its deck, since the cards stay in the
             // table when a note is trashed (restoring the note restores them) and drop out of the
             // decks and due-now queries by their note's deleted_at alone.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
 
             // The watch's pickers are built from this list, and until now only a *save* rebuilt it.
             // A delete therefore left the note on the wrist — offered, tappable, and gone by the
@@ -451,8 +452,8 @@ public class NoteRepository {
             // A move changes both collections' counts, and — moving into a locked collection — can
             // take a pinned note off the widget entirely. It also deletes the note's flashcards on
             // the way in, which is the decks list's business.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
 
             // A move can change whether the watch is allowed to see this note at all: into a
             // locked collection and its title has to leave the wrist, out of one and it may
@@ -483,7 +484,7 @@ public class NoteRepository {
             ContentValues cv = new ContentValues();
             cv.put("pinned_at", System.currentTimeMillis());
             db.update("notes", cv, "id = ?", new String[]{noteId});
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
             if (cb != null) executors.mainThread(cb::onPinned);
         });
     }
@@ -494,7 +495,7 @@ public class NoteRepository {
             ContentValues cv = new ContentValues();
             cv.putNull("pinned_at");
             db.update("notes", cv, "id = ?", new String[]{noteId});
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
             if (onDone != null) executors.mainThread(onDone);
         });
     }

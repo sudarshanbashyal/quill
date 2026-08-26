@@ -118,7 +118,7 @@ recorded there too, where someone reaching for `:study` will actually read it.
 
 ---
 
-## R3 — The data layer calls upward into the widget layer `OPEN`
+## R3 — The data layer calls upward into the widget layer `DONE 2026-08-26`
 
 **Cause.** `NoteRepository` has eight inline calls to
 `mse.quill.widget.WidgetUpdater.notify*Changed(appContext)` (`:88, :262-265, :360-361,
@@ -150,6 +150,30 @@ scattered across six files, so a seventh repository added tomorrow will simply f
 After R2 and R3, `data/` should import nothing from `ui/` or `widget/` at all. That is
 the acceptance test for both, and it is worth writing down as a rule: **`data/` may not
 import `ui/` or `widget/`.**
+
+**What landed.** `DataChangeNotifier` with `Change` = `NOTES`, `COLLECTIONS`,
+`WHITEBOARDS`, `FLASHCARDS`, `EVERYTHING`. The last was not in the plan and is needed:
+`CollectionLockRepository` had two `notifyAllChanged` calls, and locking a collection
+genuinely is not one list's business. 24 call sites across five repositories, imported
+properly.
+
+Two things fell out of it that the plan did not anticipate:
+
+- There *was* no `Application` subclass, so `QuillApplication` is new — one class, one
+  manifest attribute. `MainActivity` was the fallback the plan allowed, but a widget's
+  `RemoteViewsService` or a Wear message can write without the activity ever starting,
+  and those writes would then leave the widgets stale.
+- `WhiteboardRepository.appContext` is now dead and gone, along with its null-Context
+  no-op. That is a small **behaviour change, deliberately kept**: create/rename/delete
+  called on a database-constructed instance now refreshes the widget where it silently
+  did not before. The old comment justified the gap by saying those callers "run far more
+  often than a widget needs to refresh" — but they call `insertSync`/`getByIdSync`, not
+  the three notifying methods, so in practice nothing fires more often than it used to.
+  It also makes R5 simpler: that field was half the reason for the second constructor.
+
+`data/` now imports `widget/` nowhere. The one remaining `ui/` import is
+`QuizRepository → mse.quill.ui.quiz`, which is R7(b)'s package name lying about pure
+logic in `:study`, not a layering violation.
 
 ---
 
