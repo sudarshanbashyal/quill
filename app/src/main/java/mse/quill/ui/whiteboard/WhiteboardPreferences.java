@@ -44,9 +44,4 @@ public final class WhiteboardPreferences {
         return context.getApplicationContext()
                 .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
-
-    /** The preference file, so a full wipe can clear it along with everything else. */
-    public static String prefsName() {
-        return PREFS_NAME;
-    }
 }

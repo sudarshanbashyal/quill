@@ -230,6 +230,10 @@
     <!-- Sharing a whiteboard: a lossless .quillboard bundle, distinct from the existing flat-image
          export ("Export as image" reuses export_complete_* below it since it produces a picture). -->
     <string name="whiteboard_export_image">Export as image</string>
+    <string name="whiteboard_export_failed">Could not export this whiteboard</string>
+    <!-- %1$s is the album folder, %2$s the file name — e.g. "Saved to Pictures/Quill/Quill_20260826_181200.png" -->
+    <string name="whiteboard_export_saved">Saved to %1$s/%2$s</string>
+    <string name="whiteboard_export_needs_storage">Quill needs permission to save into your gallery</string>
     <string name="whiteboard_share">Share whiteboard</string>
     <string name="whiteboard_share_chooser">Share whiteboard</string>
     <string name="import_succeeded_whiteboard">Imported \"%1$s\"</string>

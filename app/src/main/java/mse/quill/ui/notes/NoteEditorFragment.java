@@ -735,7 +735,9 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
 
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
-            boolean saved = ImageExporter.saveToPictures(requireContext().getApplicationContext(), path);
+            // A name back means it was written; null means nothing was.
+            boolean saved =
+                    ImageExporter.saveToPictures(requireContext().getApplicationContext(), path) != null;
             executors.mainThread(() -> result.onExportFinished(saved));
         });
     }

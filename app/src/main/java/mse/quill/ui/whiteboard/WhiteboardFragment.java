@@ -1,11 +1,11 @@
 package mse.quill.ui.whiteboard;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.os.Environment;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.inputmethod.InputMethodManager;
@@ -17,13 +17,13 @@ import android.widget.ImageButton;
 import android.widget.PopupMenu;
 import android.widget.Toast;
 import android.provider.MediaStore;
-import android.content.ContentValues;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.fragment.app.Fragment;
@@ -37,11 +37,9 @@ import mse.quill.data.WhiteboardTextRepository;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.model.WhiteboardText;
+import mse.quill.util.ImageExporter;
 import mse.quill.util.NoteDisplayUtils;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -108,6 +106,17 @@ public class WhiteboardFragment extends Fragment
     /** The names behind that count, exactly as the controller last handed them over — this screen
      *  never derives its own idea of who is in the session. */
     private List<String> collabRoster = new ArrayList<>();
+    /** What to resume once the storage permission prompt resolves — see
+     *  {@link #needsStoragePermissionFor}. Only reachable below API 29. */
+    private Runnable pendingStorageAction;
+    private final ActivityResultLauncher<String> storagePermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                Runnable action = pendingStorageAction;
+                pendingStorageAction = null;
+                if (granted && action != null) action.run();
+                else if (!granted) showTransientMessage(R.string.whiteboard_export_needs_storage);
+            });
+
     /** What to do once the Nearby permission prompt below resolves. */
     private Runnable pendingCollabAction;
     private final ActivityResultLauncher<String[]> collabPermissionLauncher =
@@ -795,40 +804,56 @@ public class WhiteboardFragment extends Fragment
         });
     }
 
-    /** Renders the current canvas to a PNG file in the device's Pictures folder. */
+    /**
+     * Renders the current canvas into the device's Pictures/Quill album.
+     *
+     * <p>Goes through {@link ImageExporter} rather than talking to MediaStore here. This method
+     * used to have its own copy of that, and the copy had drifted: it set {@code RELATIVE_PATH}
+     * unconditionally (an API 29 column, against {@code minSdk 26}), never asked for
+     * {@code WRITE_EXTERNAL_STORAGE} where API 26-28 requires it, and skipped {@code IS_PENDING}
+     * so a gallery scanning mid-write could catch a half-drawn board.
+     */
     private void exportWhiteboard() {
         if (whiteboardView == null) return;
+        // Below API 29, writing into the shared collection is a permissioned act. The note editor
+        // has asked for this for as long as it has been able to save an image out; the whiteboard
+        // simply never did, and failed silently on those devices.
+        if (needsStoragePermissionFor(this::exportWhiteboard)) return;
 
-        Bitmap bitmap   = whiteboardView.exportToBitmap();
-        String filename = "whiteboard_" + System.currentTimeMillis() + ".png";
-        android.content.ContentValues values = new android.content.ContentValues();
-        values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, filename);
-        values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
-        // Save into Pictures/Quill so exports are grouped in their own album
-        values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,
-                Environment.DIRECTORY_PICTURES + "/Quill");
-        android.content.ContentResolver resolver = requireContext().getContentResolver();
-        android.net.Uri collection =
-                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-        android.net.Uri itemUri = resolver.insert(collection, values);
+        Bitmap bitmap = whiteboardView.exportToBitmap();
+        Context appContext = requireContext().getApplicationContext();
+        executors.diskIO(() -> {
+            String savedAs = ImageExporter.savePngToPictures(appContext, bitmap);
+            executors.mainThread(() -> {
+                if (!isAdded()) return;
+                if (savedAs == null) {
+                    Log.e(TAG, "whiteboard export failed");
+                    showTransientMessage(R.string.whiteboard_export_failed);
+                    return;
+                }
+                Toast.makeText(requireContext(),
+                        getString(R.string.whiteboard_export_saved,
+                                ImageExporter.albumPath(), savedAs),
+                        Toast.LENGTH_LONG).show();
+            });
+        });
+    }
 
-        if (itemUri == null) {
-            Log.e(TAG, "MediaStore insert returned null Uri");
-            Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
-            return;
+    /**
+     * Requests {@code WRITE_EXTERNAL_STORAGE} if this device still needs it, remembering what to
+     * do once it is granted. Mirrors {@code NoteEditorFragment.needsStoragePermissionFor}.
+     *
+     * @return true if the caller should stop and wait for the permission result.
+     */
+    private boolean needsStoragePermissionFor(Runnable action) {
+        if (!ImageExporter.requiresStoragePermission()) return false;
+        if (ContextCompat.checkSelfPermission(requireContext(),
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+            return false;
         }
-
-        try (java.io.OutputStream out = resolver.openOutputStream(itemUri)) {
-            if (out == null) throw new IOException("Could not open output stream");
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
-            Toast.makeText(requireContext(),
-                    "Saved to Pictures/Quill/" + filename, Toast.LENGTH_LONG).show();
-        } catch (IOException e) {
-            Log.e(TAG, "Export failed", e);
-            // Clean up the empty MediaStore entry if writing the bytes failed
-            resolver.delete(itemUri, null, null);
-            Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
-        }
+        pendingStorageAction = action;
+        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        return true;
     }
 
     // ── Picture-in-Picture ───────────────────────────────────────────────────────

@@ -547,7 +547,7 @@ block, it is self-contained, and R10 is moving its collaborators anyway.
 
 ---
 
-## R12 — `DataWipe`'s hand-maintained list of preference files has already rotted `OPEN`
+## R12 — `DataWipe`'s hand-maintained list of preference files has already rotted `DONE 2026-08-26`
 
 **Cause.** There are six `SharedPreferences` files:
 
@@ -582,6 +582,25 @@ registration the only way to get a prefs file.
 4. Decide deliberately whether the TTS voice preference is "data" — an argument exists for
    keeping a device-capability setting across a wipe. Write the answer down; do not leave
    it as an accident.
+
+**What landed.** Step 1, enumeration, straight away — the one-line fix in step 3 would have
+left the rot in place, and the point of the item is that the list cannot be trusted. Names
+come off `shared_prefs/`, but each file is emptied through the `SharedPreferences` API
+rather than deleted: the framework caches a live instance per name, and an instance still
+held in-process would write its in-memory copy back over a deleted file.
+
+The payoff was bigger than the bug. `WhiteboardPreferences.prefsName()`,
+`ProfilePreferences.prefsName()`, `AppLock.prefsName()` and `Onboarding.prefsName()`
+existed **only** so `DataWipe` could name their files — every one of their doc comments said
+so — and all four are now gone. Four classes stopped publishing their storage filename to
+the whole app.
+
+On step 4: the TTS voice preference is wiped, along with everything else. It is a choice the
+user made, not a device capability — the engine's voice list is re-read on every launch —
+so "delete everything" should take it. The sweep also picks up libraries' preference files,
+WorkManager's included; that is intended and noted in the method, since the pending reminder
+is cancelled by this wipe anyway (the profile preference that arms it is one of the files
+cleared) and `StudyReminders.sync` re-arms from scratch on the next launch.
 
 ---
 

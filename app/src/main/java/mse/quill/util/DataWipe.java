@@ -7,10 +7,7 @@ import java.io.File;
 
 import mse.quill.audio.AudioPlayback;
 import mse.quill.data.AppDatabase;
-import mse.quill.onboarding.Onboarding;
 import mse.quill.security.AppLock;
-import mse.quill.ui.profile.ProfilePreferences;
-import mse.quill.ui.whiteboard.WhiteboardPreferences;
 
 /**
  * Erases everything Quill has stored on this device. The Danger Zone's one button, and the only
@@ -53,13 +50,17 @@ public final class DataWipe {
         deleteContents(appContext.getFilesDir());
         deleteContents(appContext.getCacheDir());
 
-        clearPrefs(appContext, ProfilePreferences.prefsName());
-        clearPrefs(appContext, AppLock.prefsName());
-        clearPrefs(appContext, WhiteboardPreferences.prefsName());
-        // So a wiped Quill is greeted the way a new one is. Without this the welcome screen stays
-        // answered forever, and "delete everything" would leave behind the one thing the user
-        // could not see to check: an empty app that has quietly decided it is not new.
-        clearPrefs(appContext, Onboarding.prefsName());
+        // Every preference file, found rather than listed — the same reasoning as the directory
+        // above, and for the same reason. This used to name four of them by hand
+        // (profile, app lock, whiteboard, onboarding) and the list had already rotted: `home_prefs`
+        // and `note_reader_prefs` survived "delete everything". The first of those holds Home's
+        // remembered pinned count, which it draws placeholder cards from on a cold start, so a
+        // wiped Quill opened onto ghost cards for notes that no longer existed.
+        //
+        // Among them is the welcome screen's answer, so a wiped Quill is greeted the way a new one
+        // is. Without that, "delete everything" left behind the one thing the user could not see to
+        // check: an empty app that had quietly decided it was not new.
+        clearAllPrefs(appContext);
 
         // The wiped lock preference only decides what happens next launch; this drops the
         // already-granted unlock so the process can't carry it forward.
@@ -89,6 +90,30 @@ public final class DataWipe {
         // still shutting down) must not abort the rest of the wipe. Leaving one stray recording
         // behind is a far better outcome than stopping halfway with the database already gone.
         file.delete();
+    }
+
+    /**
+     * Clears every {@code SharedPreferences} file the app has.
+     *
+     * <p>Names are read off {@code shared_prefs/}, but each one is emptied through the
+     * {@code SharedPreferences} API rather than by deleting the file. That matters: the framework
+     * caches a live instance per name, and an instance still held by something in this process
+     * would write its in-memory copy back out over the deleted file.
+     *
+     * <p>This sweeps up libraries' preference files too — WorkManager keeps a couple of bookkeeping
+     * flags here. That is intended: the pending reminder is cancelled by this wipe anyway, since
+     * the profile preference that arms it is one of the files being cleared, and
+     * {@code StudyReminders.sync} re-arms from scratch on the next launch.
+     */
+    private static void clearAllPrefs(Context appContext) {
+        File dir = new File(appContext.getApplicationInfo().dataDir, "shared_prefs");
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            String name = file.getName();
+            if (!name.endsWith(".xml")) continue;
+            clearPrefs(appContext, name.substring(0, name.length() - ".xml".length()));
+        }
     }
 
     private static void clearPrefs(Context appContext, String name) {
