@@ -547,7 +547,7 @@ commit — they were defects, not tidying, and did not deserve to wait behind a 
 
 ---
 
-## R11 — `NoteEditorFragment` is the god class now `OPEN`
+## R11 — `NoteEditorFragment` is the god class now `step 2 DONE 2026-08-26, steps 3-4 OPEN`
 
 **Cause.** 1298 lines, ~60 methods — bigger than `WhiteboardFragment` was before R1, and
 carrying at least seven unrelated jobs: export (14 methods, `:511–750`, 239 lines),
@@ -571,6 +571,33 @@ block, it is self-contained, and R10 is moving its collaborators anyway.
    `stopReadingIfNothingLeft`, `showVoicePickerDialog`, `describeVoice`), and it pairs with
    R16's note about `ReadAloud`'s static state.
 4. Stop there. Keyboard choreography and autosave are genuinely editor-shaped work.
+
+**What landed (step 2).** `NoteExportController` (330 lines) took all of it: the format menu,
+the three writers, the completion dialog and its animation, open/share, and the
+one-picture-to-the-gallery path. Fragment 1298 → **1062**, short of the "under 1000" target
+but the line count is the weaker measure here. The stronger one: the fragment dropped
+**thirteen** imports, among them every `export.*` and every `bundle.*` one, and now contains
+zero references to `PdfExporter`, `MarkdownExporter`, `QuillBundle`, `BundleWriter`,
+`NoteExportStore`, `ShareIntents` or `ImageExporter`. It no longer knows file formats exist.
+
+`Host` is all pull, never push — `segmentsForExport`, `titleForExport`, `tagsForExport`,
+`createdAtForExport`, `isCollectionLocked`, `requestStoragePermission`. The controller asks
+at the moment of export, so there is no second copy of the note's state here to go stale,
+which is the same reason the original read segments on the main thread.
+
+Two small things improved on the way, neither planned:
+
+- The permission callback now carries **both** outcomes rather than one action plus a
+  hardcoded `abandonExport()` on refusal. Exporting a note and saving a picture want
+  different things when refused, and the old shape only expressed one of them — it worked
+  because the note-export path left the pending result null, which is an accident rather
+  than a design.
+- `exportMedia`'s pending path and result were **fragment fields**, so two picture exports
+  requested before the permission resolved would clobber each other. They are closure
+  captures now, and independent.
+
+**Steps 3 and 4 are untouched.** Read-aloud is still in the fragment; it pairs with R16's
+note on `ReadAloud`'s nine mutable statics and should be done with it, not before.
 
 ---
 
