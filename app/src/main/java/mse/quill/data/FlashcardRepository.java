@@ -18,8 +18,8 @@ import mse.quill.data.model.Flashcard;
 import mse.quill.data.model.FlashcardDeck;
 import mse.quill.data.serialization.MarkdownSerializer;
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.QaSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.QaSegment;
 import mse.quill.util.NoteDisplayUtils;
 
 /**

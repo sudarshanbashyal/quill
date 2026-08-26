@@ -14,10 +14,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.ImageSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.ImageSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.TextSegment;
 
 public class AppDatabase extends SQLiteOpenHelper {
 

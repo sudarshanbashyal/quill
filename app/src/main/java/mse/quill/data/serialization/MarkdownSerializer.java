@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import mse.quill.ui.notes.editor.model.HeadingMarker;
+import mse.quill.data.model.HeadingMarker;
 
 /**
  * Round-trips a single text segment's Spannable to/from Markdown.

@@ -27,7 +27,7 @@ import mse.quill.data.model.WhiteboardText;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.share.BundleReader;
 import mse.quill.share.QuillBundle;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 
 /**
  * Turns a {@code .quill} bundle into a note on this device.

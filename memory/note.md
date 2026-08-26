@@ -114,7 +114,7 @@ comment literally says "SINGLE-DEVICE VERSION — no networking" and describes h
 
 ## Note content model — segments, not a single Spannable
 
-A note's body is a **list of `NoteSegment`** (`ui/notes/editor/model/`), not one big
+A note's body is a **list of `NoteSegment`** (`data/model/`), not one big
 rich-text blob:
 
 - `TextSegment` — wraps a `Spannable` (bold/italic/underline/heading/bullet spans)

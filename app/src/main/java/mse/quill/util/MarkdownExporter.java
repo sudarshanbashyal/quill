@@ -4,10 +4,10 @@ import java.util.List;
 
 import mse.quill.data.serialization.MarkdownSerializer;
 import mse.quill.ui.audio.PlaybackTime;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.QaSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.QaSegment;
+import mse.quill.data.model.TextSegment;
 
 /**
  * A note as a Markdown file anything can open.

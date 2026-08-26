@@ -1,5 +1,5 @@
 // AudioSegment.java
-package mse.quill.ui.notes.editor.model;
+package mse.quill.data.model;
 
 public class AudioSegment extends NoteSegment {
     public String filePath;

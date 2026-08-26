@@ -15,7 +15,7 @@ import androidx.core.widget.ImageViewCompat;
 
 import mse.quill.R;
 import mse.quill.ui.notes.editor.RichTextField;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 
 /**
  * A question/answer block, per the MSE Figma's "QA" frame: a tonal rounded card holding a muted

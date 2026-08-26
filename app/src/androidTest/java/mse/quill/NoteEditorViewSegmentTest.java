@@ -25,10 +25,10 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import mse.quill.ui.notes.editor.NoteEditorView;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.ImageSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.ImageSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.TextSegment;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
 

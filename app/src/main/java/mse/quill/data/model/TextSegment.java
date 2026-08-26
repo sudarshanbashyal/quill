@@ -1,5 +1,5 @@
 // TextSegment.java
-package mse.quill.ui.notes.editor.model;
+package mse.quill.data.model;
 
 import android.text.Spannable;
 

@@ -29,8 +29,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import mse.quill.R;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.NoteSegment;
 
 /**
  * Receives a voice memo recorded on the watch and files it into a note.

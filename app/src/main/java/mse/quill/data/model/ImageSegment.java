@@ -1,5 +1,5 @@
 // ImageSegment.java
-package mse.quill.ui.notes.editor.model;
+package mse.quill.data.model;
 
 public class ImageSegment extends NoteSegment {
     public String filePath;

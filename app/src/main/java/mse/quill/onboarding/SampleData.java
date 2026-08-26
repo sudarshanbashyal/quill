@@ -19,7 +19,7 @@ import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 import mse.quill.ui.whiteboard.WhiteboardView;
 import mse.quill.util.ColorUtils;
 import mse.quill.widget.WidgetUpdater;

@@ -1,4 +1,4 @@
-package mse.quill.ui.notes.editor.model;
+package mse.quill.data.model;
 
 /**
  * The invisible zero-width-space prefix that tags a line as a heading while it's being edited.

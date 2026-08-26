@@ -1,4 +1,4 @@
-package mse.quill.ui.notes.editor.model;
+package mse.quill.data.model;
 
 /**
  * A whiteboard attached to a note.

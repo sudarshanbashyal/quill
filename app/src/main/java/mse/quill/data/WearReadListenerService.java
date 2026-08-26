@@ -19,7 +19,7 @@ import mse.quill.audio.AudioPlayback;
 import mse.quill.audio.ReadAloud;
 import mse.quill.audio.ReadPlaylist;
 import mse.quill.data.model.Note;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 import mse.quill.util.NoteDisplayUtils;
 
 /**

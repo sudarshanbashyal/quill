@@ -79,7 +79,7 @@ scope and were left alone deliberately.
 
 ---
 
-## R2 — The domain model lives inside the UI package `OPEN`
+## R2 — The domain model lives inside the UI package `DONE 2026-08-26`
 
 **Cause.** `NoteSegment`, `TextSegment`, `QaSegment`, `ImageSegment`, `AudioSegment`,
 `WhiteboardSegment` and `HeadingMarker` sit in `ui/notes/editor/model/`, and are imported
@@ -109,6 +109,12 @@ holds `Note`, `Stroke`, `Whiteboard`, `Tag`, `Collection`. Pure move; no logic c
 after this and cannot move to `:study`. That is fine and expected — `data/model` already
 imports Android elsewhere. Note it so nobody later mistakes this for a step toward a
 pure-JVM domain module.
+
+**What landed.** Exactly the five steps, across 37 files. `NoteSegment`'s class comment
+was rewritten as part of it: it opened "Segments are a view-layer concept", which was the
+belief the old package encoded and is not what the codebase does — three of the four
+things that depend on segments are storage and file-format code. The Spannable caveat is
+recorded there too, where someone reaching for `:study` will actually read it.
 
 ---
 
