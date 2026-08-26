@@ -86,7 +86,8 @@ import java.util.UUID;
  *   "whiteboard_id"  — String, optional. Pass this to reopen an existing whiteboard;
  *                       omit it to create a new one.
  */
-public class WhiteboardFragment extends Fragment implements WhiteboardView.StrokeListener {
+public class WhiteboardFragment extends Fragment
+        implements WhiteboardView.StrokeListener, mse.quill.util.PipAware {
 
     private static final String TAG = "WhiteboardFragment";
 
@@ -108,8 +109,12 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     private ImageButton    btnColorBlack, btnColorRed, btnColorBlue, btnColorGreen, btnColorYellow;
     private ImageButton    btnWidthThin, btnWidthMedium, btnWidthThick, btnWidthExtraThick;
     private ImageButton    btnCentre, btnUndo, btnClear, btnExport, btnToggleTools;
-    private ImageButton    btnBackground, btnCollab;
+    private ImageButton    btnBackground, btnCollab, btnPip;
     private View           leftSidebar;
+    private View           topToolbar;
+    /** Whatever the tool rail's own visibility was before PIP hid it, so coming back out of PIP
+     *  restores it rather than always forcing it open. */
+    private boolean        sidebarVisibleBeforePip;
 
     // ── Live collaboration (Epic C) ──────────────────────────────────────────
     /** Mirrors {@code CollabSessionHolder.session()} — re-synced in {@link #onStart()} so a
@@ -451,7 +456,9 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnClear        = root.findViewById(R.id.btnClear);
         btnExport       = root.findViewById(R.id.btnExport);
         btnCollab       = root.findViewById(R.id.btnCollab);
+        btnPip          = root.findViewById(R.id.btnPip);
         collabPeople    = root.findViewById(R.id.collabPeople);
+        topToolbar      = root.findViewById(R.id.topToolbar);
     }
 
     /** Attaches click listeners to every toolbar button. */
@@ -499,6 +506,8 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
         btnExport.setOnClickListener(this::showExportMenu);
         btnCollab.setOnClickListener(v -> showCollabEntry());
         collabPeople.setOnClickListener(v -> showCollabRoster());
+        btnPip.setOnClickListener(v -> enterPipIfPossible());
+        btnPip.setVisibility(pipSupported() ? View.VISIBLE : View.GONE);
 
         // Set sensible defaults on screen open
         selectTool(WhiteboardView.TOOL_PEN, btnPen);
@@ -632,6 +641,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
 
         whiteboardView.addText(item);
         undoStack.push(new Undoable(item.id, true, item.createdAt));
+        noteLastEdit(item.x, item.y);
         textRepo.insert(item);
         touchWhiteboard();
         if (collabSession != null && collabSession.isConnected()) {
@@ -708,6 +718,7 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
     public void onStrokeComplete(Stroke stroke) {
         stroke.whiteboardId = whiteboardId;
         undoStack.push(new Undoable(stroke.id, false, stroke.createdAt));
+        noteLastEdit(stroke);
 
         // Save to SQLite on a background thread (never touch DB on the UI thread)
         strokeRepo.insertStroke(stroke);
@@ -888,6 +899,92 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
             // Clean up the empty MediaStore entry if writing the bytes failed
             resolver.delete(itemUri, null, null);
             Toast.makeText(requireContext(), "Export failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ── Picture-in-Picture ───────────────────────────────────────────────────────
+
+    private boolean pipSupported() {
+        return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
+                && getActivity() != null
+                && requireActivity().getPackageManager()
+                        .hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE);
+    }
+
+    /** Shrinks the board into Android's floating PIP window, sized to whatever this board's canvas
+     *  actually looks like — see {@code MainActivity#enterWhiteboardPip}. Also what {@code
+     *  MainActivity#onUserLeaveHint} calls when the user leaves the app while this screen is up. */
+    public void enterPipIfPossible() {
+        if (!pipSupported() || getActivity() == null || whiteboardView == null) return;
+        int w = whiteboardView.getWidth();
+        int h = whiteboardView.getHeight();
+        if (w <= 0 || h <= 0) return; // not laid out yet
+        ((mse.quill.MainActivity) requireActivity()).enterWhiteboardPip(w, h);
+    }
+
+    /** Where the canvas was scrolled to before PIP took over, so leaving PIP puts the window back
+     *  where the user left it rather than wherever centring for PIP happened to land. */
+    private int scrollXBeforePip;
+    private int scrollYBeforePip;
+
+    /** Where the most recent stroke or text landed, local or from a collaborator — see
+     *  {@link #noteLastEdit}. Null until something has actually been drawn this session, since a
+     *  freshly opened board has no "last edit" to favour over the middle of the page. */
+    private Float lastEditX;
+    private Float lastEditY;
+
+    /** Records where an edit landed, so PIP can favour "wherever the ink is happening" over the
+     *  centre of everything ever drawn — the two agree on a board with one thing on it, and
+     *  diverge on a big shared one where a collaborator is working in a corner nowhere near the
+     *  board's overall centre of mass. Called for both local edits and ones received over a live
+     *  collab session, so a peer's strokes can re-aim this device's PIP window too. */
+    private void noteLastEdit(float canvasX, float canvasY) {
+        lastEditX = canvasX;
+        lastEditY = canvasY;
+    }
+
+    /** Last point of the stroke — where the pen lifted, which is more "where the drawing is" than
+     *  its first touch-down for anything but a short mark. */
+    private void noteLastEdit(Stroke stroke) {
+        if (stroke.points == null || stroke.points.isEmpty()) return;
+        android.graphics.PointF last = stroke.points.get(stroke.points.size() - 1);
+        noteLastEdit(last.x, last.y);
+    }
+
+    /** Nothing on the tool rail or top bar is reachable at PIP size — touch input doesn't even
+     *  reach the floating window — so it comes off entirely rather than sitting there unusable,
+     *  leaving just the drawing itself to look at. Restored exactly as it was on the way back.
+     *
+     * <p>Hiding them also widens the canvas view to fill the space they took, which on its own
+     * would leave whatever corner was on screen before still on screen — most often the top-left,
+     * since that's where a board opens. Centring on the most recent edit — whoever made it — is
+     * what actually makes a floating window worth glancing at; falling back to all the ink's
+     * centre of mass only for a board nothing has been drawn on yet this session. */
+    @Override
+    public void onPipModeChanged(boolean isInPictureInPictureMode) {
+        if (leftSidebar == null || topToolbar == null || whiteboardView == null) return;
+        if (isInPictureInPictureMode) {
+            sidebarVisibleBeforePip = leftSidebar.getVisibility() == View.VISIBLE;
+            scrollXBeforePip = whiteboardView.getScrollX();
+            scrollYBeforePip = whiteboardView.getScrollY();
+            leftSidebar.setVisibility(View.GONE);
+            topToolbar.setVisibility(View.GONE);
+            commitText(); // the on-screen keyboard has nowhere to go in a floating window
+            // Posted: the rail/toolbar going away only resizes whiteboardView once this layout pass
+            // runs, and centring before that measures against the old, narrower bounds.
+            final Float editX = lastEditX;
+            final Float editY = lastEditY;
+            whiteboardView.post(() -> {
+                if (whiteboardView == null) return;
+                if (editX != null && editY != null) whiteboardView.centreOn(editX, editY);
+                else whiteboardView.centreOnContent();
+            });
+        } else {
+            leftSidebar.setVisibility(sidebarVisibleBeforePip ? View.VISIBLE : View.GONE);
+            topToolbar.setVisibility(View.VISIBLE);
+            whiteboardView.post(() -> {
+                if (whiteboardView != null) whiteboardView.scrollTo(scrollXBeforePip, scrollYBeforePip);
+            });
         }
     }
 
@@ -1228,12 +1325,14 @@ public class WhiteboardFragment extends Fragment implements WhiteboardView.Strok
                 whiteboardView.addStroke(message.stroke);
                 strokeRepo.insertStroke(message.stroke);
                 touchWhiteboard();
+                noteLastEdit(message.stroke);
                 break;
             case CollabMessage.TYPE_TEXT:
                 message.text.whiteboardId = whiteboardId;
                 whiteboardView.addText(message.text);
                 textRepo.insert(message.text);
                 touchWhiteboard();
+                noteLastEdit(message.text.x, message.text.y);
                 break;
             case CollabMessage.TYPE_RETRACT:
                 if (message.retractIsText) {
