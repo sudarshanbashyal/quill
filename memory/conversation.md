@@ -4109,3 +4109,70 @@ clean afterwards. What could **not** be checked: the whiteboard fragment's live 
 collab paths by hand — this install has App Lock on and opens straight onto the PIN sheet, and no
 PIN was supplied this session. The whiteboard tests that pass cover `WhiteboardView`, not the
 fragment's database path.
+
+## 2026-08-26 — The refactoring pass: seven of eight items (Architecture)
+
+**Asked:** resolve the merge conflicts, then do the refactoring — meaning
+`memory/refactoring_plan.md`, written three days earlier and untouched since.
+
+**The merge first.** `refactor` had the R4 threading work; `9d925b4` brought Picture-in-Picture
+across. Two conflicts, both from work done in parallel rather than disagreement.
+`WhiteboardFragment.commitText` had the repository insert on one side and PIP's `noteLastEdit` on
+the other — both wanted, so both kept and the raw thread dropped. `conversation.md` had two session
+entries appended at the same spot; kept both.
+
+**Then R1, R2, R3, R5, R6 (steps 1–3), R7a and R8, one commit each.** R7b is the only thing left
+OPEN, and the plan says to leave it until something forces those files open. Every commit compiled
+clean and ran `testDebugUnitTest`; three also built the APK.
+
+Things the plan did not anticipate, which are the parts worth remembering:
+
+- **R1 came out at 1124 lines, not the 800 targeted.** Not incomplete work — the 800 was measured
+  against the 1421-line file, and PIP landed on that screen afterwards. Export and share are the
+  next extractable seam there; deliberately not touched, since they were not in R1's scope.
+- **R3 needed an `Application` subclass, and there wasn't one.** `MainActivity` was the plan's
+  fallback, but a widget's `RemoteViewsService` or a Wear message can write without the activity
+  ever starting, which would leave widgets stale. `QuillApplication` is one class and one manifest
+  attribute. R3 also needed a `Change.EVERYTHING` the plan didn't list — locking a collection
+  genuinely is not one list's business.
+- **R3 changed behaviour on purpose, once.** `WhiteboardRepository.appContext` existed only to
+  hand back to `WidgetUpdater` and was null for the database-only constructor, silently skipping
+  the refresh. It's gone, so create/rename/delete now always notify. The old comment justified the
+  gap by saying those callers "run far more often than a widget needs" — but they call
+  `insertSync`/`getByIdSync`, not the three notifying methods, so nothing fires more often.
+- **R5's escape hatch wasn't needed.** The plan allowed keeping a package-private `AppDatabase`
+  constructor if some caller needed to share a handle. All twelve call sites already had a
+  `Context` and were calling `AppDatabase.getInstance(...)` on the line above purely to satisfy the
+  constructor — and `AppDatabase` is a singleton anyway.
+- **R7a ran straight into R7b.** Java gives a subpackage no package-private access, so moving the
+  `Wear*` classes exposed that the `*Keys` classes they speak in live in **`:study`**, in package
+  `mse.quill.data`. That split package has now imposed a real cost rather than a threatened one.
+  It also forced a visibility decision on `NoteCrypto`: rather than making the whole class public,
+  the class and exactly three lock-state queries (`isLocked`, `lockedCollectionIds`,
+  `excludeCollectionsClause`) are public and everything touching a key or ciphertext stays
+  package-private. Those three answer "which collections are shut", not "what does this say".
+- **R8's `getReadableDatabase` sweep needed transitive checking.** Classifying per method and
+  looking for write verbs is not enough: `CollectionLockRepository.lock`/`unlock` and three
+  `QuizRepository` loaders contain no write call of their own and would have been converted by the
+  obvious regex — they delegate to `writeNotes`, `relinkWhiteboards`, `convertNoteMediaSync` and
+  `abandonStaleSync`, which do `execSQL`. 28 of 68 sites converted.
+- **R6's nested types moved for free.** An implementing class inherits an interface's nested types,
+  so moving `OnNoteLoaded`, `OnPinResult`, `QaCandidate` and friends onto `NoteStore` left
+  `NoteRepository.OnPinResult` still resolving at every call site. Worth knowing — it makes this
+  kind of move far cheaper than it looks.
+
+**What R6 does *not* buy yet, stated plainly.** The item is named for making JVM tests possible.
+`Repositories` is a static factory that fragments call internally, so a fake still cannot be
+substituted into a fragment. What exists today is the documented boundary and the `Sync` methods
+being off it. Step 4 (ViewModels) is untouched, which is what the plan asks for.
+
+**Not verified on-device, and each for a specific reason:** the collab paths need a live two-device
+session; the Wear projection needs a paired watch (`R7a`'s own step 3); the widget refresh needs a
+widget pinned to a home screen; the deep links need a widget tap, a reminder notification and a
+`.quill` opened from a file manager. Everything compiles, `testDebugUnitTest` passes, the APK
+builds from clean, and all 18 manifest components resolve in the *merged* manifest — which covers
+the silent-failure risk in the Wear move, but not the round trips themselves.
+
+`memory/note.md` had three current-tense claims the pass falsified (the DAO-vs-repository access
+pattern, the "second uncoordinated threading pattern" that R4 already removed, and the synchronous
+whiteboard insert). Corrected, and a section describing the structure as it now stands appended.

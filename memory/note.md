@@ -50,21 +50,25 @@ gained title/timestamps). The rest still needs real migrations before this ships
 data worth keeping.
 
 Access pattern: `XRepository` classes (`NoteRepository`, `CollectionRepository`,
-`TagRepository`) wrap `AppDatabase` + raw `Cursor`/`ContentValues` calls, exposing
-async callback-based APIs (`OnNoteLoaded`, `OnNotesLoaded`, …) rather than
-LiveData/Flow. `WhiteboardDao` / `StrokeDao` are lower-level DAOs (no repository layer
-on top) used directly by `WhiteboardFragment`.
+`TagRepository`, `StrokeRepository`, `WhiteboardTextRepository`, …) wrap `AppDatabase` +
+raw `Cursor`/`ContentValues` calls, exposing async callback-based APIs (`OnNoteLoaded`,
+`OnNotesLoaded`, …) rather than LiveData/Flow. Every one of them is constructed the same
+way, `new XRepository(context)`, and resolves `AppDatabase` and `AppExecutors` itself.
+
+Notes and flashcards additionally have **interfaces** — `NoteStore` and `FlashcardStore`,
+obtained from `Repositories.notes(context)` / `.flashcards(context)`. Those hold only the
+methods a screen may call; the blocking `Sync` variants are deliberately off them, so a
+caller holding the concrete `NoteRepository` is visibly doing something a screen normally
+should not. No other repository has an interface yet, and that is on purpose — see R6 in
+`refactoring_plan.md`.
 
 **Threading**: `AppExecutors` is a hand-rolled singleton with one single-thread
 `ExecutorService` for all disk I/O plus a main-thread `Handler` for callback delivery.
 Deliberately single-threaded so concurrent repositories never fight over SQLite's
 single writer lock. `NoteRepository`/`CollectionRepository`/`TagRepository` all go
 through it consistently.
-**Inconsistency to know about**: `WhiteboardFragment` and `StrokeDao` do *not* use
-`AppExecutors` — they spin up ad hoc `new Thread(() -> …)` for every DB call instead.
-Functionally fine today (SQLite serializes writes regardless), but it's a second,
-uncoordinated threading pattern living next to the "shared executor" one — worth
-unifying if the whiteboard code gets touched again.
+There is **one** threading pattern; the whiteboard's ad hoc `new Thread(...)` per database
+call was the exception and is gone (R4, 2026-08-23).
 
 ### Schema (`AppDatabase.onCreate`)
 
@@ -355,10 +359,10 @@ from the FAB has no parent note. Two decisions behind that section:
   go first in the same transaction; they carry a foreign key onto the board.
 
 `WhiteboardRepository` is the Home-side entry point and follows the normal `AppExecutors` +
-callback pattern. `WhiteboardFragment` still uses `WhiteboardDao`/`StrokeDao` on ad hoc threads
-(Epic A), with one deliberate exception: the initial `whiteboards` insert stays **synchronous**,
-because `strokes` has a foreign key onto that row and the stroke writes run on their own unordered
-threads. `updated_at` is bumped on draw/undo/clear so the Home section sorts by real recency.
+callback pattern, as does `WhiteboardFragment` since R4. The initial `whiteboards` insert no
+longer needs to be synchronous to beat the first stroke: every write on that screen now queues on
+the single disk thread in submission order, so queueing the board's row first is enough.
+`updated_at` is bumped on draw/undo/clear so the Home section sorts by real recency.
 
 ## Markdown note format — implemented, flashcards included
 
@@ -1777,3 +1781,53 @@ delete-on-empty branch, `NoteRepository.createNote`'s plaintext write, `NoteCryp
 catch clauses) after the user's symptom reports, not from a stack trace — `adb` wasn't available
 in this environment for most of the session. `adb logcat -d *:E > crash.txt`, then search for
 `FATAL EXCEPTION`, is the fast path if this happens again and a device is reachable.
+
+
+## Structure after the 2026-08-26 refactoring pass
+
+Seven of the eight items in `refactoring_plan.md` landed in one pass (R1, R2, R3, R5, R6
+steps 1–3, R7a, R8). What changed structurally, for someone reading the tree cold:
+
+**The whiteboard screen is two objects, not one.** `WhiteboardFragment` owns the canvas and
+the database; `WhiteboardCollabController` owns the network — hosting, joining by scan, the
+roster, snapshot reassembly, error mapping. They meet at `WhiteboardCanvas`, a five-method
+interface (`applyStroke`, `applyText`, `retract`, `clearAll`, `replaceAll`) whose implementors
+own persistence. The fragment does not import `CollabMessage`. Snapshot reassembly lives on the
+controller, so a half-received board is no longer held in fragment fields that Android may
+destroy mid-transfer.
+
+**`data/` is the bottom of the stack and imports nothing above it.** The rule, worth keeping:
+**`data/` may not import `ui/` or `widget/`.** Two things enforce it:
+
+- the note segment model (`NoteSegment` and its six subclasses) lives in `data/model/`, not
+  `ui/notes/editor/model/` — persistence, the Markdown format and the `.quill` bundle format
+  all depend on it, so it is the domain, not a screen's;
+- repositories no longer call `WidgetUpdater` inline. They call
+  `DataChangeNotifier.getInstance().notifyChanged(Change.X)`, and `WidgetUpdater` subscribes
+  once from `QuillApplication.onCreate` and decides for itself which widget that means.
+
+The one remaining `ui` import in `data/` is `QuizRepository → mse.quill.ui.quiz`, which is a
+package name lying about pure logic in `:study` (R7b), not a layering violation.
+
+**`QuillApplication` exists now.** It is the only process-wide wiring point; a widget's
+`RemoteViewsService` or a Wear message can write data without `MainActivity` ever starting,
+which is why the subscription cannot hang off the activity.
+
+**Wear transport is `data/wear/`,** not eight `Wear*` files loose in `data/`. Their five
+manifest `<service>` entries name the new package. Note that the `*Keys` classes they speak in
+live in `:study`, in package `mse.quill.data` — the split package from Epic J.
+
+**`MainActivity` routes nothing.** `DeepLinkRouter` owns widget taps, the reminder
+notification, `.quill` files opened from outside, and `quill://` session links, along with the
+awkward state all of that needs (`pendingImportUri`, `viewIntentConsumed`, `pendingJoinToken`
+and their saved-instance-state). The activity drives it through `onCreate`, `route`,
+`onNewIntent`, `onSaveInstanceState`, `onUnlocked`. The six `EXTRA_OPEN_*` constants moved with
+it, so widget code names `DeepLinkRouter`, not `MainActivity`.
+
+**Read paths say so.** 28 read-only database accesses use `getReadableDatabase()`; the ~40 that
+write still say `getWritableDatabase()`. SQLite hands back the same connection either way — this
+is so a reader can tell the two apart at a glance.
+
+**A callback-taking method must never invoke its callback before it returns.**
+`CollectionRepository.isLocked` was the one violation and is fixed; the rule is written into
+its comment.
