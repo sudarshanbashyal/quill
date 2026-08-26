@@ -421,3 +421,313 @@ Recorded so a later sweep does not "discover" them again:
 - **`ensureAdditiveSchema` checks for columns rather than trusting version numbers.** Looks
   redundant; is not. Two branches independently shipped a "version 4" meaning different
   things.
+
+---
+
+# Second sweep — 2026-08-26
+
+Written after R1–R8 landed, from a fresh read of `app/src/main/java/mse/quill` (36.9k LOC).
+Same format: **cause → solution → steps**, ordered by leverage. `OPEN` unless marked.
+
+The first sweep was about *layering* — who may import whom. This one is mostly about
+**duplication**: the same flow written two or three times, drifting apart. Two of the
+copies have already drifted into real defects (R10, R12), which is what makes this round
+worth doing rather than tidying.
+
+---
+
+## R9 — Three entry points to "join a collaboration session", each with its own copy `OPEN`
+
+**Cause.** Joining a session can start from three places, and all three implement it
+separately:
+
+| From | Code | Creates a board row first? | Permission ladder | Scanner errors |
+|---|---|---|---|---|
+| The whiteboard's Collaborate button | `WhiteboardCollabController.startJoinByScan` | no — reuses this board | `Host.requestCollabPermissions` | `showError`, offers "scan again" |
+| Home's FAB | `HomeFragment.requestJoinPermissions` + `scanAndJoin` | **yes** — `createWhiteboard(null, …)` | its own `joinPermissionLauncher` | its own dialog, no retry |
+| A `quill://` link | `DeepLinkRouter.joinSessionWhenUnlocked` | no — "the screen mints one" | none at all | none |
+
+`HomeFragment.scanAndJoin` is a near-verbatim copy of `WhiteboardCollabController.scanForSession`
+down to the two string resources, and its error dialog is `showCollabError` minus the retry
+button. The three also disagree about who creates the `whiteboards` row: Home creates one
+and passes its id; the deep link passes no id and lets the fragment mint one. Both work,
+which is worse than one of them being wrong — nobody will notice they diverged.
+
+**Solution.** One `CollabEntry` that owns "get permission, scan, hand back a token", used
+by all three. It does not own what happens next — that genuinely differs — so it returns
+the token and stops.
+
+**Steps.**
+
+1. `collab/CollabEntry.java`: `static void scanForToken(Fragment, OnToken)`, wrapping the
+   `CollabPermissions.missing` ladder and `SessionScanner`, and raising the one error
+   dialog. The permission launcher has to be registered by the fragment, so it takes a
+   `Host` the way `WhiteboardCollabController` does — or simply takes the already-resolved
+   `Runnable` and leaves the ladder to the caller. Prefer the latter; the ladder is three
+   lines and the launcher genuinely belongs to the fragment.
+2. Point all three at it. `WhiteboardCollabController.scanForSession` and
+   `HomeFragment.scanAndJoin` both go.
+3. **Decide the board-row question explicitly** and write the answer down: does a joiner
+   arrive on a board Home created, or one the fragment mints? Pick one and make the deep
+   link and Home agree. This is the part with actual value — the extraction is the excuse.
+
+---
+
+## R10 — Export and share are one feature split across two packages, three fragments, and a bug `OPEN`
+
+**Cause.** Writing something out of Quill is spread over:
+
+- `util/`: `PdfExporter` (393), `MarkdownExporter` (81), `ImageExporter` (89),
+  `NoteExportStore` (168) — 731 lines;
+- `share/`: nine files, 1140 lines, the `.quill`/`.quillboard`/`.quillpack` bundle formats;
+- and the fragments, where `NoteEditorFragment.writeExport` calls `util.PdfExporter`,
+  `util.MarkdownExporter`, `util.NoteExportStore` **and** `share.QuillBundle` in one method.
+
+The `ACTION_SEND` + `FileProvider` + `createChooser` block is written out three times:
+`NoteEditorFragment:701`, `CollectionDetailFragment:267`, `WhiteboardFragment:783` (that
+one with `android.content.Intent` fully qualified inline).
+
+**And the third copy has drifted into a real defect.** `WhiteboardFragment.exportWhiteboard`
+(`:799`) reimplements `ImageExporter.saveToPictures` and gets three things wrong that
+`ImageExporter` gets right:
+
+- it sets `MediaStore.Images.Media.RELATIVE_PATH` **unconditionally**, and that column is
+  API 29+. `minSdk` is 26.
+- it never checks `WRITE_EXTERNAL_STORAGE`, which API 26–28 requires — the manifest
+  declares it with `maxSdkVersion="28"` *for exactly this*, and `NoteEditorFragment` gates
+  on `ImageExporter.requiresStoragePermission()` before its own save.
+- it omits `IS_PENDING`, so a gallery scanning mid-write can show a half-written PNG.
+  `ImageExporter` sets it and says why.
+
+So whiteboard PNG export is very likely broken on API 26–28 and racy everywhere.
+
+**Solution.** One `export/` package holding both halves, and one way to hand a file to
+another app.
+
+**Steps.**
+
+1. `git mv` the four exporters from `util/` into `share/`, and rename the package
+   `export/` — it covers bundles *and* PDF/Markdown/PNG, and "share" is only one of the
+   things it does. One commit, imports only.
+2. Add `ShareIntents.sendFile(Fragment, Uri, String mime, int chooserTitleRes)` and replace
+   the three `ACTION_SEND` blocks.
+3. **Delete `WhiteboardFragment.exportWhiteboard`'s MediaStore code and call
+   `ImageExporter`**, extending it to take a `Bitmap` and a PNG mime type rather than only
+   copying an existing file. This is the fix, not the tidy-up — verify on an API 26–28
+   emulator, which is the only way to see it.
+4. While there: the four hardcoded English strings in that method
+   (`"Export failed"` ×2, `"Saved to Pictures/Quill/" + filename`) go to `strings.xml`.
+
+---
+
+## R11 — `NoteEditorFragment` is the god class now `OPEN`
+
+**Cause.** 1298 lines, ~60 methods — bigger than `WhiteboardFragment` was before R1, and
+carrying at least seven unrelated jobs: export (14 methods, `:511–750`, 239 lines),
+read-aloud and voice selection, audio recording UI, whiteboard attachment, autosave and
+lock-retry, keyboard/inset choreography, and tags.
+
+Symptoms of the sprawl are already visible in the file: `private WhiteboardRepository
+whiteboardRepository` is declared at `:441`, in the middle of the methods, and there are
+two `autoSave` overloads 20 lines apart (`:1185`, `:1206`).
+
+**Solution.** The same seam R1 used. Export is the obvious first cut — it is the largest
+block, it is self-contained, and R10 is moving its collaborators anyway.
+
+**Steps.**
+
+1. Do **R10 first**. Extracting export from the fragment while its dependencies are still
+   split across `util/` and `share/` just moves the mess.
+2. `NoteExportController` (or `ui/notes/NoteExportFlow`) taking the 14 export methods and
+   the export dialog state. Target: fragment under 1000.
+3. Read-aloud is the natural second cut (`toggleReadAloud`, `buildReadPlaylist`,
+   `stopReadingIfNothingLeft`, `showVoicePickerDialog`, `describeVoice`), and it pairs with
+   R16's note about `ReadAloud`'s static state.
+4. Stop there. Keyboard choreography and autosave are genuinely editor-shaped work.
+
+---
+
+## R12 — `DataWipe`'s hand-maintained list of preference files has already rotted `OPEN`
+
+**Cause.** There are six `SharedPreferences` files:
+
+`home_prefs`, `whiteboard_prefs`, `profile_prefs`, `note_reader_prefs`, `security_prefs`,
+`onboarding_prefs`.
+
+`DataWipe.wipeEverything` clears **four** of them — profile, app lock, whiteboard,
+onboarding. `home_prefs` and `note_reader_prefs` survive "delete everything".
+
+`home_prefs` holds `pinned_count`, which Home reads on cold start to draw *placeholder*
+pinned cards before the real query returns (`showPinnedPlaceholders`). So after a wipe,
+Home briefly renders N ghost cards for notes that no longer exist.
+
+The irony is that `DataWipe`'s own comment, two lines above, explains why it clears
+`filesDir` wholesale rather than by name: *"doesn't need a list of subdirectory names that
+would quietly rot as features are added."* It then keeps exactly such a list for prefs, and
+the list has rotted.
+
+**Solution.** Stop maintaining the list. Either enumerate `shared_prefs/` on disk, or make
+registration the only way to get a prefs file.
+
+**Steps.**
+
+1. Prefer enumeration: `new File(appContext.getApplicationInfo().dataDir, "shared_prefs")`,
+   clear every `*.xml`. It cannot rot, and it matches what the directory deletion above it
+   already does.
+2. If enumeration feels too broad, the alternative is `Preferences.named("home")` as the
+   single factory, with `DataWipe` iterating what it handed out — but that only works if
+   nothing calls `getSharedPreferences` directly, which needs a lint rule to hold.
+3. Either way, add `home_prefs` and `note_reader_prefs` to the wipe **first**, as a
+   one-line fix, before doing the structural part. The bug is worth closing on its own.
+4. Decide deliberately whether the TTS voice preference is "data" — an argument exists for
+   keeping a device-capability setting across a wipe. Write the answer down; do not leave
+   it as an accident.
+
+---
+
+## R13 — `:study` is two modules wearing one name `OPEN`
+
+**Cause.** `:study` is the only module both `:app` and `:wear` depend on, so everything
+shared has been put there whether or not it is about studying. Of its 16 files, **seven are
+the phone↔watch wire protocol**: `AnswerEventKeys`, `AudioCaptureKeys`, `DueProjectionKeys`,
+`NoteListKeys`, `ReadControlKeys`, `ReadRequestKeys`, `ReadStateKeys` — all in package
+`mse.quill.data`, in a module called `study`, describing neither storage nor studying.
+
+R7a ran straight into this: moving `:app`'s `Wear*` services into `data/wear/` cost them
+package-private access to those Keys and needed explicit imports. That was the first real
+bill this arrangement has presented.
+
+Audio capture and read-aloud control have nothing to do with SM-2.
+
+**Solution.** Split the shared surface by what it is, not by who needs it. Either a small
+`:wearprotocol` module for the seven Keys classes, or rename `:study` to `:shared` and give
+it honest packages inside.
+
+**Steps.**
+
+1. Cheapest honest move first, and it is only a package rename inside `:study`: the seven
+   Keys classes go from `mse.quill.data` to `mse.quill.sync`. That alone stops the module
+   claiming they are storage, and it is imports-only.
+2. Then decide on the module. A `:wearprotocol` module is cleaner and makes `:wear`'s
+   dependency on `:study` optional; renaming `:study` to `:shared` is one line in
+   `settings.gradle.kts` plus two `implementation(project(...))` lines. Prefer the rename —
+   a third module for seven constant-holder files is not obviously worth its build cost.
+3. R7b's original items (`mse.quill.ui.quiz.QuizGenerator` and
+   `mse.quill.data.FlashcardScheduler` being pure logic in packages named `ui` and `data`)
+   fold into step 2 — do them in the same commit, since it is the same rename.
+
+---
+
+## R14 — `util/` is four packages in a trench coat, and `dimen()` is declared seven times `OPEN`
+
+**Cause (a).** `util/` holds 19 files, 1901 lines, in four unrelated groups:
+
+- **export** — `PdfExporter`, `MarkdownExporter`, `ImageExporter`, `NoteExportStore` (R10);
+- **UI behaviour** — `SwipeToDelete`, `Reveal`, `UndoDelete`, `MaxHeightScrollView`,
+  `WindowInsetsUtils`, `Haptics`, `CardStyles`, `TextFieldUtils`. These are not utilities;
+  two hold **static mutable UI state** (`WindowInsetsUtils.chromeOwnsTopInset`,
+  `SwipeToDelete.activeSwipes`), which is a thing a package called `util` should never own;
+- **a data operation** — `DataWipe`, which destroys the database and every file the app owns;
+- **genuine helpers** — `BitmapUtils`, `ColorUtils`, `RelativeTime`, `TimeStamps`,
+  `NoteDisplayUtils`, plus the `PipAware` interface.
+
+**Cause (b), the picky one.** `dimen(Context, int)` — a two-line wrapper over
+`getDimensionPixelSize` — is declared **seven times**:
+
+- `util/CardStyles.dimen` — public, the real one;
+- `ui/home/NoteRowView.dimen` — a pass-through that just calls `CardStyles.dimen`, and the
+  one four classes in `ui/home` actually use, so they reach *through a View class* to get to
+  a utility;
+- verbatim private copies in `PinnedNoteCardView`, `WhiteboardPickerDialog`, `TagChipView`,
+  `SearchFilterDialog`, `NoteQaPickerDialog`.
+
+**Solution.** Move by group; delete the six duplicate `dimen`s.
+
+**Steps.**
+
+1. `dimen` first — it is ten minutes. Everything calls `CardStyles.dimen`; the delegate in
+   `NoteRowView` and the five copies go.
+2. `DataWipe` → `data/`. It is a data-layer operation and `data/` is where someone looks
+   for it.
+3. UI behaviour → `ui/common/` (or `ui/behaviour/`). `CardStyles` goes with them.
+4. Export → R10's `export/` package.
+5. What is left in `util/` is five genuine helpers and one interface, which is a `util/`
+   worth having.
+
+---
+
+## R15 — `AppDatabase` is a schema, a migration history, and a helper class in one file `OPEN`
+
+**Cause.** 748 lines: the singleton and its lifecycle, `onCreate` with ~170 lines of
+`execSQL` defining every table, and ~400 lines of migration — `onUpgrade`, `onDowngrade`,
+`migrateLegacyNotesToMarkdown`, `reshapeLegacySegmentTable`, `ensureAdditiveSchema`,
+`ensureNotesFts`, `backfillNotesFts`, `backfillWhiteboardLinks`.
+
+The migration half only grows, and it is the half nobody should edit casually. Sitting in
+the same file as the schema makes "what does a fresh install create?" and "what happened to
+installs from March?" the same question to read.
+
+**Solution.** Three files, no behaviour change: `AppDatabase` (singleton + `onCreate`
+delegating out), `Schema` (the `CREATE TABLE` statements), `Migrations` (everything
+`onUpgrade` reaches).
+
+**Steps.**
+
+1. `data/Schema.java` — package-private, `static void createAll(SQLiteDatabase)`. Pure move.
+2. `data/Migrations.java` — the seven migration methods, package-private statics.
+3. `AppDatabase` keeps `getInstance`/`openForTest`/`destroy`/`onConfigure`/`hasAnyContentSync`
+   and two delegating overrides. Target: under 150 lines.
+4. Do **not** renumber versions or touch `ensureAdditiveSchema`'s column-checking — see
+   "deliberately not on this list" in the first sweep.
+
+---
+
+## R16 — Small things `OPEN`
+
+Fix opportunistically; none is worth its own trip.
+
+- **33 fully-qualified `mse.quill.*` references inline**, plus **52 fully-qualified
+  `android.content/provider/net/os/graphics/widget/view` ones**, instead of imports. R3
+  called this "the tell that it was bolted on rather than designed" and it is still the best
+  single smell detector in the tree — `WhiteboardFragment:783` writes
+  `android.content.Intent` three times in one statement. Worth a one-pass cleanup with a
+  formatter rather than by hand.
+- **Seven hardcoded user-facing strings in Java**, six of them in `WhiteboardFragment`
+  (`"Clear Whiteboard"`, `"This will erase everything on this whiteboard. Continue?"`,
+  `"Clear"`, `"Cancel"`, `"Export failed"` ×2) and one in `NoteEditorFragment`
+  (`"Insert image"`). `note.md` claims zero hardcoded strings — true of the 27 layouts, not
+  of the Java.
+- **19 unused resources** per lint, including `ic_stop.png`, `circle_indicator.xml`,
+  `R.color.black`, and six unused strings. Delete them; they are dead weight in a project
+  that advertises a minimal footprint.
+- **Static mutable state has no convention.** Five things outlive a fragment and each
+  invented its own shape: `CollabSessionHolder` (documented, attach/detach, the good one),
+  `ReadAloud` (**nine** mutable statics — reader, clipReader, appContext, noteId, title,
+  index, weightBefore, active, paused), `AppLock`, `CollectionLock`,
+  `WindowInsetsUtils.chromeOwnsTopInset`. `ReadAloud` is the one to fix: it is a playback
+  *session* modelled as process globals, and it pairs with R11 step 3.
+- **PIP coupling is asymmetric.** The activity reaches the fragment through the `PipAware`
+  interface; the fragment reaches back with `((mse.quill.MainActivity) requireActivity())
+  .enterWhiteboardPip(w, h)` (`WhiteboardFragment:851`) — a concrete cast, fully qualified
+  inline. Give it the other half of the interface.
+- **`recyclerView.setVisibility(empty ? GONE : VISIBLE); emptyView.setVisibility(empty ?
+  VISIBLE : GONE)`** appears verbatim in `FlashcardDecksFragment`, `QuizzesFragment`,
+  `QuizDetailFragment` and `CollectionDetailFragment`. One `EmptyState.apply(recycler,
+  empty, isEmpty)` helper, in `ui/common/` from R14.
+- **`WhiteboardThumbnails` sits in `ui/whiteboard/`** but reads the database, writes
+  `widget/WidgetThumbnailCache`, and calls `WidgetUpdater` — it is neither a screen nor a
+  view. After R3 it is also the only place outside `data/` still pushing widget updates by
+  hand.
+
+---
+
+## Not on this list, deliberately
+
+- **Silent `catch` blocks.** There are five, every one named `ignored` and every one
+  carrying a comment saying why. That is the correct pattern, not a finding.
+- **Fragment↔fragment coupling.** There is none: no `getParentFragment`, no
+  `findFragmentByTag`, one cast to `MainActivity` (see R16). Navigation goes through the
+  nav graph everywhere. Leave it alone.
+- **Six RecyclerView adapters with no shared base class.** Checked; they genuinely differ
+  (multi-view-type sections vs. flat lists). A common base would be inheritance for its own
+  sake.
