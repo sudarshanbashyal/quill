@@ -4176,3 +4176,61 @@ the silent-failure risk in the Wear move, but not the round trips themselves.
 `memory/note.md` had three current-tense claims the pass falsified (the DAO-vs-repository access
 pattern, the "second uncoordinated threading pattern" that R4 already removed, and the synchronous
 whiteboard insert). Corrected, and a section describing the structure as it now stands appended.
+
+## 2026-08-26 (later) — Icons, a second sweep, and two real bugs (Architecture / Bug fixing)
+
+Three things after the R1–R8 pass, in one session.
+
+**The PIP icon and the drawable folder.** Swapped in the supplied `pip.png` (renamed `ic_pip.png`;
+the vector had to go, since both resolve to `R.drawable.ic_pip`). Then the user asked how to manage
+`drawable/` having a mix of XML and PNG — and the honest answer turned out not to be about format
+at all. `res/drawable/` with no qualifier means **mdpi**, so a 1024px PNG was being treated as
+1024dp and *upscaled*: `ic_mic.png` decoded to 3072×3072, **37.7 MB of heap**, to be drawn at 40dp.
+The 41 icons moved to `drawable-xxxhdpi/`; `ic_stars.png` (58×62) went to `drawable-xxhdpi/`
+instead, being genuinely a 3x asset for its 20dp box. Nothing on screen changed — every icon is
+drawn at a fixed size, checked before moving. Lint's `IconDensities` now wants five copies of each
+and is switched off in a new `app/lint.xml` with the reasoning *in the file*, because the obvious
+"fix" is to generate 205 files on lint's authority.
+
+**A second architecture sweep, R9–R16.** The first sweep was about layering; this one is mostly
+duplication. Two copies had already drifted into defects, which is what made it worth doing.
+
+**Both defects fixed, before any tidying.** `WhiteboardFragment.exportWhiteboard` had its own copy
+of MediaStore handling instead of calling `ImageExporter`, and the copy set `RELATIVE_PATH`
+unconditionally (an API 29 column, against `minSdk 26`), never asked for `WRITE_EXTERNAL_STORAGE`
+where API 26–28 requires it, and skipped `IS_PENDING`. Whiteboard PNG export was very likely broken
+on 26–28. Separately, `DataWipe` cleared four of six `SharedPreferences` files — `home_prefs` and
+`note_reader_prefs` survived "delete everything", and `home_prefs` holds the pinned count Home
+draws placeholder cards from, so a wiped Quill opened onto ghost cards for notes that no longer
+existed. Its own comment two lines above explains why it clears `filesDir` wholesale: a hand-kept
+list "would quietly rot". The prefs list had rotted. Now enumerated off `shared_prefs/` — but
+cleared through the `SharedPreferences` API, not by deleting files, since the framework caches a
+live instance per name that would write itself back out.
+
+**Then R10 and R11.** R10's plan step was wrong and got changed on contact: it said rename `share/`
+to `export/`, but all nine files there are the bundle *format* and three are readers, which serve
+import. Split three ways instead — `bundle/` (the format), `export/` (the four exporters out of
+`util/`, plus a new `ShareIntents`), `data/*Importer` (unchanged). `ShareIntents` replaced three
+hand-written copies of the `ACTION_SEND` incantation, which is three chances to forget
+`FLAG_GRANT_READ_URI_PERMISSION` — the line whose absence shows up as the target app failing on
+read with nothing to explain why. R11 then pulled `NoteExportController` (330 lines) out of
+`NoteEditorFragment`: 1298 → 1062 lines, and — the better measure — thirteen imports gone, zero
+remaining references to any exporter or bundle class. The fragment no longer knows file formats
+exist.
+
+**Two unplanned improvements fell out of R11.** The storage-permission callback now carries both
+outcomes rather than one action plus a hardcoded `abandonExport()` on refusal; the old shape
+expressed only one and worked by accident. And `exportMedia`'s pending path/result were fragment
+fields, so two picture exports requested before the permission resolved would clobber each other —
+closure captures now.
+
+**Not verified on a device.** No emulator was running all session and only the physical phone was
+attached, which this project's convention says not to use. The export fix specifically wants an API
+26–28 emulator, since that is the only place its symptom was visible. Everything compiles from
+clean, unit tests pass, the APK builds, and all 18 manifest components resolve in the merged
+manifest.
+
+Left open deliberately: R9 (three copies of the collab join flow), R13 (`:study` holding seven
+wire-protocol classes), R14 (`util/` is four packages, `dimen()` declared seven times), R15
+(`AppDatabase` = schema + 400 lines of migrations), R16 (small things), and R11 steps 3–4, which
+want doing alongside R16's note on `ReadAloud`'s nine mutable statics.
