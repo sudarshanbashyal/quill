@@ -66,6 +66,22 @@ kotlin {
 }
 
 dependencies {
+    // Nothing here uses Fragment: CaptureActivity and ReadAloudActivity are ComponentActivity, and
+    // registerForActivityResult on that has handled its own results since androidx.activity 1.2.
+    // But Play Services puts androidx.fragment on the classpath at 1.1.0, and lint checks the
+    // *classpath* rather than the activity's actual superclass — so
+    // InvalidFragmentVersionForActivityResult failed :wear:lintVitalRelease, and with it `gradlew
+    // assemble`, while :app was fine because navigation-fragment-ktx already floors it there.
+    //
+    // A constraint rather than an implementation dependency, because that is the honest shape: it
+    // adds no edge, it only raises the version of one that something else already pulled in.
+    constraints {
+        implementation(libs.fragment) {
+            because("lint's InvalidFragmentVersionForActivityResult needs fragment >= 1.3.0 on the "
+                    + "classpath; Play Services supplies 1.1.0")
+        }
+    }
+
     // SM-2 and the review session, shared verbatim with the phone rather than reimplemented — the
     // reason the module extraction came first. Java, consumed from Kotlin without ceremony.
     implementation(project(":study"))
