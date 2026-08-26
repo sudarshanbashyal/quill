@@ -27,6 +27,7 @@ import mse.quill.util.RelativeTime;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
 import mse.quill.data.model.Collection;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
@@ -48,6 +49,9 @@ public class CollectionDetailFragment extends Fragment {
     public static final String ARG_COLLECTION_ID = "collection_id";
     public static final String ARG_COLLECTION_NAME = "collection_name";
 
+    /** The concrete repository, not {@link NoteStore}: this screen exports a collection, and
+     *  {@code loadForBundleSync} is deliberately off the interface. Holding the concrete type is
+     *  the signal that it is doing something a screen normally should not. */
     private NoteRepository noteRepository;
     private CollectionRepository collectionRepository;
     private NotesAdapter notesAdapter;
@@ -295,7 +299,7 @@ public class CollectionDetailFragment extends Fragment {
         if (isPinned) {
             noteRepository.unpinNote(note.id, this::reloadNotes);
         } else {
-            noteRepository.pinNote(note.id, new NoteRepository.OnPinResult() {
+            noteRepository.pinNote(note.id, new NoteStore.OnPinResult() {
                 @Override public void onPinned() { reloadNotes(); }
 
                 @Override public void onLimitReached() {

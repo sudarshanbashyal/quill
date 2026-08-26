@@ -45,8 +45,10 @@ import mse.quill.audio.ReadAloud;
 import mse.quill.audio.ReadPlaylist;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
-import mse.quill.data.FlashcardRepository;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.FlashcardStore;
+import mse.quill.data.Repositories;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.security.CollectionLock;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.TagRepository;
@@ -121,10 +123,10 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
     private RecordingDialog recordingDialog;
     private Runnable recordingTickRunnable;
 
-    private NoteRepository noteRepository;
+    private NoteStore noteRepository ;
     private TagRepository tagRepository;
     private CollectionRepository collectionRepository;
-    private FlashcardRepository flashcardRepository;
+    private FlashcardStore flashcardRepository ;
     private QuizRepository quizRepository;
     /** Whether this note has already generated cards — decides which of the two flashcard labels
      *  the menu shows. Refreshed on resume, so deleting a deck reverts the label. */
@@ -191,10 +193,10 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         tagRowScroll = view.findViewById(R.id.tag_row_scroll);
         tagRowContainer = view.findViewById(R.id.tag_row_container);
 
-        noteRepository = new NoteRepository(requireContext());
+        noteRepository = Repositories.notes(requireContext());
         tagRepository = new TagRepository(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
-        flashcardRepository = new FlashcardRepository(requireContext());
+        flashcardRepository = Repositories.flashcards(requireContext());
         quizRepository = new QuizRepository(requireContext());
 
         // The note's id can come from three places, and the order matters. A note created *during*
@@ -997,7 +999,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
         List<NoteSegment> segments = noteEditorView.exportSegments();
         // A note whose blocks have all been emptied still has its old cards, so the deck is worth
         // opening even when there's nothing left to generate from.
-        if (!hasFlashcards && FlashcardRepository.reviewableQa(segments).isEmpty()) {
+        if (!hasFlashcards && FlashcardStore.reviewableQa(segments).isEmpty()) {
             QaBlockHintDialog.showForFlashcards(requireContext(), this::insertQaBlock);
             return;
         }
@@ -1021,7 +1023,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
      */
     private void openQuiz() {
         List<NoteSegment> segments = noteEditorView.exportSegments();
-        int usable = FlashcardRepository.reviewableQa(segments).size();
+        int usable = FlashcardStore.reviewableQa(segments).size();
         if (!hasQuiz && usable < QuizRules.MIN_QA_BLOCKS) {
             QaBlockHintDialog.showForQuiz(requireContext(), usable, QuizRules.MIN_QA_BLOCKS,
                     this::insertQaBlock);
@@ -1220,7 +1222,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
             // arriving mid-creation had no id to write to and was dropped on the floor, taking
             // everything typed since creation started with it. Leaving a new note quickly — a back
             // gesture a moment after the first keystroke — is exactly that race.
-            noteId = NoteRepository.newNoteId();
+            noteId = NoteStore.newNoteId();
             // A reading can have been started before the note had an id; hand it the one just
             // minted so the menu still recognises the voice as this note's.
             ReadAloud.noteIdMinted(noteId);
@@ -1232,7 +1234,7 @@ public class NoteEditorFragment extends Fragment implements WindowInsetsUtils.To
             return;
         }
 
-        noteRepository.saveNote(noteId, title, segments, new NoteRepository.OnNoteSaved() {
+        noteRepository.saveNote(noteId, title, segments, new NoteStore.OnNoteSaved() {
             @Override public void onSaved() {
                 if (onSaved != null) onSaved.run();
             }

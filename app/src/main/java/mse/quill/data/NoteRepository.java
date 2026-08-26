@@ -33,26 +33,13 @@ import mse.quill.data.model.NoteSegment;
 import mse.quill.data.wear.WearNoteListPublisher;
 import mse.quill.data.wear.WearProjectionPublisher;
 
-public class NoteRepository {
+public class NoteRepository implements NoteStore {
 
     public static final int MAX_PINNED_NOTES = 3;
 
-    public interface OnNoteLoaded { void onLoaded(Note note, List<NoteSegment> segments); }
-    public interface OnNotesLoaded { void onLoaded(List<Note> notes); }
-    public interface OnPinResult { void onPinned(); void onLimitReached(); }
-
-    /** Outcome of a save into a collection that may be encrypted. */
-    public interface OnNoteSaved {
-        void onSaved();
-
-        /**
-         * The note's collection is locked and its key would not encrypt — the authentication
-         * window closed while the note was open. <b>Nothing was written.</b> The editor still
-         * holds the text, so the caller's job is to get the collection unlocked and save again,
-         * not to warn about lost work.
-         */
-        default void onNeedsUnlock() {}
-    }
+    // The callbacks and QaCandidate live on NoteStore — the interface owns its own vocabulary.
+    // They stay reachable as NoteRepository.OnNoteLoaded and friends, since an implementing class
+    // inherits an interface's nested types, so the concrete callers below did not have to change.
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
@@ -73,6 +60,7 @@ public class NoteRepository {
      * to {@link #saveNote} queues behind this insert on the shared single disk thread, so the
      * writes land in order without the caller having to track whether creation is still in flight.
      */
+    @Override
     public void createNote(String noteId, String title, String collectionId, Runnable onCreated) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -151,6 +139,7 @@ public class NoteRepository {
         return noteId;
     }
 
+    @Override
     public void loadNote(String noteId, OnNoteLoaded cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getReadableDatabase();
@@ -160,6 +149,7 @@ public class NoteRepository {
         });
     }
 
+    @Override
     public void saveNote(String noteId, String title, List<NoteSegment> segments, Runnable onSaved) {
         saveNote(noteId, title, segments, new OnNoteSaved() {
             @Override public void onSaved() {
@@ -168,6 +158,7 @@ public class NoteRepository {
         });
     }
 
+    @Override
     public void saveNote(String noteId, String title, List<NoteSegment> segments, OnNoteSaved cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -338,6 +329,7 @@ public class NoteRepository {
         }
     }
 
+    @Override
     public void deleteNote(String noteId, Runnable onDeleted) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -383,6 +375,7 @@ public class NoteRepository {
      * <p>A move that can't be converted is abandoned rather than half-done: the note stays where
      * it is, readable, which is the only safe way to fail here.
      */
+    @Override
     public void assignCollection(String noteId, String collectionId, Runnable onDone) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -465,6 +458,7 @@ public class NoteRepository {
     }
 
     /** Pins the note, unless {@link #MAX_PINNED_NOTES} notes are already pinned. */
+    @Override
     public void pinNote(String noteId, OnPinResult cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -491,6 +485,7 @@ public class NoteRepository {
         });
     }
 
+    @Override
     public void unpinNote(String noteId, Runnable onDone) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -503,6 +498,7 @@ public class NoteRepository {
     }
 
     /** filter: null = all notes, else a collection id. */
+    @Override
     public void loadNotes(String filter, OnNotesLoaded cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getReadableDatabase();
@@ -512,6 +508,7 @@ public class NoteRepository {
     }
 
     /** Up to {@link #MAX_PINNED_NOTES} pinned notes, most-recently-pinned first. */
+    @Override
     public void loadPinnedNotes(OnNotesLoaded cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getReadableDatabase();
@@ -541,18 +538,6 @@ public class NoteRepository {
         return getAllNotesSync(appDatabase.getReadableDatabase(), null, true, true);
     }
 
-    /** A note, paired with how many of its Q&amp;A blocks could become cards right now. */
-    public static final class QaCandidate {
-        public final Note note;
-        public final int usableQa;
-
-        QaCandidate(Note note, int usableQa) {
-            this.note = note;
-            this.usableQa = usableQa;
-        }
-    }
-
-    public interface OnQaCandidatesLoaded { void onLoaded(List<QaCandidate> candidates); }
 
     /**
      * Every note that could produce at least one card, most recently updated first — what the
@@ -568,6 +553,7 @@ public class NoteRepository {
      * Q&amp;A blocks is a fact about its Markdown, not something the notes table records. Acceptable
      * because this runs once, off the main thread, when a picker is opened — not on any list path.
      */
+    @Override
     public void loadQaCandidates(OnQaCandidatesLoaded cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getReadableDatabase();
@@ -902,11 +888,6 @@ public class NoteRepository {
     // Both helpers tolerate notes_fts being absent: AppDatabase skips creating it on SQLite
     // builds without FTS5, and search still works (in-memory filtering) without it.
 
-    public interface OnSearchMatches {
-        /** {@code null} means "no answer" — an unusable query, or a build without FTS5. Callers
-         *  fall back to matching what they already hold in memory rather than showing nothing. */
-        void onMatched(Set<String> noteIds);
-    }
 
     /**
      * The ids of every indexed note matching {@code rawQuery}, title or body.
@@ -921,6 +902,7 @@ public class NoteRepository {
      * collection that is open right now is therefore also unindexed until it is next saved — it
      * still matches on title, which is the same fallback an unsaved note gets.
      */
+    @Override
     public void searchNoteIds(String rawQuery, OnSearchMatches cb) {
         List<String> tokens = searchTokens(rawQuery);
         if (tokens.isEmpty()) {

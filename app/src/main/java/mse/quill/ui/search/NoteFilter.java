@@ -113,7 +113,7 @@ public final class NoteFilter {
      * Notes matching the query and the selected tags, in the chosen order.
      *
      * <p>There was a "pinned only" switch here too. It was dropped because pinning is capped at
-     * {@code NoteRepository.MAX_PINNED_NOTES} — three — and those three already have a band of
+     * {@code NoteStore.MAX_PINNED_NOTES} — three — and those three already have a band of
      * their own at the top of Home. A filter that narrows a list to something permanently on
      * screen a few centimetres above it is a control with nothing to do.
      */

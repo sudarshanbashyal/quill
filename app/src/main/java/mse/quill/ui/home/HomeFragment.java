@@ -32,7 +32,8 @@ import com.google.android.material.snackbar.Snackbar;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteImporter;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Collection;
 import mse.quill.data.TagRepository;
@@ -73,7 +74,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         return null;
     }
 
-    private NoteRepository noteRepository;
+    private NoteStore noteRepository ;
     private CollectionRepository collectionRepository;
     private WhiteboardRepository whiteboardRepository;
 
@@ -130,7 +131,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        noteRepository = new NoteRepository(requireContext());
+        noteRepository = Repositories.notes(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
         tagRepository = new TagRepository(requireContext());
         whiteboardRepository = new WhiteboardRepository(requireContext());
@@ -726,7 +727,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
             noteRepository.unpinNote(note.id, this::reloadAll);
             return;
         }
-        noteRepository.pinNote(note.id, new NoteRepository.OnPinResult() {
+        noteRepository.pinNote(note.id, new NoteStore.OnPinResult() {
             @Override public void onPinned() { reloadAll(); }
 
             @Override public void onLimitReached() {

@@ -39,11 +39,9 @@ import mse.quill.data.wear.WearProjectionPublisher;
  * what there is to review filters on the stamp; only {@link #loadBySegmentIdSync} ignores it, since
  * that is what has to find an orphaned card again in order to revive it.
  */
-public class FlashcardRepository {
+public class FlashcardRepository implements FlashcardStore {
 
-    public interface OnDeckLoaded { void onLoaded(List<Flashcard> deck); }
-    public interface OnDecksLoaded { void onLoaded(List<FlashcardDeck> decks); }
-    public interface OnCounted { void onCounted(int count); }
+    // The three callbacks live on FlashcardStore; see the note in NoteRepository.
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
@@ -81,6 +79,7 @@ public class FlashcardRepository {
      * Brings the note's cards in line with its Q&amp;A blocks and hands back the resulting deck, in
      * the order the blocks appear in the note.
      */
+    @Override
     public void syncFromNote(String noteId, List<NoteSegment> segments, OnDeckLoaded cb) {
         List<QaSegment> reviewable = reviewableQa(segments);
         executors.diskIO(() -> {
@@ -267,6 +266,7 @@ public class FlashcardRepository {
      * out: their cards stay in the table (restoring a note restores its deck), they just aren't
      * offered for review.
      */
+    @Override
     public void loadDecks(OnDecksLoaded cb) {
         executors.diskIO(() -> {
             List<FlashcardDeck> decks = loadDecksSync();
@@ -370,6 +370,7 @@ public class FlashcardRepository {
      * re-parsing every note in the app to open one review screen. The cards are already kept in
      * step by every save.
      */
+    @Override
     public void loadDueAcrossNotes(long now, OnDeckLoaded cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getReadableDatabase();
@@ -412,6 +413,7 @@ public class FlashcardRepository {
     }
 
     /** How many cards a note has — what decides whether it offers "turn into" or "review". */
+    @Override
     public void countForNote(String noteId, OnCounted cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getReadableDatabase();
@@ -608,6 +610,7 @@ public class FlashcardRepository {
      * Q&amp;A blocks can never make cards again. What's actually lost is the review history, which
      * is what the confirmation warns about.
      */
+    @Override
     public void deleteForNote(String noteId, Runnable onDeleted) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -623,6 +626,7 @@ public class FlashcardRepository {
     }
 
     /** Persists the card's advanced schedule after an answer given now, on this device. */
+    @Override
     public void recordReview(Flashcard card, boolean correct, Runnable onDone) {
         recordReview(card, correct, System.currentTimeMillis(), onDone);
     }
@@ -637,6 +641,7 @@ public class FlashcardRepository {
      * intends, and it would do it silently: every field still looks plausible afterwards, which
      * is what makes this worth a separate overload rather than a caller's discipline.
      */
+    @Override
     public void recordReview(Flashcard card, boolean correct, long answeredAt, Runnable onDone) {
         FlashcardScheduler.applyReview(card, correct, answeredAt);
         executors.diskIO(() -> {

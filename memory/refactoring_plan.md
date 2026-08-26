@@ -242,7 +242,7 @@ them differ had already gone in R3.
 
 ---
 
-## R6 — No abstraction boundary between UI and data `OPEN`
+## R6 — No abstraction boundary between UI and data `steps 1-3 DONE 2026-08-26, step 4 OPEN`
 
 **Cause.** Ten fragments each `new` their concrete repositories directly;
 `NoteEditorFragment` constructs six. There are no interfaces, and no ViewModels — `AppLock`
@@ -267,6 +267,38 @@ works. Extract interfaces only where they buy a test.
    (`Repositories.notes(context)`) rather than `new`.
 4. Only then consider a `ViewModel` per screen, and only for screens where a config
    change visibly re-loads. Do not do this speculatively.
+
+**What landed (steps 1–3).** `NoteStore` and `FlashcardStore` hold exactly the methods with
+callers outside `data/` — 13 and 7 — and the `Sync` variants are off both, as specified.
+`Repositories.notes(context)` / `.flashcards(context)` replaced `new` in eight files; ten
+UI holders now name the interface.
+
+Details worth keeping:
+
+- The callback types (`OnNoteLoaded`, `OnPinResult`, `OnNoteSaved`, `QaCandidate`, …) moved
+  onto the interfaces, since an interface should own its own vocabulary. Nothing broke at
+  the call sites even before they were repointed: **an implementing class inherits an
+  interface's nested types**, so `NoteRepository.OnPinResult` still resolves. Useful to
+  know; it makes this kind of move far cheaper than it looks.
+- Two static helpers, `NoteRepository.newNoteId` and `FlashcardRepository.reviewableQa`,
+  are now static methods on the interfaces delegating to the class. Both are genuinely part
+  of the vocabulary — you need an id *before* there is a note, and `reviewableQa` is a pure
+  function of segments — and leaving them behind would have kept `import
+  ...FlashcardRepository` in the editor for one call.
+- `CollectionDetailFragment` deliberately keeps the concrete `NoteRepository`, because it
+  exports a collection and needs `loadForBundleSync`. Its field carries a comment saying so.
+  That is the interface doing its job: holding the concrete type is now a visible signal
+  that a screen is doing something screens normally should not.
+
+**Honest limit.** This does not yet buy the JVM test the item is named for. `Repositories`
+is a static factory and fragments call it internally, so a fake still cannot be substituted
+into a fragment; what exists today is the documented boundary and the `Sync` methods being
+off it. Wiring a seam for substitution belongs with whoever actually writes the first such
+test, alongside step 4 — doing it now would be exactly the speculation step 4 warns against.
+
+**Step 4 (ViewModels) not started, on purpose.** The plan says to consider it only for
+screens where a config change visibly re-loads, and only after 1–3. Nothing was measured;
+nothing was done.
 
 ---
 

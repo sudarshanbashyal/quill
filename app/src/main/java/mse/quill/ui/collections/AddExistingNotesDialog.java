@@ -16,7 +16,7 @@ import java.util.Locale;
 import java.util.Set;
 
 import mse.quill.R;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
 import mse.quill.data.model.Note;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.MaxHeightScrollView;
@@ -31,7 +31,7 @@ public final class AddExistingNotesDialog {
 
     private AddExistingNotesDialog() {}
 
-    public static void show(Context context, NoteRepository noteRepository, String collectionId,
+    public static void show(Context context, NoteStore noteRepository, String collectionId,
                              List<Note> candidateNotes, Runnable onDone) {
         Set<String> selectedIds = new HashSet<>();
         int pad = dp(context, R.dimen.spacing_lg);
@@ -84,7 +84,7 @@ public final class AddExistingNotesDialog {
     }
 
     /** Assigns notes one at a time on the shared diskIO executor, running {@code onDone} only after the last. */
-    private static void assignSequentially(NoteRepository noteRepository, List<String> noteIds,
+    private static void assignSequentially(NoteStore noteRepository, List<String> noteIds,
                                             String collectionId, Runnable onDone) {
         if (noteIds.isEmpty()) {
             if (onDone != null) onDone.run();

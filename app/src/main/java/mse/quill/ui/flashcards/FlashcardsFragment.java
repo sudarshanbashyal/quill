@@ -30,8 +30,10 @@ import mse.quill.util.Haptics;
 import mse.quill.util.RelativeTime;
 import mse.quill.util.Reveal;
 import mse.quill.util.UndoDelete;
-import mse.quill.data.FlashcardRepository;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.FlashcardStore;
+import mse.quill.data.Repositories;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.model.Flashcard;
 import mse.quill.data.serialization.MarkdownSerializer;
 
@@ -66,8 +68,8 @@ public class FlashcardsFragment extends Fragment {
     private MaterialButton messagePrimary;
     private MaterialButton messageSecondary;
 
-    private NoteRepository noteRepository;
-    private FlashcardRepository flashcardRepository;
+    private NoteStore noteRepository ;
+    private FlashcardStore flashcardRepository ;
 
     /** Null in global mode — see the class comment. */
     private String noteId;
@@ -102,8 +104,8 @@ public class FlashcardsFragment extends Fragment {
         messagePrimary = view.findViewById(R.id.message_primary_button);
         messageSecondary = view.findViewById(R.id.message_secondary_button);
 
-        noteRepository = new NoteRepository(requireContext());
-        flashcardRepository = new FlashcardRepository(requireContext());
+        noteRepository = Repositories.notes(requireContext());
+        flashcardRepository = Repositories.flashcards(requireContext());
 
         deleteButton = view.findViewById(R.id.delete_deck_button);
         deleteButton.setVisibility(View.GONE); // until we know there is a deck to delete

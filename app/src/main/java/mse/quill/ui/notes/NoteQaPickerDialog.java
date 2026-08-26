@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Locale;
 
 import mse.quill.R;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
 import mse.quill.util.MaxHeightScrollView;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.TextFieldUtils;
@@ -40,13 +40,13 @@ import mse.quill.util.TextFieldUtils;
 public final class NoteQaPickerDialog {
 
     public interface OnPicked {
-        void onPicked(NoteRepository.QaCandidate candidate);
+        void onPicked(NoteStore.QaCandidate candidate);
     }
 
     private NoteQaPickerDialog() {}
 
     public static void show(Context context, int titleRes,
-                            List<NoteRepository.QaCandidate> candidates, OnPicked onPicked) {
+                            List<NoteStore.QaCandidate> candidates, OnPicked onPicked) {
         int pad = dimen(context, R.dimen.spacing_lg);
 
         LinearLayout content = new LinearLayout(context);
@@ -88,7 +88,7 @@ public final class NoteQaPickerDialog {
                     .trim().toLowerCase(Locale.getDefault());
             list.removeAllViews();
             int shown = 0;
-            for (NoteRepository.QaCandidate candidate : candidates) {
+            for (NoteStore.QaCandidate candidate : candidates) {
                 String title = NoteDisplayUtils.resolveTitle(context, candidate.note);
                 if (!query.isEmpty()
                         && !title.toLowerCase(Locale.getDefault()).contains(query)) {
@@ -113,7 +113,7 @@ public final class NoteQaPickerDialog {
         dialog.show();
     }
 
-    private static View buildRow(Context context, NoteRepository.QaCandidate candidate,
+    private static View buildRow(Context context, NoteStore.QaCandidate candidate,
                                  String title, Runnable onClick) {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.VERTICAL);

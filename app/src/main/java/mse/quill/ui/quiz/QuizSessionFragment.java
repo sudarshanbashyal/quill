@@ -27,7 +27,8 @@ import java.util.List;
 import java.util.Random;
 
 import mse.quill.R;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.model.Quiz;
 import mse.quill.data.serialization.MarkdownSerializer;
@@ -77,7 +78,7 @@ public class QuizSessionFragment extends Fragment {
     private QuizResultsAdapter resultsAdapter;
 
     private QuizRepository quizRepository;
-    private NoteRepository noteRepository;
+    private NoteStore noteRepository ;
 
     private String quizId;
     private Quiz quiz;
@@ -104,7 +105,7 @@ public class QuizSessionFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         quizRepository = new QuizRepository(requireContext());
-        noteRepository = new NoteRepository(requireContext());
+        noteRepository = Repositories.notes(requireContext());
 
         positionText = view.findViewById(R.id.question_position);
         timerText = view.findViewById(R.id.timer_text);
