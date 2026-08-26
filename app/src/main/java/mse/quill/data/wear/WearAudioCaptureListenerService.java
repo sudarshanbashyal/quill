@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.data.wear;
 
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import mse.quill.R;
 import mse.quill.data.model.AudioSegment;
 import mse.quill.data.model.NoteSegment;
+import mse.quill.data.NoteRepository;
+import mse.quill.data.AudioCaptureKeys;
 
 /**
  * Receives a voice memo recorded on the watch and files it into a note.

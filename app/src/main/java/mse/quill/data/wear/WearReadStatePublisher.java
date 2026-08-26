@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.data.wear;
 
 import android.content.Context;
 import android.database.Cursor;
@@ -10,6 +10,10 @@ import com.google.android.gms.wearable.Wearable;
 
 import mse.quill.R;
 import mse.quill.audio.ReadAloud;
+import mse.quill.data.AppDatabase;
+import mse.quill.data.AppExecutors;
+import mse.quill.data.NoteCrypto;
+import mse.quill.data.ReadStateKeys;
 
 /**
  * Tells the watch what the phone's voice is doing, so the wrist can have transport controls.

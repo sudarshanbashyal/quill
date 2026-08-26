@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.data.wear;
 
 import android.content.Context;
 import android.database.Cursor;
@@ -16,6 +16,9 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.data.AppDatabase;
+import mse.quill.data.NoteCrypto;
+import mse.quill.data.NoteListKeys;
 
 /**
  * Publishes the notes the watch can pick from — for dictating into, and for reading aloud.

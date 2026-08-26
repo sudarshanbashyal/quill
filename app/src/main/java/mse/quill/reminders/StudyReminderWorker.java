@@ -18,7 +18,7 @@ import androidx.work.WorkerParameters;
 import mse.quill.MainActivity;
 import mse.quill.R;
 import mse.quill.data.FlashcardRepository;
-import mse.quill.data.WearProjectionPublisher;
+import mse.quill.data.wear.WearProjectionPublisher;
 import mse.quill.ui.profile.ProfilePreferences;
 
 /**

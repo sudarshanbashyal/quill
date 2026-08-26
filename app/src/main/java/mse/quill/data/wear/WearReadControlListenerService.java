@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.data.wear;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -11,6 +11,7 @@ import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.WearableListenerService;
 
 import mse.quill.audio.ReadAloud;
+import mse.quill.data.ReadControlKeys;
 
 /**
  * Pauses, resumes and stops a reading, because the watch asked.

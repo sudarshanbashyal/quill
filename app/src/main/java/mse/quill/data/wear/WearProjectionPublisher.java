@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.data.wear;
 
 import android.content.Context;
 import android.util.Log;
@@ -13,6 +13,9 @@ import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
 import mse.quill.data.model.DueCard;
+import mse.quill.data.FlashcardRepository;
+import mse.quill.data.DueProjection;
+import mse.quill.data.DueProjectionKeys;
 
 /**
  * Publishes today's due cards to the paired watch.

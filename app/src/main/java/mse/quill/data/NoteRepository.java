@@ -30,6 +30,8 @@ import mse.quill.data.serialization.NoteDocument;
 import mse.quill.data.model.AudioSegment;
 import mse.quill.data.model.ImageSegment;
 import mse.quill.data.model.NoteSegment;
+import mse.quill.data.wear.WearNoteListPublisher;
+import mse.quill.data.wear.WearProjectionPublisher;
 
 public class NoteRepository {
 

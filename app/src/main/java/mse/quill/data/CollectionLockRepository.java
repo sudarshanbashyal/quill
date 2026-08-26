@@ -16,6 +16,7 @@ import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.security.CollectionCrypto;
 import mse.quill.security.CollectionLock;
+import mse.quill.data.wear.WearNoteListPublisher;
 
 /**
  * Turning a collection's lock on and off — the two migrations that move its notes between

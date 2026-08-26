@@ -39,9 +39,9 @@ import androidx.navigation.ui.NavigationUI;
 
 import mse.quill.collab.SessionCode;
 import mse.quill.data.AppExecutors;
-import mse.quill.data.WearNoteListPublisher;
-import mse.quill.data.WearProjectionPublisher;
-import mse.quill.data.WearReadStatePublisher;
+import mse.quill.data.wear.WearNoteListPublisher;
+import mse.quill.data.wear.WearProjectionPublisher;
+import mse.quill.data.wear.WearReadStatePublisher;
 import mse.quill.reminders.StudyReminders;
 import mse.quill.security.AppLock;
 import mse.quill.security.CollectionLock;

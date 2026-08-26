@@ -1,9 +1,10 @@
-package mse.quill.data;
+package mse.quill.data.wear;
 
 import androidx.annotation.NonNull;
 
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.WearableListenerService;
+import mse.quill.data.NoteListKeys;
 
 /**
  * Rebuilds the watch's note list because the watch asked.

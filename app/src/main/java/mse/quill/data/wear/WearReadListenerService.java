@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.data.wear;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -21,6 +21,8 @@ import mse.quill.audio.ReadPlaylist;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.NoteSegment;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.data.NoteRepository;
+import mse.quill.data.ReadRequestKeys;
 
 /**
  * Starts reading a note aloud, on the phone, because the watch asked.

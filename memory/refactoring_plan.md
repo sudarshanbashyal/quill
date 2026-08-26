@@ -270,7 +270,7 @@ works. Extract interfaces only where they buy a test.
 
 ---
 
-## R7 — `data/` is a grab bag, and package names lie across modules `OPEN`
+## R7 — `data/` is a grab bag, and package names lie across modules `(a) DONE 2026-08-26, (b) OPEN`
 
 **Cause (a).** `data/` holds 25 files mixing repositories, `AppDatabase`, importers,
 crypto, **and eight Wear OS transport classes**: `WearAnswerListenerService`,
@@ -305,6 +305,31 @@ change — do it only when something else forces the files open.
 **Steps for (b), when it earns itself.** `mse.quill.study.scheduling` for
 `FlashcardScheduler`/`DueProjection`, `mse.quill.study.review` for `ReviewSession`,
 `mse.quill.study.quiz` for the quiz four. One commit, imports only.
+
+**What landed for (a).** The eight classes are in `data/wear/`; `data/` is down from 26
+files to 18. All five manifest `<service>` entries were rewritten and verified against the
+*merged* manifest, not just the source one.
+
+Two things the plan did not foresee, both consequences of Java giving a subpackage no
+package-private access:
+
+- The `*Keys` classes the services speak in (`ReadRequestKeys`, `ReadStateKeys`,
+  `NoteListKeys`, `AudioCaptureKeys`) live in **`:study`**, in package `mse.quill.data` —
+  R7(b)'s split package, met head-on. They needed explicit imports, which is the first
+  concrete cost that split has imposed rather than merely threatened. Worth noting when
+  (b) is finally weighed.
+- `NoteCrypto` was package-private, and two publishers use it. Rather than making the
+  whole class visible, the class and exactly three lock-state queries — `isLocked`,
+  `lockedCollectionIds`, `excludeCollectionsClause` — are now public; everything that
+  touches a key or a ciphertext stays package-private. Those three answer "which
+  collections are shut", not "what does this say", which is what a publisher deciding
+  whether a title may go to a watch actually needs. The reasoning is recorded in
+  `NoteCrypto`'s class comment.
+
+**Not verified:** step 3's "install, then confirm the watch still receives a projection".
+No watch was paired this session. The APK builds and the merged manifest is right, which
+covers the silent-failure risk the step exists for, but the Data Layer round trip itself
+is unexercised.
 
 ---
 
