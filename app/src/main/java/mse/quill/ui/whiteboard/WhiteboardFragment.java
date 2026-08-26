@@ -30,7 +30,6 @@ import androidx.fragment.app.Fragment;
 
 import mse.quill.R;
 import mse.quill.collab.CollabPermissions;
-import mse.quill.data.AppDatabase;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.WhiteboardRepository;
@@ -176,11 +175,10 @@ public class WhiteboardFragment extends Fragment
         createdThisSession = whiteboardId == null
                 || (args != null && args.getBoolean(ARG_CREATED_NOW, false));
 
-        // 2. Get access to the database (singleton — safe to call anywhere)
-        AppDatabase db = AppDatabase.getInstance(requireContext());
-        strokeRepo     = new StrokeRepository(db);
-        textRepo       = new WhiteboardTextRepository(db);
-        whiteboardRepo = new WhiteboardRepository(db);
+        // 2. Repositories resolve the database singleton themselves — see StrokeRepository.
+        strokeRepo     = new StrokeRepository(requireContext());
+        textRepo       = new WhiteboardTextRepository(requireContext());
+        whiteboardRepo = new WhiteboardRepository(requireContext());
 
         // 3. If no whiteboard_id was passed, this is a brand-new whiteboard —
         //    generate an id and insert a row into the `whiteboards` table.

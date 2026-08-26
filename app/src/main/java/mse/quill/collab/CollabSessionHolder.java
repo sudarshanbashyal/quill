@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
-import mse.quill.data.AppDatabase;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.WhiteboardTextRepository;
@@ -205,9 +204,8 @@ public final class CollabSessionHolder {
         final String id = boardId;
         if (live == null || context == null || id == null) return;
         AppExecutors.getInstance().diskIO(() -> {
-            AppDatabase db = AppDatabase.getInstance(context);
-            List<Stroke> strokes = new StrokeRepository(db).getByWhiteboardSync(id);
-            List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboardSync(id);
+            List<Stroke> strokes = new StrokeRepository(context).getByWhiteboardSync(id);
+            List<WhiteboardText> texts = new WhiteboardTextRepository(context).getByWhiteboardSync(id);
             List<CollabMessage> chunks = CollabMessage.snapshotChunks(strokes, texts);
             Log.i(TAG, "sending board to " + peerId + ": " + strokes.size() + " strokes, "
                     + texts.size() + " texts, in " + chunks.size() + " chunk(s)");

@@ -1,6 +1,7 @@
 package mse.quill.data;
 
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.PointF;
@@ -33,8 +34,8 @@ public class StrokeRepository {
     private final AppDatabase db;
     private final AppExecutors executors = AppExecutors.getInstance();
 
-    public StrokeRepository(AppDatabase db) {
-        this.db = db;
+    public StrokeRepository(Context context) {
+        this.db = AppDatabase.getInstance(context.getApplicationContext());
     }
 
     // ── Async: for the UI thread ──────────────────────────────────────────────

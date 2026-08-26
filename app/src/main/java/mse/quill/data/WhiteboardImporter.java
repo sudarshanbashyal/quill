@@ -45,8 +45,8 @@ public final class WhiteboardImporter {
         this.appContext = context.getApplicationContext();
         this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
-        this.strokeRepository = new StrokeRepository(appDatabase);
-        this.textRepository = new WhiteboardTextRepository(appDatabase);
+        this.strokeRepository = new StrokeRepository(appContext);
+        this.textRepository = new WhiteboardTextRepository(appContext);
     }
 
     public void importFrom(Uri source, OnImported cb) {
@@ -90,7 +90,7 @@ public final class WhiteboardImporter {
         SQLiteDatabase db = appDatabase.getWritableDatabase();
         db.beginTransaction();
         try {
-            new WhiteboardRepository(appDatabase).insertSync(wb);
+            new WhiteboardRepository(appContext).insertSync(wb);
             for (Stroke stroke : contents.strokes) {
                 stroke.id = UUID.randomUUID().toString();
                 stroke.whiteboardId = whiteboardId;

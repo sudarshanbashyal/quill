@@ -1,6 +1,7 @@
 package mse.quill.data;
 
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
@@ -22,8 +23,8 @@ public class WhiteboardTextRepository {
     private final AppDatabase db;
     private final AppExecutors executors = AppExecutors.getInstance();
 
-    public WhiteboardTextRepository(AppDatabase db) {
-        this.db = db;
+    public WhiteboardTextRepository(Context context) {
+        this.db = AppDatabase.getInstance(context.getApplicationContext());
     }
 
     // ── Async: for the UI thread ──────────────────────────────────────────────

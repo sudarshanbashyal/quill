@@ -201,7 +201,7 @@ See the conversation log for 2026-08-23.
 
 ---
 
-## R5 — Inconsistent repository construction `OPEN`
+## R5 — Inconsistent repository construction `DONE 2026-08-26`
 
 **Cause.** Three constructor conventions for one role:
 
@@ -229,6 +229,16 @@ taking a raw `AppDatabase` is what made "just spawn a thread" the path of least 
    `new WhiteboardRepository(` and fix the ~6 call sites.
 
 Small, and it is a prerequisite for R6 being worth doing.
+
+**What landed.** All three now take only `Context`. The package-private escape hatch in
+step 1 turned out not to be needed by anyone: every one of the twelve call sites already
+had a `Context` in hand and was calling `AppDatabase.getInstance(...)` on the line above
+purely to satisfy the constructor. `AppDatabase` is a singleton, so nothing was sharing a
+handle in any meaningful sense — the second constructor bought nothing and cost the
+confusion. Five files dropped their now-dead `AppDatabase` import with it.
+
+Two constructors, in `WhiteboardRepository`, became one; the `appContext` field that made
+them differ had already gone in R3.
 
 ---
 

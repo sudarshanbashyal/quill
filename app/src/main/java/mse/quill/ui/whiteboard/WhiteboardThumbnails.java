@@ -7,7 +7,6 @@ import android.view.View;
 
 import java.util.List;
 
-import mse.quill.data.AppDatabase;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.WhiteboardRepository;
@@ -69,9 +68,8 @@ public final class WhiteboardThumbnails {
         Context appContext = context.getApplicationContext();
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
-            AppDatabase db = AppDatabase.getInstance(appContext);
-            List<Stroke> strokes = new StrokeRepository(db).getByWhiteboardSync(whiteboard.id);
-            List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboardSync(whiteboard.id);
+            List<Stroke> strokes = new StrokeRepository(appContext).getByWhiteboardSync(whiteboard.id);
+            List<WhiteboardText> texts = new WhiteboardTextRepository(appContext).getByWhiteboardSync(whiteboard.id);
             if (strokes.isEmpty() && texts.isEmpty()) {
                 executors.mainThread(() -> onReady.onThumbnail(null));
                 return;
@@ -115,7 +113,7 @@ public final class WhiteboardThumbnails {
         Context appContext = context.getApplicationContext();
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
-            Whiteboard board = new WhiteboardRepository(AppDatabase.getInstance(appContext))
+            Whiteboard board = new WhiteboardRepository(appContext)
                     .getByIdSync(whiteboardId);
             executors.mainThread(() -> {
                 if (board == null) {

@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-import mse.quill.data.AppDatabase;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.WhiteboardTextRepository;
@@ -137,12 +136,11 @@ public final class BundleWriter {
      */
     private static void writeWhiteboard(String whiteboardId, Context context, ZipOutputStream zip)
             throws IOException {
-        AppDatabase db = AppDatabase.getInstance(context);
-        Whiteboard board = new WhiteboardRepository(db).getByIdSync(whiteboardId);
+        Whiteboard board = new WhiteboardRepository(context).getByIdSync(whiteboardId);
         if (board == null) return;
 
-        List<Stroke> strokes = new StrokeRepository(db).getByWhiteboardSync(whiteboardId);
-        List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboardSync(whiteboardId);
+        List<Stroke> strokes = new StrokeRepository(context).getByWhiteboardSync(whiteboardId);
+        List<WhiteboardText> texts = new WhiteboardTextRepository(context).getByWhiteboardSync(whiteboardId);
 
         ByteArrayOutputStream boardBytes = new ByteArrayOutputStream();
         WhiteboardBundleWriter.write(board.title, board.background, board.createdAt, board.updatedAt,

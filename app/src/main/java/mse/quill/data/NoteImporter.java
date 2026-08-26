@@ -208,8 +208,8 @@ public final class NoteImporter {
      */
     private void insertWhiteboards(String noteId, List<BundleReader.WhiteboardEntry> whiteboards,
                                    Map<String, String> newIdByOldId, long now) {
-        StrokeRepository strokeRepository = new StrokeRepository(appDatabase);
-        WhiteboardTextRepository textRepository = new WhiteboardTextRepository(appDatabase);
+        StrokeRepository strokeRepository = new StrokeRepository(appContext);
+        WhiteboardTextRepository textRepository = new WhiteboardTextRepository(appContext);
 
         for (BundleReader.WhiteboardEntry entry : whiteboards) {
             String whiteboardId = newIdByOldId.get(entry.sourceId);
@@ -222,7 +222,7 @@ public final class NoteImporter {
             board.createdAt = entry.createdAt > 0 ? entry.createdAt : now;
             board.updatedAt = now;
             board.background = entry.background;
-            new WhiteboardRepository(appDatabase).insertSync(board);
+            new WhiteboardRepository(appContext).insertSync(board);
 
             for (Stroke stroke : entry.strokes) {
                 stroke.id = UUID.randomUUID().toString();

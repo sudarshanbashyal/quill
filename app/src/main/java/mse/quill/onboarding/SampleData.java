@@ -8,7 +8,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-import mse.quill.data.AppDatabase;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.FlashcardRepository;
@@ -185,7 +184,7 @@ public final class SampleData {
         board.background = WhiteboardView.BACKGROUND_DOTS;
         new WhiteboardRepository(appContext).insertSync(board);
 
-        StrokeRepository strokes = new StrokeRepository(AppDatabase.getInstance(appContext));
+        StrokeRepository strokes = new StrokeRepository(appContext);
         strokes.insertStrokeSync(stroke(whiteboardId, AXIS_COLOUR, 6f, now,
                 line(LEFT, TOP, LEFT, BASE)));
         strokes.insertStrokeSync(stroke(whiteboardId, AXIS_COLOUR, 6f, now + 1,

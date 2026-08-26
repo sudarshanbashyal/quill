@@ -29,12 +29,7 @@ public class WhiteboardRepository {
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
     public WhiteboardRepository(Context context) {
-        this(AppDatabase.getInstance(context.getApplicationContext()));
-    }
-
-    /** For callers already holding the database — the whiteboard screen and the thumbnailer. */
-    public WhiteboardRepository(AppDatabase appDatabase) {
-        this.appDatabase = appDatabase;
+        this.appDatabase = AppDatabase.getInstance(context.getApplicationContext());
         this.executors = AppExecutors.getInstance();
     }
 
