@@ -755,6 +755,38 @@ delegating out), `Schema` (the `CREATE TABLE` statements), `Migrations` (everyth
 
 ---
 
+## R17 — The whiteboard exports inline while the note has a controller `OPEN`
+
+**Cause.** Created by this sweep's own work, and worth recording as such. R11 pulled export out
+of `NoteEditorFragment` into `NoteExportController`; `WhiteboardFragment` still does the same
+job inline — `showExportMenu`, `shareWhiteboard`, `exportWhiteboard`,
+`needsStoragePermissionFor` (`:744–858`, 114 lines) plus a `storagePermissionLauncher` and its
+`pendingStorageAction` field. Two screens, one job, two shapes.
+
+It also made `WhiteboardFragment` the largest file in the tree again at **1146 lines** — larger
+than the 1124 it came out of R1 at, because R10's permission-ladder fix added to it. R1's own
+closing note said export and share were "the next extractable seam if this file is opened
+again". It has been opened twice since.
+
+**Solution.** `WhiteboardExportController`, mirroring `NoteExportController` — or, better,
+notice that the two now differ only in *what* they write and generalise one controller over a
+`Host` that supplies the bytes. Check that before writing a second class: the completion
+dialog, the open/share split and the permission ladder are the bulk of `NoteExportController`,
+and none of it is note-specific.
+
+**Steps.**
+
+1. Compare the two flows honestly first. If the shared part is as large as it looks, lift
+   `NoteExportController` to `ui/common/` (R14's package) with a `Host` that returns a
+   `NoteExportStore.Saved`, and let each screen supply its own formats and menu.
+2. If they genuinely differ, a second controller is still better than the status quo — but say
+   in both class comments why there are two.
+3. Either way the whiteboard gains the export-complete dialog it currently lacks, which is a
+   real inconsistency the user can see: exporting a note confirms and offers to open it;
+   exporting a board raises a Toast and leaves you to find the file.
+
+---
+
 ## R16 — Small things `OPEN`
 
 Fix opportunistically; none is worth its own trip.
