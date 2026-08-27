@@ -755,7 +755,7 @@ delegating out), `Schema` (the `CREATE TABLE` statements), `Migrations` (everyth
 
 ---
 
-## R17 — The whiteboard exports inline while the note has a controller `OPEN`
+## R17 — The whiteboard exports inline while the note has a controller `DONE 2026-08-27`
 
 **Cause.** Created by this sweep's own work, and worth recording as such. R11 pulled export out
 of `NoteEditorFragment` into `NoteExportController`; `WhiteboardFragment` still does the same
@@ -784,6 +784,33 @@ and none of it is note-specific.
 3. Either way the whiteboard gains the export-complete dialog it currently lacks, which is a
    real inconsistency the user can see: exporting a note confirms and offers to open it;
    exporting a board raises a Toast and leaves you to find the file.
+
+**What landed — and step 1's answer was "two, not one".** Comparing them honestly, as the
+step asks, the shared part is smaller than it looks. What genuinely overlaps is the
+permission ladder and the share-sheet call; the formats and where the content comes from do
+not. A note's export reads segments off the editor and writes PDF, Markdown or a bundle to
+Downloads; a board's reads three tables, renders a bitmap, and writes a PNG to Pictures or a
+bundle to Downloads. Generalising over that would have been a `Host` with a method per
+difference, which is a worse class than two honest ones.
+
+So: `WhiteboardExportController` (177 lines) mirrors `NoteExportController`, and the one
+piece of real duplication came out as `export/StoragePermission` (71 lines).
+
+**`StoragePermission` is the part worth keeping in mind.** The ladder was copied verbatim
+into both fragments — each with a launcher field, a pending-action field and the same fifteen
+lines — because `registerForActivityResult` must be called before STARTED and so cannot be
+done lazily where it is needed. Constructing the helper in a field initialiser registers the
+launcher at the right moment and keeps all three together, which is what made a class work
+where a static helper could not. Only API 26–28 ever climbs it, which is exactly why
+forgetting it is easy and why the whiteboard shipped without it (R10).
+
+`WhiteboardFragment` 1146 → **1042**, `NoteEditorFragment` 1062 → **1025**, and neither now
+references any exporter, bundle format, `NoteExportStore` or `ShareIntents`.
+
+**Step 3 deliberately not taken.** Giving the board an export-complete dialog is a product
+decision, not a refactor — and for *share* specifically, going straight to the sheet is
+arguably the better flow, not an oversight. The asymmetry is real and stays recorded here;
+closing it should be someone's deliberate choice, not a side effect of moving code.
 
 ---
 

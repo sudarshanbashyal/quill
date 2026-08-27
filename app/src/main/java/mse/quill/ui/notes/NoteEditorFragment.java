@@ -1,14 +1,9 @@
 package mse.quill.ui.notes;
 
-import android.Manifest;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.os.Bundle;
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.fragment.NavHostFragment;
 
@@ -72,6 +67,7 @@ import mse.quill.ui.whiteboard.WhiteboardFragment;
 import mse.quill.ui.whiteboard.WhiteboardPickerDialog;
 import mse.quill.ui.whiteboard.WhiteboardPreferences;
 import mse.quill.util.WindowInsetsUtils;
+import mse.quill.export.StoragePermission;
 
 public class NoteEditorFragment extends Fragment
         implements WindowInsetsUtils.TopInsetHost, NoteExportController.Host {
@@ -95,11 +91,9 @@ public class NoteEditorFragment extends Fragment
     private FormattingToolbarController toolbarController;
     private LinearLayout formattingToolbar;
     private ScrollView scrollView;
-    private ActivityResultLauncher<String> storagePermissionLauncher;
-    /** What to resume once {@code storagePermissionLauncher} comes back — see
-     *  {@link #requestStoragePermission}. */
-    private Runnable pendingStorageGranted;
-    private Runnable pendingStorageDenied;
+    /** Registered here rather than in onCreate because a launcher has to exist before the
+     *  fragment reaches STARTED. Only ever climbed on API 26-28. */
+    private final StoragePermission storagePermission = new StoragePermission(this);
     /** Every way this note leaves Quill — see {@link NoteExportController}. */
     private NoteExportController export;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -148,25 +142,6 @@ public class NoteEditorFragment extends Fragment
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Must be registered before the fragment reaches STARTED, so it can't live in
-        // onViewCreated alongside the listener that uses it.
-        storagePermissionLauncher = registerForActivityResult(
-                new ActivityResultContracts.RequestPermission(),
-                granted -> {
-                    // Two things queue behind this permission — saving an image out of a segment,
-                    // and exporting the whole note — and they want different things on a refusal,
-                    // so both outcomes are held rather than assumed.
-                    Runnable onGranted = pendingStorageGranted;
-                    Runnable onDenied = pendingStorageDenied;
-                    pendingStorageGranted = null;
-                    pendingStorageDenied = null;
-                    if (granted) {
-                        if (onGranted != null) onGranted.run();
-                    } else if (onDenied != null) {
-                        onDenied.run();
-                    }
-                });
-
         export = new NoteExportController(this, this);
     }
 
@@ -527,21 +502,9 @@ public class NoteEditorFragment extends Fragment
         return collectionLocked;
     }
 
-    /**
-     * Requests {@code WRITE_EXTERNAL_STORAGE} if this device still needs it, remembering both
-     * outcomes. The launcher has to be registered before the fragment reaches STARTED, which is
-     * the only reason this lives here rather than in the controller.
-     */
     @Override
     public void requestStoragePermission(Runnable onGranted, Runnable onDenied) {
-        if (ContextCompat.checkSelfPermission(requireContext(),
-                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-            onGranted.run();
-            return;
-        }
-        pendingStorageGranted = onGranted;
-        pendingStorageDenied = onDenied;
-        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        storagePermission.require(onGranted, onDenied);
     }
 
     private void updateToolbarState() {
