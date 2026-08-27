@@ -18,6 +18,7 @@ import mse.quill.R;
 import mse.quill.data.model.Tag;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.MaxHeightScrollView;
+import mse.quill.util.CardStyles;
 
 /**
  * Sorting and tag filtering, behind the search bar's filter button.
@@ -39,11 +40,11 @@ public final class SearchFilterDialog {
 
     public static void show(Context context, NoteFilter filter, List<Tag> allTags,
                             Listener listener) {
-        int pad = dimen(context, R.dimen.spacing_lg);
+        int pad = CardStyles.dimen(context, R.dimen.spacing_lg);
 
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(pad, dimen(context, R.dimen.spacing_md), pad, 0);
+        content.setPadding(pad, CardStyles.dimen(context, R.dimen.spacing_md), pad, 0);
 
         content.addView(sectionLabel(context, R.string.filter_sort_by, false));
         RadioGroup sortGroup = buildSortGroup(context, filter);
@@ -59,7 +60,7 @@ public final class SearchFilterDialog {
         // Scrolls once there are enough tags to outgrow the screen, and only then — see
         // MaxHeightScrollView for why a plain fixed height is wrong here.
         MaxHeightScrollView scroll = new MaxHeightScrollView(context);
-        scroll.setMaxHeight(dimen(context, R.dimen.filter_sheet_max_height));
+        scroll.setMaxHeight(CardStyles.dimen(context, R.dimen.filter_sheet_max_height));
         scroll.addView(content);
 
         final ChipGroup tags = tagGroup;
@@ -157,13 +158,10 @@ public final class SearchFilterDialog {
         label.setTextSize(12f);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        if (spaceAbove) params.topMargin = dimen(context, R.dimen.spacing_md);
-        params.bottomMargin = dimen(context, R.dimen.spacing_xs);
+        if (spaceAbove) params.topMargin = CardStyles.dimen(context, R.dimen.spacing_md);
+        params.bottomMargin = CardStyles.dimen(context, R.dimen.spacing_xs);
         label.setLayoutParams(params);
         return label;
     }
 
-    private static int dimen(Context context, int dimenRes) {
-        return context.getResources().getDimensionPixelSize(dimenRes);
-    }
 }

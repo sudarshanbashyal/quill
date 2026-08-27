@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
+import mse.quill.util.CardStyles;
 
 /**
  * Builds a collection-grid card entirely in code — see NoteRowView for why, and for the shared
@@ -36,9 +37,9 @@ final class CollectionCardView {
     }
 
     static Views build(Context context) {
-        int gutter = NoteRowView.dimen(context, R.dimen.list_item_gutter);
-        int spacingXs = NoteRowView.dimen(context, R.dimen.spacing_xs);
-        int spacingMd = NoteRowView.dimen(context, R.dimen.spacing_md);
+        int gutter = CardStyles.dimen(context, R.dimen.list_item_gutter);
+        int spacingXs = CardStyles.dimen(context, R.dimen.spacing_xs);
+        int spacingMd = CardStyles.dimen(context, R.dimen.spacing_md);
         int minHeight = (int) (124 * context.getResources().getDisplayMetrics().density);
 
         MaterialCardView root = new MaterialCardView(context);

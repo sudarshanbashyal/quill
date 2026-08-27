@@ -691,7 +691,7 @@ it honest packages inside.
 
 ---
 
-## R14 — `util/` is four packages in a trench coat, and `dimen()` is declared seven times `OPEN`
+## R14 — `util/` is four packages in a trench coat, and `dimen()` is declared seven times `(b) DONE 2026-08-27, (a) partly done`
 
 **Cause (a).** `util/` holds 19 files, 1901 lines, in four unrelated groups:
 
@@ -726,6 +726,17 @@ it honest packages inside.
 4. Export → R10's `export/` package.
 5. What is left in `util/` is five genuine helpers and one interface, which is a `util/`
    worth having.
+
+**What landed.** (b) in full: one `dimen`, in `CardStyles`, called by name everywhere. The
+five verbatim copies are gone, and so is the pass-through in `NoteRowView` — with it, the
+three `ui/home` classes that were reaching through a *View class* to get at a utility now
+name the utility.
+
+(a) is partly done by accident: R10 took the four exporters into `export/`, so `util/` is 19
+files down to **15**. Still three groups — UI behaviour (`SwipeToDelete`, `Reveal`,
+`UndoDelete`, `MaxHeightScrollView`, `WindowInsetsUtils`, `Haptics`, `CardStyles`,
+`TextFieldUtils`), one data operation (`DataWipe`), and the genuine helpers. Steps 2 and 3
+stand.
 
 ---
 

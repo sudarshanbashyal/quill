@@ -14,6 +14,7 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.model.Tag;
 import mse.quill.util.ColorUtils;
+import mse.quill.util.CardStyles;
 
 /**
  * Renders a note's tags as small pastel pill chips — reused on note rows, pinned cards, and the
@@ -58,7 +59,7 @@ public final class TagChipView {
         }
         container.setVisibility(View.VISIBLE);
 
-        int spacing = dimen(context, R.dimen.chip_spacing);
+        int spacing = CardStyles.dimen(context, R.dimen.chip_spacing);
         Chip[] chips = new Chip[tags.size()];
         // Width of the first k chips laid out in a row, so the fit below is a lookup, not a re-sum.
         int[] rowWidth = new int[tags.size() + 1];
@@ -101,7 +102,7 @@ public final class TagChipView {
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMarginEnd(dimen(context, R.dimen.chip_spacing));
+        params.setMarginEnd(CardStyles.dimen(context, R.dimen.chip_spacing));
         chip.setLayoutParams(params);
         return chip;
     }
@@ -121,7 +122,7 @@ public final class TagChipView {
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMarginEnd(dimen(context, R.dimen.chip_spacing));
+        params.setMarginEnd(CardStyles.dimen(context, R.dimen.chip_spacing));
         chip.setLayoutParams(params);
         return chip;
     }
@@ -150,17 +151,14 @@ public final class TagChipView {
                 .setAllCornerSizes(new RelativeCornerSize(0.5f))
                 .build());
         chip.setChipMinHeightResource(R.dimen.chip_min_height);
-        chip.setChipStartPadding(dimen(context, R.dimen.chip_padding_horizontal));
-        chip.setChipEndPadding(dimen(context, R.dimen.chip_padding_horizontal));
+        chip.setChipStartPadding(CardStyles.dimen(context, R.dimen.chip_padding_horizontal));
+        chip.setChipEndPadding(CardStyles.dimen(context, R.dimen.chip_padding_horizontal));
         chip.setTextStartPadding(0f);
         chip.setTextEndPadding(0f);
-        chip.setMaxWidth(dimen(context, R.dimen.chip_max_width));
+        chip.setMaxWidth(CardStyles.dimen(context, R.dimen.chip_max_width));
         chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         return chip;
     }
 
-    private static int dimen(Context context, int dimenRes) {
-        return context.getResources().getDimensionPixelSize(dimenRes);
-    }
 }
