@@ -242,7 +242,7 @@ them differ had already gone in R3.
 
 ---
 
-## R6 — No abstraction boundary between UI and data `steps 1-3 DONE 2026-08-26, step 4 OPEN`
+## R6 — No abstraction boundary between UI and data `steps 1-3 DONE 2026-08-26, step 4 closed`
 
 **Cause.** Ten fragments each `new` their concrete repositories directly;
 `NoteEditorFragment` constructs six. There are no interfaces, and no ViewModels — `AppLock`
@@ -296,13 +296,15 @@ into a fragment; what exists today is the documented boundary and the `Sync` met
 off it. Wiring a seam for substitution belongs with whoever actually writes the first such
 test, alongside step 4 — doing it now would be exactly the speculation step 4 warns against.
 
-**Step 4 (ViewModels) not started, on purpose.** The plan says to consider it only for
-screens where a config change visibly re-loads, and only after 1–3. Nothing was measured;
-nothing was done.
+**Step 4 (ViewModels) is closed, not left open** — same answer as R11's step 4, for the same
+reason. The condition was "only for screens where a config change visibly re-loads", and
+nothing has been measured that meets it. Leaving it `OPEN` implies it is queued work; it is
+not. It is a thing to do if and when a screen is observed re-loading visibly, and that
+observation has to come first.
 
 ---
 
-## R7 — `data/` is a grab bag, and package names lie across modules `(a) DONE 2026-08-26, (b) OPEN`
+## R7 — `data/` is a grab bag, and package names lie across modules `DONE — (a) 2026-08-26, (b) 2026-08-28 via R13`
 
 **Cause (a).** `data/` holds 25 files mixing repositories, `AppDatabase`, importers,
 crypto, **and eight Wear OS transport classes**: `WearAnswerListenerService`,
@@ -337,6 +339,12 @@ change — do it only when something else forces the files open.
 **Steps for (b), when it earns itself.** `mse.quill.study.scheduling` for
 `FlashcardScheduler`/`DueProjection`, `mse.quill.study.review` for `ReviewSession`,
 `mse.quill.study.quiz` for the quiz four. One commit, imports only.
+
+**(b) landed 2026-08-28, folded into R13**, exactly as those three lines describe — plus
+`mse.quill.sync` for the seven wire-protocol classes R13 found, and the module itself renamed
+`:study` → `:shared`. "When it earns itself" turned out to be R7a: moving `:app`'s `Wear*`
+services into `data/wear/` cost them package-private access to those keys, which was the first
+concrete bill this arrangement presented.
 
 **What landed for (a).** The eight classes are in `data/wear/`; `data/` is down from 26
 files to 18. All five manifest `<service>` entries were rewritten and verified against the

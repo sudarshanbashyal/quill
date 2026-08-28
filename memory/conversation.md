@@ -4234,3 +4234,62 @@ Left open deliberately: R9 (three copies of the collab join flow), R13 (`:study`
 wire-protocol classes), R14 (`util/` is four packages, `dimen()` declared seven times), R15
 (`AppDatabase` = schema + 400 lines of migrations), R16 (small things), and R11 steps 3–4, which
 want doing alongside R16's note on `ReadAloud`'s nine mutable statics.
+
+## 2026-08-28 — Clearing the second sweep: R9, R13, R14a, R15, R16, R11 step 3 (Architecture)
+
+Everything left in `refactoring_plan.md` bar two deliberate non-items. One commit per item,
+`gradlew assemble` + unit tests + androidTest compile green after each.
+
+**R15 — `AppDatabase` 748 → 133 lines.** Schema (271) and Migrations (387) are their own files
+now. One seam needed a decision rather than a cut: `ensureNotesFts` *creates* the FTS5 table
+(schema) and then *fills it from existing rows* (migration), so it splits along exactly that line —
+`Schema.ensureNotesFts` creates, then calls `Migrations.backfillNotesFts`.
+
+**R9 — three copies of the collab join flow, and the question underneath it.** `CollabEntry` owns
+the ladder, the scan and the error dialog, and stops at the token. The real content was the
+disagreement: Home created the `whiteboards` row and passed its id, the `quill://` path passed none
+and let the screen mint one. **The fragment mints it** — its path has to exist regardless, so
+Home's is the one that goes, taking an async hop before a navigation with it. Home's scan-failure
+dialog also gained the "scan again" button the whiteboard's always had; that was never a decision,
+just one copy that missed an improvement.
+
+**R14a — `util/` broken up by what its files are.** `DataWipe` → `data/`; eight UI-behaviour
+classes → `ui/common/`. Six genuine helpers left. Checked *before* moving that no layout inflates
+`MaxHeightScrollView` by name — a `View` subclass moving package fails at runtime, not compile time.
+
+**R13 — `:study` renamed `:shared`, with honest packages.** `mse.quill.sync` for the seven
+wire-protocol classes, `mse.quill.study.{scheduling,review,quiz}` for the rest. This also closed
+R7(b). The deferred cost came due visibly: 17 imports had to be added across `:app` and `:wear`,
+because classes in `:app`'s own `ui.quiz` and `ui.flashcards` had been reaching these as
+same-package neighbours. That was the deliberate trade when `:study` was extracted; this was the
+bill. `mse.quill.data.model` stays shared on purpose — `Flashcard` and `DueCard` belong beside
+`Note` and `Stroke`.
+
+**R11 step 3 — `NoteReadAloudController`.** Fragment 1025 → **978**, under the 1000 the item asked
+for. `describeVoice` held six hardcoded strings the sweep's grep had missed, because they were
+built by concatenation rather than passed to a UI method — worth remembering as a limit of that
+grep.
+
+**R16 — and a regression it caught.** Fully-qualified inline refs 26 → 0 (the three that look like
+matches are intent-action *strings*; a blind regex would have broken the media notification
+silently). Hardcoded strings 7 → 0. 19 unused resources deleted. `PipAware.PipHost` makes the PIP
+contract symmetric. And the lint pass surfaced a regression **I** had introduced in R17:
+`whiteboard_export_needs_storage` had become unreferenced, meaning a refused storage permission now
+said nothing — `StoragePermission` hands back an `onDenied` and the whiteboard was passing an empty
+one. Restored. It surfaced from a string losing its last reference, not from reading the diff.
+
+**Two things deliberately not done, and closed rather than left open.** `ReadAloud`'s nine mutable
+statics: it is a genuine process-wide playback session — the role `CollabSessionHolder` fills, which
+the first sweep called "the good one" — and converting static fields to a singleton instance changes
+nothing observable while touching 18 methods across 7 files including three Wear services, on the
+one component that cannot be verified without a device. And the `EmptyState` helper: four fragments
+share a *two-line idiom*, not duplication, and a class plus four imports to save four lines is
+indirection for its own sake.
+
+**Still open:** `WhiteboardThumbnails`' package (real, but needs a decision about where thumbnail
+rendering belongs), and the two ViewModel steps, which are closed as "do it when a screen is
+observed re-loading", not queued.
+
+**Still not verified on a device.** No emulator ran; only the physical phone was attached, which
+this project's convention says not to use. The API 26–28 storage path, collab, the Wear projection,
+widget refresh and the deep links are all unexercised end to end.
