@@ -54,6 +54,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
+        android:name=".QuillApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -215,7 +216,7 @@
              path filter is what narrows it — Quill sees only /quill/answer, not every message on
              the Data Layer. -->
         <service
-            android:name=".data.WearAnswerListenerService"
+            android:name=".data.wear.WearAnswerListenerService"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
@@ -234,7 +235,7 @@
              recording travels as a DataItem carrying an Asset, because a message is capped at 100KB
              and is dropped outright when no node is connected — see AudioCaptureKeys. -->
         <service
-            android:name=".data.WearAudioCaptureListenerService"
+            android:name=".data.wear.WearAudioCaptureListenerService"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
@@ -251,7 +252,7 @@
              The prefix is exact rather than /quill/read, which would also swallow the control path
              below and hand a pause to the service that starts readings. -->
         <service
-            android:name=".data.WearReadListenerService"
+            android:name=".data.wear.WearReadListenerService"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
@@ -265,7 +266,7 @@
         <!-- "Is this list still right?", asked by the watch as it opens a picker. The reply is a
              republished note list on the usual DataItem path, not a message back. -->
         <service
-            android:name=".data.WearNoteListRefreshListenerService"
+            android:name=".data.wear.WearNoteListRefreshListenerService"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
@@ -279,7 +280,7 @@
         <!-- "…and now stop." The reading's transport, so a note started from the wrist can be
              paused there instead of only in the phone's now-playing bar. -->
         <service
-            android:name=".data.WearReadControlListenerService"
+            android:name=".data.wear.WearReadControlListenerService"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />

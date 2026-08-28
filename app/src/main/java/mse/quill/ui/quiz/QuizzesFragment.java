@@ -22,14 +22,16 @@ import java.util.List;
 import java.util.Set;
 
 import mse.quill.R;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.model.Quiz;
 import mse.quill.ui.notes.NoteQaPickerDialog;
 import mse.quill.ui.notes.QaBlockHintDialog;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.SwipeToDelete;
-import mse.quill.util.UndoDelete;
+import mse.quill.ui.common.SwipeToDelete;
+import mse.quill.ui.common.UndoDelete;
+import mse.quill.study.quiz.QuizRules;
 
 /**
  * The Quizzes tab: every note that has been turned into a quiz.
@@ -45,7 +47,7 @@ import mse.quill.util.UndoDelete;
 public class QuizzesFragment extends Fragment {
 
     private QuizRepository quizRepository;
-    private NoteRepository noteRepository;
+    private NoteStore noteRepository ;
     private QuizzesAdapter adapter;
     private RecyclerView recyclerView;
     private View emptyView;
@@ -63,7 +65,7 @@ public class QuizzesFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         quizRepository = new QuizRepository(requireContext());
-        noteRepository = new NoteRepository(requireContext());
+        noteRepository = Repositories.notes(requireContext());
 
         adapter = new QuizzesAdapter(new QuizzesAdapter.Listener() {
             @Override public void onQuizClicked(Quiz quiz) {
@@ -140,9 +142,9 @@ public class QuizzesFragment extends Fragment {
     private void startCreateFlow() {
         noteRepository.loadQaCandidates(candidates -> {
             if (!isAdded()) return;
-            List<NoteRepository.QaCandidate> available = new ArrayList<>();
+            List<NoteStore.QaCandidate> available = new ArrayList<>();
             boolean anyBigEnough = false;
-            for (NoteRepository.QaCandidate candidate : candidates) {
+            for (NoteStore.QaCandidate candidate : candidates) {
                 if (candidate.usableQa < QuizRules.MIN_QA_BLOCKS) continue;
                 anyBigEnough = true;
                 if (!notesWithQuizzes.contains(candidate.note.id)) available.add(candidate);
@@ -175,7 +177,7 @@ public class QuizzesFragment extends Fragment {
     /** {@code ensureForNote} is the same call the note editor's "Make quiz" makes, so a quiz made
      *  here is indistinguishable from one made there — including reopening rather than duplicating
      *  if one somehow already exists. */
-    private void createQuizFor(NoteRepository.QaCandidate candidate) {
+    private void createQuizFor(NoteStore.QaCandidate candidate) {
         quizRepository.ensureForNote(candidate.note.id, quiz -> {
             if (!isAdded()) return;
             openQuizById(quiz.id);

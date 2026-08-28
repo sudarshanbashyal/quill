@@ -31,13 +31,13 @@ import java.util.Calendar;
 
 import mse.quill.R;
 import mse.quill.data.StudyHistory;
-import mse.quill.util.Haptics;
+import mse.quill.ui.common.Haptics;
 import mse.quill.data.AppExecutors;
 import mse.quill.reminders.StudyReminders;
 import mse.quill.security.AppLock;
 import mse.quill.ui.splash.SplashActivity;
-import mse.quill.util.DataWipe;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.data.DataWipe;
+import mse.quill.ui.common.TextFieldUtils;
 
 /**
  * The Profile tab: who Quill greets you as, whether it nags you, whether it locks, and the one

@@ -20,14 +20,16 @@ import java.util.List;
 import java.util.Set;
 
 import mse.quill.R;
-import mse.quill.data.FlashcardRepository;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.FlashcardStore;
+import mse.quill.data.Repositories;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.model.FlashcardDeck;
 import mse.quill.ui.notes.QaBlockHintDialog;
 import mse.quill.ui.notes.NoteQaPickerDialog;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.SwipeToDelete;
-import mse.quill.util.UndoDelete;
+import mse.quill.ui.common.SwipeToDelete;
+import mse.quill.ui.common.UndoDelete;
 
 /**
  * The Flashcards tab: every note that has generated cards, most urgent first.
@@ -43,8 +45,8 @@ import mse.quill.util.UndoDelete;
  */
 public class FlashcardDecksFragment extends Fragment {
 
-    private FlashcardRepository flashcardRepository;
-    private NoteRepository noteRepository;
+    private FlashcardStore flashcardRepository ;
+    private NoteStore noteRepository ;
     private FlashcardDecksAdapter adapter;
     private RecyclerView recyclerView;
     private View emptyView;
@@ -62,8 +64,8 @@ public class FlashcardDecksFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        flashcardRepository = new FlashcardRepository(requireContext());
-        noteRepository = new NoteRepository(requireContext());
+        flashcardRepository = Repositories.flashcards(requireContext());
+        noteRepository = Repositories.notes(requireContext());
 
         adapter = new FlashcardDecksAdapter(new FlashcardDecksAdapter.Listener() {
             @Override public void onDeckClicked(FlashcardDeck deck) {
@@ -167,8 +169,8 @@ public class FlashcardDecksFragment extends Fragment {
     private void startCreateFlow() {
         noteRepository.loadQaCandidates(candidates -> {
             if (!isAdded()) return;
-            List<NoteRepository.QaCandidate> available = new ArrayList<>();
-            for (NoteRepository.QaCandidate candidate : candidates) {
+            List<NoteStore.QaCandidate> available = new ArrayList<>();
+            for (NoteStore.QaCandidate candidate : candidates) {
                 if (!notesWithDecks.contains(candidate.note.id)) available.add(candidate);
             }
             if (available.isEmpty()) {
@@ -192,7 +194,7 @@ public class FlashcardDecksFragment extends Fragment {
 
     /** The generation itself is {@code syncFromNote}, the same call the deck screen makes on open —
      *  so a deck made here and one made from the note are the same deck, built the same way. */
-    private void createDeckFor(NoteRepository.QaCandidate candidate) {
+    private void createDeckFor(NoteStore.QaCandidate candidate) {
         noteRepository.loadNote(candidate.note.id, (note, segments) -> {
             if (!isAdded()) return;
             flashcardRepository.syncFromNote(candidate.note.id, segments, cards -> {

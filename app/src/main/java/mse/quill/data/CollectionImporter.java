@@ -11,8 +11,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.UUID;
 
-import mse.quill.share.BundleReader;
-import mse.quill.share.CollectionBundleReader;
+import mse.quill.bundle.BundleReader;
+import mse.quill.bundle.CollectionBundleReader;
 import mse.quill.util.ColorUtils;
 
 /**

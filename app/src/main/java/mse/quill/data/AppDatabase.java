@@ -1,17 +1,13 @@
 package mse.quill.data;
 
-import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
-import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.util.Log;
 
-import java.util.ArrayList;
-import java.util.List;
+import androidx.annotation.VisibleForTesting;
 
-import mse.quill.data.serialization.NoteDocument;
+
 
 public class AppDatabase extends SQLiteOpenHelper {
 
@@ -38,7 +34,24 @@ public class AppDatabase extends SQLiteOpenHelper {
     }
 
     /**
-     * Closes the shared connection and deletes the database file. Only {@link mse.quill.util.DataWipe}
+     * Opens a database under a name of the caller's choosing, at the current schema version.
+     *
+     * <p>Exists for the migration test, and it is the only seam that makes one possible: the real
+     * helper is a singleton bound to {@code quill.db}, so a test that seeded an old-shaped database
+     * there would be upgrading — and on failure, destroying — the notes actually on the device.
+     * Not routed through {@link #getInstance}, so a test connection is never handed to app code.
+     */
+    @VisibleForTesting
+    public static AppDatabase openForTest(Context context, String databaseName) {
+        return new AppDatabase(context.getApplicationContext(), databaseName);
+    }
+
+    private AppDatabase(Context context, String databaseName) {
+        super(context, databaseName, null, DATABASE_VERSION);
+    }
+
+    /**
+     * Closes the shared connection and deletes the database file. Only {@link mse.quill.data.DataWipe}
      * has any business calling this.
      *
      * <p>The close and the null have to happen before the delete, and together: deleting the file
@@ -84,492 +97,37 @@ public class AppDatabase extends SQLiteOpenHelper {
         db.setForeignKeyConstraintsEnabled(true);
     }
 
+    /** Every table and index, for a database being created from nothing — see {@link Schema}. */
     @Override
     public void onCreate(SQLiteDatabase db) {
-
-        // ---------- Core content tables ----------
-
-        db.execSQL("CREATE TABLE collections (" +
-                "id TEXT PRIMARY KEY, " +
-                "name TEXT, " +
-                "color INTEGER, " +
-                "created_at INTEGER, " +
-                "biometric_locked INTEGER DEFAULT 0)");
-
-        db.execSQL("CREATE TABLE notes (" +
-                "id TEXT PRIMARY KEY, " +
-                "collection_id TEXT, " +
-                "title TEXT, " +
-                "content_blob BLOB, " +
-                "created_at INTEGER, " +
-                "updated_at INTEGER, " +
-                "author_device_id TEXT, " +
-                "vector_clock TEXT, " +
-                "deleted_at INTEGER, " +
-                "location_lat REAL, " +
-                "location_lng REAL, " +
-                "location_name TEXT, " +
-                "pinned_at INTEGER, " +
-                "FOREIGN KEY(collection_id) REFERENCES collections(id))");
-
-        // note_id is nullable: a whiteboard can stand on its own (created from Home) as well as
-        // belong to a note. title/updated_at exist so Home can list boards meaningfully — a board
-        // has no body text to derive a preview or a timestamp from the way a note does.
-        db.execSQL("CREATE TABLE whiteboards (" +
-                "id TEXT PRIMARY KEY, " +
-                "note_id TEXT, " +
-                "title TEXT, " +
-                "created_at INTEGER, " +
-                "updated_at INTEGER, " +
-                "background INTEGER DEFAULT 0, " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id))");
-
-        db.execSQL("CREATE TABLE strokes (" +
-                "id TEXT PRIMARY KEY, " +
-                "whiteboard_id TEXT, " +
-                "author_id TEXT, " +
-                "tool INTEGER, " +
-                "color INTEGER, " +
-                "width REAL, " +
-                "points_blob BLOB, " +
-                "created_at INTEGER, " +
-                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
-
-        db.execSQL("CREATE TABLE whiteboard_texts (" +
-                "id TEXT PRIMARY KEY, " +
-                "whiteboard_id TEXT, " +
-                "author_id TEXT, " +
-                "x REAL, " +
-                "y REAL, " +
-                "text TEXT, " +
-                "color INTEGER, " +
-                "size REAL, " +
-                "created_at INTEGER, " +
-                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
-        db.execSQL("CREATE INDEX idx_whiteboard_texts_whiteboard_id " +
-                "ON whiteboard_texts(whiteboard_id)");
-        // source_segment_id is the id of the Q&A block the card was generated from, as carried in
-        // the note's Markdown (```quill-qa:<id>). It's what makes re-syncing a note an update
-        // rather than a duplicate-generator: the card's SM-2 columns survive edits to its text.
-        db.execSQL("CREATE TABLE flashcards (" +
-                "id TEXT PRIMARY KEY, " +
-                "note_id TEXT, " +
-                "source_segment_id TEXT, " +
-                "front TEXT, " +
-                "back TEXT, " +
-                "interval INTEGER DEFAULT 1, " +
-                "repetitions INTEGER DEFAULT 0, " +
-                "easiness REAL DEFAULT 2.5, " +
-                "next_review INTEGER, " +
-                "last_reviewed_at INTEGER, " +
-                // Stamped when the note stops being able to produce this card — the Q&A block was
-                // deleted, or one of its halves was emptied. The row stays, so refilling the half
-                // brings the card back with its schedule intact; every count of "what is there to
-                // review" leaves stamped rows out. See FlashcardRepository.markOrphansSync.
-                "orphaned_at INTEGER, " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id))");
-
-        // A quiz is a *marker*, not a question set: it records that a note was turned into one.
-        // The questions themselves are generated fresh from the note's Q&A blocks at the start of
-        // every attempt, so they can't go stale against an edited note and the options land in a
-        // different order each time.
-        db.execSQL("CREATE TABLE quizzes (" +
-                "id TEXT PRIMARY KEY, " +
-                "note_id TEXT NOT NULL, " +
-                "created_at INTEGER, " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id))");
-
-        // total is stored per attempt rather than read off the quiz: a note gains and loses Q&A
-        // blocks over time, so "7 / 9" is only meaningful next to the 9 that was true that day.
-        // answered is what separates an abandoned attempt from a bad one — 2/12 having answered
-        // three questions and 2/12 having answered all twelve are not the same afternoon.
-        db.execSQL("CREATE TABLE quiz_attempts (" +
-                "id TEXT PRIMARY KEY, " +
-                "quiz_id TEXT NOT NULL, " +
-                "score INTEGER DEFAULT 0, " +
-                "answered INTEGER DEFAULT 0, " +
-                "total INTEGER DEFAULT 0, " +
-                "status TEXT, " +
-                "started_at INTEGER, " +
-                "finished_at INTEGER, " +
-                "FOREIGN KEY(quiz_id) REFERENCES quizzes(id))");
-
-        db.execSQL("CREATE TABLE voice_memos (" +
-                "id TEXT PRIMARY KEY, " +
-                "note_id TEXT, " +
-                "file_path TEXT, " +
-                "transcript TEXT, " +
-                "duration_ms INTEGER, " +
-                "created_at INTEGER, " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id))");
-
-        db.execSQL("CREATE TABLE outbox (" +
-                "id TEXT PRIMARY KEY, " +
-                "type TEXT, " +
-                "payload_blob BLOB, " +
-                "target_device_id TEXT, " +
-                "created_at INTEGER)");
-
-        // Media asset registry. A note's text lives in notes.content_blob as one Markdown
-        // document; this table holds only what a Markdown link has nowhere to put — where the
-        // file is, how wide to draw it, how long it runs, its transcript. Rows are referenced by
-        // id from the document ("quill://image/<id>"), so there's no position column: ordering is
-        // the document's job, and a row is reachable only while some document still names it.
-        db.execSQL("CREATE TABLE note_segments (" +
-                "id TEXT PRIMARY KEY, " +
-                "note_id TEXT NOT NULL, " +
-                "type INTEGER NOT NULL, " +
-                "file_path TEXT, " +
-                "transcript TEXT, " +
-                "duration_ms INTEGER, " +
-                "width INTEGER, " +
-                "created_at INTEGER, " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id))");
-
-        // Which notes embed which whiteboards. Not the source of truth — the embed lives in the
-        // note's Markdown, and this is rewritten from it on every save, the way note_segments is.
-        // It exists because a locked note's Markdown is ciphertext: without a link outside the
-        // encrypted body, there is no way to ask "is this board inside a collection that is shut",
-        // and an imported board would sit on Home with its drawing showing. Many-to-many on
-        // purpose — an embed can be imported into a second note without moving.
-        db.execSQL("CREATE TABLE note_whiteboards (" +
-                "note_id TEXT NOT NULL, " +
-                "whiteboard_id TEXT NOT NULL, " +
-                "PRIMARY KEY(note_id, whiteboard_id), " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id), " +
-                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
-
-        db.execSQL("CREATE TABLE tags (" +
-                "id TEXT PRIMARY KEY, " +
-                "name TEXT, " +
-                "color INTEGER, " +
-                "created_at INTEGER)");
-
-        db.execSQL("CREATE TABLE note_tags (" +
-                "note_id TEXT NOT NULL, " +
-                "tag_id TEXT NOT NULL, " +
-                "PRIMARY KEY(note_id, tag_id), " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id), " +
-                "FOREIGN KEY(tag_id) REFERENCES tags(id))");
-
-        db.execSQL("CREATE TABLE IF NOT EXISTS quiz_attempt_answers (" +
-                "id TEXT PRIMARY KEY, " +
-                "attempt_id TEXT NOT NULL, " +
-                "position INTEGER NOT NULL, " +
-                "source_id TEXT, " +
-                "prompt TEXT, " +
-                // The options as they were shown, in the order they were shown, as a JSON array.
-                // Storing them is the whole point: the generator shuffles per attempt, so a paper
-                // rebuilt from the note would put the same answers under different letters and
-                // stop being the paper the user actually sat.
-                "options TEXT, " +
-                "correct_index INTEGER, " +
-                // -1 for a question left blank, matching QuizSession.NO_SELECTION.
-                "selected_index INTEGER, " +
-                "FOREIGN KEY(attempt_id) REFERENCES quiz_attempts(id))");
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempt_answers_attempt "
-                + "ON quiz_attempt_answers(attempt_id)");
-
-        // ---------- FTS5 virtual table ----------
-
-        // Standalone (not content='notes') because the indexed body is the Markdown document
-        // flattened to plain text, which no column on `notes` holds — NoteRepository writes both
-        // columns in the same transaction as the save.
-        ensureNotesFts(db);
-
-        // ---------- Indexes (recommended for FK lookups) ----------
-
-        db.execSQL("CREATE INDEX idx_notes_collection_id ON notes(collection_id)");
-        db.execSQL("CREATE INDEX idx_whiteboards_note_id ON whiteboards(note_id)");
-        db.execSQL("CREATE INDEX idx_strokes_whiteboard_id ON strokes(whiteboard_id)");
-        db.execSQL("CREATE INDEX idx_flashcards_note_id ON flashcards(note_id)");
-        db.execSQL("CREATE INDEX idx_flashcards_source_segment_id ON flashcards(source_segment_id)");
-        // A note has at most one quiz — "Make quiz" on a note that already has one opens it rather
-        // than making a second, and the constraint is what guarantees that rather than a convention.
-        db.execSQL("CREATE UNIQUE INDEX idx_quizzes_note_id ON quizzes(note_id)");
-        db.execSQL("CREATE INDEX idx_quiz_attempts_quiz_id ON quiz_attempts(quiz_id)");
-        db.execSQL("CREATE INDEX idx_voice_memos_note_id ON voice_memos(note_id)");
-        db.execSQL("CREATE INDEX idx_note_segments_note_id ON note_segments(note_id)");
-        db.execSQL("CREATE INDEX idx_note_tags_tag_id ON note_tags(tag_id)");
-        // Indexed by board, not by note: the question this table answers is "which notes hold this
-        // board", asked once per board on every Home load.
-        db.execSQL("CREATE INDEX idx_note_whiteboards_whiteboard_id " +
-                "ON note_whiteboards(whiteboard_id)");
-
+        Schema.createAll(db);
     }
 
+    /**
+     * Never destructive, on any path — see {@link Migrations}.
+     *
+     * <p>Every upgrade runs the same idempotent, column-driven
+     * {@link Migrations#ensureAdditiveSchema}. The only thing the version number decides is
+     * whether the pre-Markdown note format has to be converted first — and that conversion reads
+     * the old rows rather than dropping them.
+     */
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // v3 is the schema the Markdown migration shipped, so from there on upgrades are additive:
-        // dropping a user's notes to add columns to a table they've never filled would be a poor
-        // trade. Anything older is a development-era schema and still gets rebuilt.
-        if (oldVersion >= 3) {
-            ensureAdditiveSchema(db);
-            return;
-        }
-
-        rebuild(db);
+        if (oldVersion < 3) Migrations.migrateLegacyNotesToMarkdown(db);
+        Migrations.ensureAdditiveSchema(db);
     }
 
     /**
-     * Brings any v3-or-later database up to the current schema, by asking what it already has
-     * rather than by trusting its version number.
+     * Also non-destructive.
      *
-     * <p>That indirection is not decoration. Two branches independently shipped a "version 4":
-     * on the flashcards line it meant {@code flashcards.source_segment_id}, on the whiteboard line
-     * it meant {@code whiteboards.title}. A device sitting at v4 is therefore ambiguous — a
-     * numbered ladder would run the wrong step for one of the two lineages and leave the other's
-     * columns missing, which surfaces later as a query against a column that isn't there. Checking
-     * for each column makes every step idempotent and the version number merely a trigger.
+     * <p>{@link SQLiteOpenHelper}'s default {@code onDowngrade} throws, which on a real device
+     * means installing an older Quill leaves it unable to open its own database — a crash on every
+     * launch, with the user's notes intact and unreachable behind it. The schema only ever grows,
+     * so an older build simply sees columns it never asks about, and the honest response to a
+     * downgrade is to leave the file alone.
      */
-    private void ensureAdditiveSchema(SQLiteDatabase db) {
-        // Links a flashcard back to the Q&A block it came from, and records when it was last seen.
-        addColumnIfMissing(db, "flashcards", "source_segment_id", "TEXT");
-        addColumnIfMissing(db, "flashcards", "last_reviewed_at", "INTEGER");
-        // Left null on existing rows, which is the right default: nothing is orphaned until the
-        // next sync of its note looks at the blocks and decides otherwise.
-        addColumnIfMissing(db, "flashcards", "orphaned_at", "INTEGER");
-
-        // The search index was only ever created in onCreate, so every database that upgraded from
-        // v3 has been running without one — silently, because both the writes and the reads are
-        // guarded for FTS5-less builds and an absent table looks exactly like an absent module.
-        // Creating it here is most of the fix; backfilling is the rest, or the index would only
-        // know about notes saved after today.
-        db.execSQL("CREATE TABLE IF NOT EXISTS quiz_attempt_answers (" +
-                "id TEXT PRIMARY KEY, " +
-                "attempt_id TEXT NOT NULL, " +
-                "position INTEGER NOT NULL, " +
-                "source_id TEXT, " +
-                "prompt TEXT, " +
-                // The options as they were shown, in the order they were shown, as a JSON array.
-                // Storing them is the whole point: the generator shuffles per attempt, so a paper
-                // rebuilt from the note would put the same answers under different letters and
-                // stop being the paper the user actually sat.
-                "options TEXT, " +
-                "correct_index INTEGER, " +
-                // -1 for a question left blank, matching QuizSession.NO_SELECTION.
-                "selected_index INTEGER, " +
-                "FOREIGN KEY(attempt_id) REFERENCES quiz_attempts(id))");
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempt_answers_attempt "
-                + "ON quiz_attempt_answers(attempt_id)");
-
-        ensureNotesFts(db);
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_flashcards_source_segment_id " +
-                "ON flashcards(source_segment_id)");
-
-        // Quizzes and their attempt history. New tables, so nothing existing is touched.
-        db.execSQL("CREATE TABLE IF NOT EXISTS quizzes (" +
-                "id TEXT PRIMARY KEY, " +
-                "note_id TEXT NOT NULL, " +
-                "created_at INTEGER, " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id))");
-        db.execSQL("CREATE TABLE IF NOT EXISTS quiz_attempts (" +
-                "id TEXT PRIMARY KEY, " +
-                "quiz_id TEXT NOT NULL, " +
-                "score INTEGER DEFAULT 0, " +
-                "answered INTEGER DEFAULT 0, " +
-                "total INTEGER DEFAULT 0, " +
-                "status TEXT, " +
-                "started_at INTEGER, " +
-                "finished_at INTEGER, " +
-                "FOREIGN KEY(quiz_id) REFERENCES quizzes(id))");
-        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_quizzes_note_id ON quizzes(note_id)");
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_id " +
-                "ON quiz_attempts(quiz_id)");
-
-        // Typed text on a board. A new table, so nothing existing is touched.
-        db.execSQL("CREATE TABLE IF NOT EXISTS whiteboard_texts (" +
-                "id TEXT PRIMARY KEY, " +
-                "whiteboard_id TEXT, " +
-                "author_id TEXT, " +
-                "x REAL, " +
-                "y REAL, " +
-                "text TEXT, " +
-                "color INTEGER, " +
-                "size REAL, " +
-                "created_at INTEGER, " +
-                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_whiteboard_texts_whiteboard_id " +
-                "ON whiteboard_texts(whiteboard_id)");
-
-        // Per-collection encryption. Shipped in onCreate but never added here, so a database made
-        // before it upgraded into a build that queries a column it doesn't have — every read that
-        // consults the lock throwing "no such column" on exactly the devices that have notes worth
-        // locking. Default 0: an existing collection is unlocked, which is what it was.
-        addColumnIfMissing(db, "collections", "biometric_locked", "INTEGER DEFAULT 0");
-
-        // Which notes embed which whiteboards; see onCreate for why it exists. Backfilled once,
-        // when the table is first created, because until then the only record of an embed is the
-        // note's Markdown.
-        boolean linksAreNew = !tableExists(db, "note_whiteboards");
-        db.execSQL("CREATE TABLE IF NOT EXISTS note_whiteboards (" +
-                "note_id TEXT NOT NULL, " +
-                "whiteboard_id TEXT NOT NULL, " +
-                "PRIMARY KEY(note_id, whiteboard_id), " +
-                "FOREIGN KEY(note_id) REFERENCES notes(id), " +
-                "FOREIGN KEY(whiteboard_id) REFERENCES whiteboards(id))");
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_note_whiteboards_whiteboard_id " +
-                "ON note_whiteboards(whiteboard_id)");
-        if (linksAreNew) backfillWhiteboardLinks(db);
-
-        // Whiteboards gained a name and timestamps so Home can list them: a board has no body text
-        // to derive a preview or a date from the way a note does.
-        boolean whiteboardsDated = !addColumnIfMissing(db, "whiteboards", "title", "TEXT");
-        addColumnIfMissing(db, "whiteboards", "created_at", "INTEGER");
-        addColumnIfMissing(db, "whiteboards", "updated_at", "INTEGER");
-        // Paper style. Defaults to 0 (plain white), which is what every existing board was.
-        addColumnIfMissing(db, "whiteboards", "background", "INTEGER DEFAULT 0");
-        if (!whiteboardsDated) {
-            // Rows that predate the columns have no timestamps; date them from their strokes so
-            // they don't all sort to the top of Home as "just now". Guarded on NULL so a re-run
-            // can't overwrite a real timestamp.
-            db.execSQL("UPDATE whiteboards SET created_at = COALESCE(" +
-                    "(SELECT MIN(s.created_at) FROM strokes s WHERE s.whiteboard_id = whiteboards.id), " +
-                    "CAST(strftime('%s','now') AS INTEGER) * 1000), " +
-                    "updated_at = COALESCE(" +
-                    "(SELECT MAX(s.created_at) FROM strokes s WHERE s.whiteboard_id = whiteboards.id), " +
-                    "CAST(strftime('%s','now') AS INTEGER) * 1000) " +
-                    "WHERE created_at IS NULL OR updated_at IS NULL");
-        }
-    }
-
-    /**
-     * Creates {@code notes_fts} if it isn't there, and fills it from the notes table if it is
-     * empty.
-     *
-     * <p>Standalone (not {@code content='notes'}) because the indexed body is the Markdown document
-     * flattened to plain text, which no column on {@code notes} holds — {@code NoteRepository}
-     * writes both columns in the same transaction as the save.
-     *
-     * <p>Some SQLite builds — notably some emulator system images — aren't compiled with FTS5. The
-     * search falls back to matching titles in memory, so a missing module skips the table rather
-     * than failing database creation.
-     */
-    private void ensureNotesFts(SQLiteDatabase db) {
-        try {
-            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts "
-                    + "USING fts5(note_id UNINDEXED, title, body)");
-        } catch (SQLException e) {
-            Log.w("AppDatabase", "fts5 unavailable, skipping notes_fts table", e);
-            return;
-        }
-        backfillNotesFts(db);
-    }
-
-    /**
-     * Indexes what is already there, once.
-     *
-     * <p>Only when the index is empty: a populated one is kept current by every save, and
-     * re-reading every note on each launch to confirm that would be a lot of work to learn nothing.
-     * An app with no notes yet also finds nothing to do, which is the same no-op by a different
-     * route.
-     *
-     * <p>Locked collections are skipped rather than decrypted. The index stores the body as plain
-     * text, so filing one here would put a readable copy of the encrypted note in a table with no
-     * lock on it — the same reason {@code NoteRepository} removes a note from the index when its
-     * collection is locked. Those notes join the index if and when the collection is unlocked and
-     * they are next saved.
-     */
-    private void backfillNotesFts(SQLiteDatabase db) {
-        try (android.database.Cursor count =
-                     db.rawQuery("SELECT COUNT(*) FROM notes_fts", null)) {
-            if (count.moveToFirst() && count.getInt(0) > 0) return;
-        } catch (SQLException e) {
-            return;
-        }
-
-        try (android.database.Cursor c = db.rawQuery(
-                "SELECT n.id, n.title, n.content_blob FROM notes n "
-                        + "LEFT JOIN collections c ON c.id = n.collection_id "
-                        + "WHERE n.deleted_at IS NULL "
-                        + "AND (c.biometric_locked IS NULL OR c.biometric_locked = 0)", null)) {
-            while (c.moveToNext()) {
-                String markdown = c.isNull(2)
-                        ? "" : new String(c.getBlob(2), java.nio.charset.StandardCharsets.UTF_8);
-                android.content.ContentValues cv = new android.content.ContentValues();
-                cv.put("note_id", c.getString(0));
-                cv.put("title", c.isNull(1) ? "" : c.getString(1));
-                cv.put("body", mse.quill.data.serialization.NoteDocument.toPlainText(markdown));
-                db.insert("notes_fts", null, cv);
-            }
-        } catch (SQLException e) {
-            Log.w("AppDatabase", "could not backfill notes_fts", e);
-        }
-    }
-
-    /**
-     * Adds a column unless the table already has it. SQLite has no
-     * {@code ALTER TABLE … ADD COLUMN IF NOT EXISTS}, and re-adding one throws.
-     *
-     * @return true if the column was added, false if it was already there.
-     */
-    private boolean addColumnIfMissing(SQLiteDatabase db, String table, String column, String type) {
-        try (android.database.Cursor cursor =
-                     db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
-            int nameIndex = cursor.getColumnIndex("name");
-            while (cursor.moveToNext()) {
-                if (column.equals(cursor.getString(nameIndex))) return false;
-            }
-        }
-        db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
-        return true;
-    }
-
-    private boolean tableExists(SQLiteDatabase db, String table) {
-        try (android.database.Cursor c = db.rawQuery(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-                new String[]{table})) {
-            return c.moveToFirst();
-        }
-    }
-
-    /**
-     * Reads every note that can be read and records the whiteboards its Markdown embeds.
-     *
-     * <p>Notes in a locked collection are skipped, not failed: their bodies are ciphertext and the
-     * key is behind a prompt no migration can raise. Those get their links when the collection is
-     * next locked or unlocked — {@code CollectionLockRepository} holds the plaintext at both — or
-     * on the next save, whichever comes first.
-     */
-    private void backfillWhiteboardLinks(SQLiteDatabase db) {
-        List<String> lockedIds = new ArrayList<>();
-        try (android.database.Cursor c = db.rawQuery(
-                "SELECT id FROM collections WHERE biometric_locked = 1", null)) {
-            while (c.moveToNext()) lockedIds.add(c.getString(0));
-        }
-
-        try (android.database.Cursor c = db.rawQuery(
-                "SELECT id, collection_id, content_blob FROM notes", null)) {
-            while (c.moveToNext()) {
-                if (!c.isNull(1) && lockedIds.contains(c.getString(1))) continue;
-                if (c.isNull(2)) continue;
-
-                String markdown = new String(c.getBlob(2), java.nio.charset.StandardCharsets.UTF_8);
-                for (String boardId : NoteDocument.whiteboardIdsIn(markdown)) {
-                    ContentValues cv = new ContentValues();
-                    cv.put("note_id", c.getString(0));
-                    cv.put("whiteboard_id", boardId);
-                    db.insertWithOnConflict("note_whiteboards", null, cv,
-                            SQLiteDatabase.CONFLICT_IGNORE);
-                }
-            }
-        }
-    }
-
-    private void rebuild(SQLiteDatabase db) {
-        db.execSQL("DROP TABLE IF EXISTS notes_fts");
-        db.execSQL("DROP TABLE IF EXISTS note_tags");
-        db.execSQL("DROP TABLE IF EXISTS tags");
-        db.execSQL("DROP TABLE IF EXISTS note_segments");
-        db.execSQL("DROP TABLE IF EXISTS outbox");
-        db.execSQL("DROP TABLE IF EXISTS voice_memos");
-        db.execSQL("DROP TABLE IF EXISTS quiz_attempts");
-        db.execSQL("DROP TABLE IF EXISTS quizzes");
-        db.execSQL("DROP TABLE IF EXISTS flashcards");
-        db.execSQL("DROP TABLE IF EXISTS strokes");
-        db.execSQL("DROP TABLE IF EXISTS whiteboards");
-        db.execSQL("DROP TABLE IF EXISTS notes");
-        db.execSQL("DROP TABLE IF EXISTS collections");
-        onCreate(db);
+    @Override
+    public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        Migrations.ensureAdditiveSchema(db);
     }
 }

@@ -23,10 +23,31 @@ public class DisplayNameTest {
     }
 
     @Test
-    public void stripsPunctuationAndSpaces() {
-        assertEquals("SudarshanB", DisplayName.sanitize("Sudarshan B!"));
+    public void stripsPunctuation() {
+        assertEquals("Sudarshan B", DisplayName.sanitize("Sudarshan B!"));
         assertEquals("Sudrshan", DisplayName.sanitize("Sud@r.sh!an"));
-        assertEquals("SudrshanB", DisplayName.sanitize("Sud@rsh.an, B"));
+        assertEquals("Sudrshan B", DisplayName.sanitize("Sud@rsh.an, B"));
+    }
+
+    /**
+     * Space is allowed on purpose — this is a display name, not a handle, and excluding it once
+     * meant nobody could type their own. These three cases are the reason {@code sanitize} does
+     * more than filter: a field that takes spaces also takes "   " as a name.
+     */
+    @Test
+    public void keepsSpacesInsideANameButNotAroundOrDoubledUp() {
+        assertEquals("Sudarshan Bashyal", DisplayName.sanitize("Sudarshan Bashyal"));
+        assertEquals("collapses a run", "Sudarshan B", DisplayName.sanitize("Sudarshan     B"));
+        assertEquals("trims both ends", "Sudarshan", DisplayName.sanitize("   Sudarshan   "));
+        assertEquals("a name of nothing but spaces is not a name", "", DisplayName.sanitize("    "));
+    }
+
+    @Test
+    public void aDroppedSpaceDoesNotEatIntoTheLengthBudget() {
+        // Leading and repeated spaces are never appended, so they cannot use up the twenty
+        // characters the actual name needs.
+        assertEquals("abcdefghijklmnopqrst",
+                DisplayName.sanitize("   abcdefghijklmnopqrstuvwxyz"));
     }
 
     @Test
@@ -56,11 +77,12 @@ public class DisplayNameTest {
 
     @Test
     public void rejectsDisallowedCharacters() {
-        assertFalse(DisplayName.isAllowed(' '));
         assertFalse(DisplayName.isAllowed('.'));
         assertFalse(DisplayName.isAllowed('!'));
         assertFalse(DisplayName.isAllowed('@'));
         assertFalse(DisplayName.isAllowed('\n'));
+        // A space is a name character here; see keepsSpacesInsideANameButNotAroundOrDoubledUp.
+        assertTrue(DisplayName.isAllowed(' '));
     }
 
     @Test

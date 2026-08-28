@@ -28,11 +28,11 @@ import mse.quill.onboarding.Onboarding;
 import android.text.InputFilter;
 import com.google.android.material.textfield.TextInputLayout;
 import mse.quill.ui.profile.DisplayName;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.ui.common.TextFieldUtils;
 import mse.quill.onboarding.SampleData;
 import mse.quill.ui.profile.ProfilePreferences;
-import mse.quill.util.Haptics;
-import mse.quill.util.Reveal;
+import mse.quill.ui.common.Haptics;
+import mse.quill.ui.common.Reveal;
 
 /**
  * The first screen of a brand-new Quill: what the app is, and a choice between starting with

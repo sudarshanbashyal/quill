@@ -13,14 +13,18 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.UUID;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.model.DueCard;
 import mse.quill.data.model.Flashcard;
 import mse.quill.data.model.FlashcardDeck;
 import mse.quill.data.serialization.MarkdownSerializer;
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.QaSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.QaSegment;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.data.wear.WearProjectionPublisher;
+import mse.quill.study.scheduling.DueProjection;
+import mse.quill.study.scheduling.FlashcardScheduler;
 
 /**
  * The flashcards generated from a note's Q&amp;A blocks, and their review schedule.
@@ -37,11 +41,9 @@ import mse.quill.util.NoteDisplayUtils;
  * what there is to review filters on the stamp; only {@link #loadBySegmentIdSync} ignores it, since
  * that is what has to find an orphaned card again in order to revive it.
  */
-public class FlashcardRepository {
+public class FlashcardRepository implements FlashcardStore {
 
-    public interface OnDeckLoaded { void onLoaded(List<Flashcard> deck); }
-    public interface OnDecksLoaded { void onLoaded(List<FlashcardDeck> decks); }
-    public interface OnCounted { void onCounted(int count); }
+    // The three callbacks live on FlashcardStore; see the note in NoteRepository.
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
@@ -79,6 +81,7 @@ public class FlashcardRepository {
      * Brings the note's cards in line with its Q&amp;A blocks and hands back the resulting deck, in
      * the order the blocks appear in the note.
      */
+    @Override
     public void syncFromNote(String noteId, List<NoteSegment> segments, OnDeckLoaded cb) {
         List<QaSegment> reviewable = reviewableQa(segments);
         executors.diskIO(() -> {
@@ -130,7 +133,7 @@ public class FlashcardRepository {
             } finally {
                 db.endTransaction();
             }
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
 
             if (cb != null) executors.mainThread(() -> cb.onLoaded(deck));
 
@@ -265,6 +268,7 @@ public class FlashcardRepository {
      * out: their cards stay in the table (restoring a note restores its deck), they just aren't
      * offered for review.
      */
+    @Override
     public void loadDecks(OnDecksLoaded cb) {
         executors.diskIO(() -> {
             List<FlashcardDeck> decks = loadDecksSync();
@@ -288,7 +292,7 @@ public class FlashcardRepository {
     }
 
     private List<FlashcardDeck> loadDecksSync(boolean excludeAllLocked) {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             long now = System.currentTimeMillis();
             List<FlashcardDeck> decks = new ArrayList<>();
 
@@ -368,9 +372,10 @@ public class FlashcardRepository {
      * re-parsing every note in the app to open one review screen. The cards are already kept in
      * step by every save.
      */
+    @Override
     public void loadDueAcrossNotes(long now, OnDeckLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
 
             List<String> args = new ArrayList<>();
@@ -410,9 +415,10 @@ public class FlashcardRepository {
     }
 
     /** How many cards a note has — what decides whether it offers "turn into" or "review". */
+    @Override
     public void countForNote(String noteId, OnCounted cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Cursor c = db.rawQuery(
                     "SELECT COUNT(*) FROM flashcards WHERE note_id = ? AND orphaned_at IS NULL",
                     new String[]{noteId});
@@ -456,7 +462,7 @@ public class FlashcardRepository {
      * collection exists and that they have been neglecting it.
      */
     public DueSummary countDueSync(long now) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> hidden = NoteCrypto.hiddenCollectionIds(db);
 
         List<String> args = new ArrayList<>();
@@ -510,7 +516,7 @@ public class FlashcardRepository {
     }
 
     private List<DueCardPreview> loadDueCardsSync(long now, int limit, boolean excludeAllLocked) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> excluded = excludeAllLocked
                 ? NoteCrypto.lockedCollectionIds(db) : NoteCrypto.hiddenCollectionIds(db);
 
@@ -557,7 +563,7 @@ public class FlashcardRepository {
      * <p>The horizon is end-of-day rather than {@code now} — see {@link DueProjection#select}.
      */
     public List<DueCard> dueProjectionSync(long now, TimeZone zone) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> locked = NoteCrypto.lockedCollectionIds(db);
         long horizon = DueProjection.endOfDayExclusive(now, zone);
 
@@ -606,11 +612,12 @@ public class FlashcardRepository {
      * Q&amp;A blocks can never make cards again. What's actually lost is the review history, which
      * is what the confirmation warns about.
      */
+    @Override
     public void deleteForNote(String noteId, Runnable onDeleted) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             int deleted = db.delete("flashcards", "note_id = ?", new String[]{noteId});
-            if (deleted > 0) mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            if (deleted > 0) DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
             if (onDeleted != null) executors.mainThread(onDeleted);
 
             // The mirror of the publish in syncFromNote, and the more visible of the two if it is
@@ -621,6 +628,7 @@ public class FlashcardRepository {
     }
 
     /** Persists the card's advanced schedule after an answer given now, on this device. */
+    @Override
     public void recordReview(Flashcard card, boolean correct, Runnable onDone) {
         recordReview(card, correct, System.currentTimeMillis(), onDone);
     }
@@ -635,6 +643,7 @@ public class FlashcardRepository {
      * intends, and it would do it silently: every field still looks plausible afterwards, which
      * is what makes this worth a separate overload rather than a caller's discipline.
      */
+    @Override
     public void recordReview(Flashcard card, boolean correct, long answeredAt, Runnable onDone) {
         FlashcardScheduler.applyReview(card, correct, answeredAt);
         executors.diskIO(() -> {
@@ -646,7 +655,7 @@ public class FlashcardRepository {
             cv.put("next_review", card.nextReview);
             cv.put("last_reviewed_at", card.lastReviewedAt);
             db.update("flashcards", cv, "id = ?", new String[]{card.id});
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
             if (onDone != null) executors.mainThread(onDone);
 
             // After the callback, not before: the review screen should advance at the speed of the
@@ -667,7 +676,7 @@ public class FlashcardRepository {
      * then simply out of date. The caller drops it.
      */
     public Flashcard loadByIdSync(String cardId) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         try (Cursor c = db.rawQuery(
                 "SELECT id, note_id, source_segment_id, front, back, interval, repetitions, " +
                         "easiness, next_review, last_reviewed_at " +

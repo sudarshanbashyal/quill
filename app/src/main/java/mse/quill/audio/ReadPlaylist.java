@@ -4,11 +4,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.HeadingMarker;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.QaSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.HeadingMarker;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.QaSegment;
+import mse.quill.data.model.TextSegment;
 
 /**
  * A note as read-aloud hears it: its words and its recordings, in the order they appear.

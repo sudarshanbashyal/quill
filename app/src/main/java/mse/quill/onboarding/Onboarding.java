@@ -20,11 +20,6 @@ public final class Onboarding {
 
     private Onboarding() {}
 
-    /** For {@code DataWipe}, which returns the app to its first-run state — including this. */
-    public static String prefsName() {
-        return PREFS_NAME;
-    }
-
     /**
      * True when the welcome screen should come up instead of the app. <b>Blocking — call from the
      * disk thread</b> ({@code StartupTasks} is where this belongs, and where the splash waits for

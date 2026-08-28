@@ -21,7 +21,7 @@ import java.util.List;
 
 import mse.quill.R;
 import mse.quill.data.model.QuizAttempt;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * A quiz's history: one row per sitting, newest first.

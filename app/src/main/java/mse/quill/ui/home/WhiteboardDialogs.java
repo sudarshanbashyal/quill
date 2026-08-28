@@ -13,7 +13,7 @@ import com.google.android.material.textfield.TextInputLayout;
 import mse.quill.R;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.ui.common.TextFieldUtils;
 
 /**
  * Name / rename / delete dialogs for whiteboards, mirroring {@link CollectionDialogs} — same

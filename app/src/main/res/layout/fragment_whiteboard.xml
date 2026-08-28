@@ -95,7 +95,9 @@
 
         <!-- Shrinks the board into Android's floating Picture-in-Picture window, so it keeps
              showing while another app is in front. Hidden on a device/OS that can't do PIP at
-             all (see WhiteboardFragment#bindViews), rather than shown and failing the tap. -->
+             all (see WhiteboardFragment#bindViews), rather than shown and failing the tap.
+             The icon is a raster like its neighbours on this bar; the fixed 40dp bounds below
+             mean it needs no size-pinning wrapper the way the menu icons do. -->
         <ImageButton
             android:id="@+id/btnPip"
             android:layout_width="40dp"

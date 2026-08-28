@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import mse.quill.data.AppExecutors;
+import mse.quill.security.MediaFiles;
 
 /**
  * Turns a recorded clip into the bar heights a waveform is drawn from, once per file.
@@ -94,7 +95,7 @@ public final class WaveformCache {
         try {
             // See AudioPlayback: MediaExtractor takes the same in-memory source for an encrypted
             // clip, so drawing a waveform never writes the audio out in the clear.
-            android.media.MediaDataSource source = mse.quill.security.MediaFiles.source(filePath);
+            android.media.MediaDataSource source = MediaFiles.source(filePath);
             if (source != null) extractor.setDataSource(source);
             else extractor.setDataSource(filePath);
             int track = selectAudioTrack(extractor);

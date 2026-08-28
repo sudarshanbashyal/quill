@@ -20,13 +20,13 @@ import java.util.List;
 import java.util.Map;
 
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.HeadingMarker;
-import mse.quill.ui.notes.editor.model.ImageSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.QaSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
-import mse.quill.ui.notes.editor.model.WhiteboardSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.HeadingMarker;
+import mse.quill.data.model.ImageSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.QaSegment;
+import mse.quill.data.model.TextSegment;
+import mse.quill.data.model.WhiteboardSegment;
 
 /** Covers segment list ↔ Markdown document, including embed ordering and asset rejoining. */
 @RunWith(AndroidJUnit4.class)

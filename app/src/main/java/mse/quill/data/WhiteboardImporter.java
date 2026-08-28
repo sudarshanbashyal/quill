@@ -13,7 +13,7 @@ import java.util.UUID;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.model.WhiteboardText;
-import mse.quill.share.WhiteboardBundleReader;
+import mse.quill.bundle.WhiteboardBundleReader;
 
 /**
  * Turns a {@code .quillboard} bundle into a new whiteboard on this device.
@@ -45,8 +45,8 @@ public final class WhiteboardImporter {
         this.appContext = context.getApplicationContext();
         this.appDatabase = AppDatabase.getInstance(appContext);
         this.executors = AppExecutors.getInstance();
-        this.strokeRepository = new StrokeRepository(appDatabase);
-        this.textRepository = new WhiteboardTextRepository(appDatabase);
+        this.strokeRepository = new StrokeRepository(appContext);
+        this.textRepository = new WhiteboardTextRepository(appContext);
     }
 
     public void importFrom(Uri source, OnImported cb) {
@@ -90,18 +90,18 @@ public final class WhiteboardImporter {
         SQLiteDatabase db = appDatabase.getWritableDatabase();
         db.beginTransaction();
         try {
-            new WhiteboardRepository(appDatabase).insertSync(wb);
+            new WhiteboardRepository(appContext).insertSync(wb);
             for (Stroke stroke : contents.strokes) {
                 stroke.id = UUID.randomUUID().toString();
                 stroke.whiteboardId = whiteboardId;
                 stroke.authorId = null;
-                strokeRepository.insertStroke(stroke);
+                strokeRepository.insertStrokeSync(stroke);
             }
             for (WhiteboardText text : contents.texts) {
                 text.id = UUID.randomUUID().toString();
                 text.whiteboardId = whiteboardId;
                 text.authorId = null;
-                textRepository.insert(text);
+                textRepository.insertSync(text);
             }
             db.setTransactionSuccessful();
         } catch (SQLiteException e) {

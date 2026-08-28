@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.model.Collection;
 
 public class CollectionRepository {
@@ -38,7 +39,7 @@ public class CollectionRepository {
             cv.put("created_at", System.currentTimeMillis());
             cv.put("biometric_locked", 0);
             db.insert("collections", null, cv);
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.COLLECTIONS);
 
             if (cb != null) executors.mainThread(() -> cb.onCreated(id));
         });
@@ -55,20 +56,26 @@ public class CollectionRepository {
      * device as a plaintext bundle, and wiring that in later means remembering to.
      *
      * <p>A null id — a note filed nowhere — is not locked. There is no collection to lock it.
+     * The answer is still posted to the main thread rather than handed back inline, so that this
+     * method keeps one shape: <b>a callback-taking method must never invoke its callback before it
+     * returns.</b> Answering a null id synchronously and everything else asynchronously meant a
+     * caller could not know which it would get, which is exactly the arrangement that produces a
+     * re-entrancy bug once and then hides.
      */
     public void isLocked(String collectionId, OnLockChecked cb) {
+        if (cb == null) return;
         if (collectionId == null) {
-            if (cb != null) cb.onChecked(false);
+            executors.mainThread(() -> cb.onChecked(false));
             return;
         }
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             boolean locked;
             try (Cursor c = db.rawQuery("SELECT biometric_locked FROM collections WHERE id = ?",
                     new String[]{collectionId})) {
                 locked = c.moveToFirst() && c.getInt(0) != 0;
             }
-            if (cb != null) executors.mainThread(() -> cb.onChecked(locked));
+            executors.mainThread(() -> cb.onChecked(locked));
         });
     }
 
@@ -78,7 +85,7 @@ public class CollectionRepository {
             ContentValues cv = new ContentValues();
             cv.put("name", newName);
             db.update("collections", cv, "id = ?", new String[]{id});
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.COLLECTIONS);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -99,7 +106,7 @@ public class CollectionRepository {
             } finally {
                 db.endTransaction();
             }
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.COLLECTIONS);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
@@ -114,7 +121,7 @@ public class CollectionRepository {
     /** Synchronous form of {@link #loadCollections}, for the collections widget's
      *  RemoteViewsFactory, which Android already runs off the main thread. */
     public List<Collection> loadCollectionsSync() {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         // Flashcards and quizzes hang off notes, not collections, so both counts reach the
         // collection through the note that owns them — and skip deleted notes for the same
         // reason note_count does, or a collection emptied into the trash would still claim

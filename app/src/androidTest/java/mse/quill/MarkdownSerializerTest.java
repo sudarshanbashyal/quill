@@ -16,7 +16,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import mse.quill.data.serialization.MarkdownSerializer;
-import mse.quill.ui.notes.editor.model.HeadingMarker;
+import mse.quill.data.model.HeadingMarker;
 
 /** Round-trip coverage for the Spannable ↔ Markdown conversion of a single text segment. */
 @RunWith(AndroidJUnit4.class)

@@ -21,11 +21,13 @@ import java.util.List;
 import com.google.android.material.snackbar.Snackbar;
 
 import mse.quill.R;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.model.Quiz;
 import mse.quill.data.model.QuizAttempt;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.study.quiz.QuizRules;
 
 /**
  * One quiz between sittings: what it will ask, how it has gone before, and the way in.
@@ -40,7 +42,7 @@ public class QuizDetailFragment extends Fragment {
     public static final String ARG_QUIZ_ID = "quiz_id";
 
     private QuizRepository quizRepository;
-    private NoteRepository noteRepository;
+    private NoteStore noteRepository ;
     private QuizAttemptsAdapter adapter;
 
     private TextView titleView;
@@ -65,7 +67,7 @@ public class QuizDetailFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         quizRepository = new QuizRepository(requireContext());
-        noteRepository = new NoteRepository(requireContext());
+        noteRepository = Repositories.notes(requireContext());
 
         titleView = view.findViewById(R.id.quiz_title);
         subtitleView = view.findViewById(R.id.quiz_subtitle);

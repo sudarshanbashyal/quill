@@ -12,9 +12,11 @@ import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.serialization.NoteDocument;
 import mse.quill.security.CollectionCrypto;
 import mse.quill.security.CollectionLock;
+import mse.quill.data.wear.WearNoteListPublisher;
 
 /**
  * Turning a collection's lock on and off — the two migrations that move its notes between
@@ -112,14 +114,14 @@ public class CollectionLockRepository {
                 // were, and a tap on one of those stale rows deep-links straight past the gate
                 // this method just put up (the note/collection screens' own lock check is what
                 // guards the in-app path; the widget's tap has nothing else in between).
-                mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+                DataChangeNotifier.getInstance().notifyChanged(Change.COLLECTIONS);
                 // writeNotes(..., locked=true) just deleted this collection's flashcards — the
                 // Flashcards widget's due-now/deck rows are stale in exactly the same way.
-                mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+                DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
                 // And the boards: the strokes are not encrypted by any of this, so the only thing
                 // keeping this collection's drawings off the home screen is the widget's query
                 // being asked again. relinkWhiteboards above is what it will read.
-                mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+                DataChangeNotifier.getInstance().notifyChanged(Change.WHITEBOARDS);
 
                 // These titles are no longer allowed off the device — see WearNoteListPublisher,
                 // which excludes every encrypted collection whether it is open or shut. Without
@@ -175,7 +177,7 @@ public class CollectionLockRepository {
                 // Same reasoning as lock(), in the other direction: an unlocked collection's
                 // notes, decks and boards are all allowed back on the home screen now, and none of
                 // them return until each widget is asked again.
-                mse.quill.widget.WidgetUpdater.notifyAllChanged(appContext);
+                DataChangeNotifier.getInstance().notifyChanged(Change.EVERYTHING);
 
                 // The other direction: these notes are ordinary again and may rejoin the watch's
                 // pickers. Unlike the lock, nothing is at stake in being late — but a list that is
@@ -223,7 +225,7 @@ public class CollectionLockRepository {
 
             // Same reasoning as lock()/unlock(): the collection and its (now-deleted) notes must
             // not linger in the widget's cached rows.
-            mse.quill.widget.WidgetUpdater.notifyAllChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.EVERYTHING);
 
             // These notes are gone for good, not soft-deleted, so the watch must stop offering
             // them. Same rule as everywhere else that changes what belongs on the list.

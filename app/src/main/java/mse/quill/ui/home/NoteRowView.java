@@ -13,7 +13,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Builds a note row entirely in code rather than via an XML layout + LayoutInflater.
@@ -50,10 +50,10 @@ final class NoteRowView {
     }
 
     static Views build(Context context) {
-        int spacingMd = dimen(context, R.dimen.spacing_md);
-        int spacingSm = dimen(context, R.dimen.spacing_sm);
-        int gutter = dimen(context, R.dimen.list_item_gutter);
-        int marginVertical = dimen(context, R.dimen.note_row_margin_vertical);
+        int spacingMd = CardStyles.dimen(context, R.dimen.spacing_md);
+        int spacingSm = CardStyles.dimen(context, R.dimen.spacing_sm);
+        int gutter = CardStyles.dimen(context, R.dimen.list_item_gutter);
+        int marginVertical = CardStyles.dimen(context, R.dimen.note_row_margin_vertical);
 
         MaterialCardView card = new MaterialCardView(context);
         RecyclerView.LayoutParams cardParams = new RecyclerView.LayoutParams(
@@ -112,7 +112,4 @@ final class NoteRowView {
         CardStyles.applyFlatCardStyle(card, cornerRadiusRes);
     }
 
-    static int dimen(Context context, int dimenRes) {
-        return CardStyles.dimen(context, dimenRes);
-    }
 }

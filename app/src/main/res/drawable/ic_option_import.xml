@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Import option's icon on Home's expanding FAB. ic_download.png is a full-size asset, so it
-     gets the same size-pinning wrapper the section-header icons use. -->
+     gets the same size-pinning wrapper the section-header icons use — see ic_section_note.xml. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:width="@dimen/section_header_icon"
