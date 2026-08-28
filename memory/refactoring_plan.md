@@ -740,7 +740,7 @@ stand.
 
 ---
 
-## R15 — `AppDatabase` is a schema, a migration history, and a helper class in one file `OPEN`
+## R15 — `AppDatabase` is a schema, a migration history, and a helper class in one file `DONE 2026-08-28`
 
 **Cause.** 748 lines: the singleton and its lifecycle, `onCreate` with ~170 lines of
 `execSQL` defining every table, and ~400 lines of migration — `onUpgrade`, `onDowngrade`,
@@ -763,6 +763,21 @@ delegating out), `Schema` (the `CREATE TABLE` statements), `Migrations` (everyth
    and two delegating overrides. Target: under 150 lines.
 4. Do **not** renumber versions or touch `ensureAdditiveSchema`'s column-checking — see
    "deliberately not on this list" in the first sweep.
+
+**What landed.** `AppDatabase` 748 → **133** lines: the singleton, `openForTest`, `destroy`,
+`hasAnyContentSync`, `onConfigure`, and four delegating lines. `Schema` is 271, `Migrations`
+387. Ten dead imports went with it — the helper no longer imports `NoteDocument` or any
+segment type, because it no longer converts anything.
+
+One join needed a decision rather than a cut: `ensureNotesFts` **creates** the FTS5 table
+(schema) and then **fills it from existing rows** (migration). Split along that line —
+`Schema.ensureNotesFts` creates, then calls `Migrations.backfillNotesFts`. On a database
+being created from nothing the backfill finds no rows, which is the same no-op by a
+different route, and that is now said where someone will read it.
+
+Step 4 honoured: no version renumbering, and `ensureAdditiveSchema` moved character for
+character. The reason it checks columns rather than trusting version numbers is now in
+`Migrations`' class comment rather than only in this plan.
 
 ---
 
