@@ -43,7 +43,7 @@ android {
 dependencies {
     // SM-2, the review session and quiz generation, kept in a plain-JVM module so the Wear
     // companion can reuse them and so nothing in there can reach for an Android API.
-    implementation(project(":study"))
+    implementation(project(":shared"))
     implementation(libs.activity.ktx)
     implementation(libs.appcompat)
     implementation(libs.barcode.scanning.common)

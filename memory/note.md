@@ -1463,17 +1463,17 @@ invocations are 200-400ms apart, slower than a person).
   usable immediately, and the insert and the first save queue in order on the one disk thread —
   a save arriving mid-creation used to be dropped.
 
-## Module layout — `:app` and `:study`
+## Module layout — `:app` and `:shared`
 
 Quill was one module until 2026-08-13. It is now two: `:app` (the Android application) and
-`:study` (a plain-JVM `java-library` holding `FlashcardScheduler`, `ReviewSession`, `QuizSession`,
+`:shared` (a plain-JVM `java-library` holding `FlashcardScheduler`, `ReviewSession`, `QuizSession`,
 `QuizGenerator`, `QuizQuestion`, `QuizRules` and the `Flashcard` model).
 
 **Why split at all.** The study logic has been Android-free since Epic A, but only by convention —
 nothing stopped someone reaching for a `Context` in `QuizGenerator` except a code review that
 noticed. A module without the Android classpath turns that into a build failure, which is the only
 version of the promise that holds up. Verified rather than assumed: adding
-`import android.content.Context;` to `QuizRules` and running `:study:compileJava` fails with
+`import android.content.Context;` to `QuizRules` and running `:shared:compileJava` fails with
 "package android.content does not exist". The immediate driver is Epic J — the Wear companion
 reuses SM-2 verbatim, and a schedule that drifts between the wrist and the phone is the bug this
 prevents by construction.
@@ -1496,9 +1496,9 @@ that's *why* the split was possible. Rename if it ever earns itself; it hasn't.
 `FlashcardRepository.reviewableQa` — which takes `NoteSegment` and so belongs on the Android side
 of the line. `ExampleUnitTest` stayed too; the four real JVM suites moved (32 tests:
 `FlashcardSchedulerTest` 9, `ReviewSessionTest` 8, `QuizGeneratorTest` 9, `QuizSessionTest` 6) and
-run under `:study:test` with no device and no Android test runner.
+run under `:shared:test` with no device and no Android test runner.
 
-**Gradle gotcha worth keeping:** `:study` pins `sourceCompatibility`/`targetCompatibility` to 11 to
+**Gradle gotcha worth keeping:** `:shared` pins `sourceCompatibility`/`targetCompatibility` to 11 to
 match `:app`'s `compileOptions`. A mismatch compiles clean and then fails at dex time complaining
 about class file versions, which reads as anything but a toolchain problem.
 
@@ -1516,7 +1516,7 @@ Expressive, `MaterialScope`, `Material3TileService`) is Kotlin-only with no Java
 So a Java tile is a Material 2.5 tile, which trades one recorded divergence (a Kotlin module) for a
 worse one (a watch surface off the Material 3 standard the rest of the app was migrated onto),
 to postpone a language boundary the review screen forces anyway. The boundary goes at the module
-edge instead: `:app` and `:study` stay Java, `:wear` is Kotlin + Compose.
+edge instead: `:app` and `:shared` stay Java, `:wear` is Kotlin + Compose.
 
 **Correcting a thing that was written down wrong:** Wear's view-based widgets are *not* deprecated.
 `androidx.wear:wear` ships; individual pieces are retired (`AmbientModeSupport` →
@@ -1531,9 +1531,9 @@ to match the phone — a mismatch there is the classic reason a `DataItem` publi
 arrives). What exists: the phone builds and publishes the projection, the watch decodes it, and the
 tile and complication render from it.
 
-**The split between `:study` and `:app` is the useful part.** `DueProjection.select` — horizon
+**The split between `:shared` and `:app` is the useful part.** `DueProjection.select` — horizon
 filter, most-overdue-first ordering, the 120-card cap, the 240-character trim — is pure and lives in
-`:study` with ten tests. `FlashcardRepository.dueProjectionSync` does only the two things that need
+`:shared` with ten tests. `FlashcardRepository.dueProjectionSync` does only the two things that need
 a database: the query and the lock rule. Neither half can be got wrong without the other noticing.
 
 **The lock rule is stricter here than anywhere else in the app, on purpose.** Every *locked*
@@ -1612,7 +1612,7 @@ emulator, which is the user's credential, not something automatable. So the deco
   the way the whiteboard code did.
 - Model classes (`data/model/*`) are plain field-holder POJOs, no builders/getters —
   keep new ones consistent with that.
-- **Study logic goes in `:study`, not `:app`.** Anything that is pure state transitions over
+- **Study logic goes in `:shared`, not `:app`.** Anything that is pure state transitions over
   cards or questions — scheduling, session progression, generation — belongs in the plain-JVM
   module, and the compiler will tell you if it doesn't (no Android classpath in there). Anything
   touching SQLite, a `Context` or a view stays in `:app`. Tests for the former are ordinary JUnit
@@ -1807,7 +1807,7 @@ destroy mid-transfer.
   once from `QuillApplication.onCreate` and decides for itself which widget that means.
 
 The one remaining `ui` import in `data/` is `QuizRepository → mse.quill.ui.quiz`, which is a
-package name lying about pure logic in `:study` (R7b), not a layering violation.
+package name lying about pure logic in `:shared` (R7b), not a layering violation.
 
 **`QuillApplication` exists now.** It is the only process-wide wiring point; a widget's
 `RemoteViewsService` or a Wear message can write data without `MainActivity` ever starting,
@@ -1815,7 +1815,7 @@ which is why the subscription cannot hang off the activity.
 
 **Wear transport is `data/wear/`,** not eight `Wear*` files loose in `data/`. Their five
 manifest `<service>` entries name the new package. Note that the `*Keys` classes they speak in
-live in `:study`, in package `mse.quill.data` — the split package from Epic J.
+live in `:shared`, in package `mse.quill.data` — the split package from Epic J.
 
 **`MainActivity` routes nothing.** `DeepLinkRouter` owns widget taps, the reminder
 notification, `.quill` files opened from outside, and `quill://` session links, along with the
@@ -1870,3 +1870,23 @@ a symptom of the icons being raster — converting an icon to a vector deletes i
 notification small icons and lint flags them as not entirely white (`IconColors`) — the system
 uses only the alpha channel, so they render, but a white-on-transparent asset is the correct thing
 there.
+
+
+## The `:shared` module (renamed from `:study`, 2026-08-28)
+
+`:shared` is the one module both `:app` and `:wear` depend on, and that — not studying — is what
+decides what belongs in it. It was called `:study` because SM-2 was the first thing extracted, and
+the name then quietly authorised putting the phone↔watch wire protocol there too.
+
+    mse.quill.sync              the 7 *Keys classes: the Data Layer wire protocol
+    mse.quill.study.scheduling  FlashcardScheduler, DueProjection
+    mse.quill.study.review      ReviewSession
+    mse.quill.study.quiz        QuizGenerator, QuizQuestion, QuizRules, QuizSession
+    mse.quill.data.model        Flashcard, DueCard
+
+**`mse.quill.data.model` is deliberately shared with `:app`** and is the only split package left.
+`Flashcard` and `DueCard` are domain models and belong beside `Note` and `Stroke`; splitting them
+by module would be splitting them by build graph rather than by meaning.
+
+The module is Android-free and JVM-tested, which is what lets `:wear` reuse SM-2 rather than
+reimplement it. Keep it that way: anything needing an Android API belongs in `:app`.

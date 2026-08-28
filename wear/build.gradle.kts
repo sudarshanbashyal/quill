@@ -84,7 +84,7 @@ dependencies {
 
     // SM-2 and the review session, shared verbatim with the phone rather than reimplemented — the
     // reason the module extraction came first. Java, consumed from Kotlin without ceremony.
-    implementation(project(":study"))
+    implementation(project(":shared"))
     implementation(libs.play.services.wearable)
     implementation(libs.wear.tiles)
     implementation(libs.protolayout)

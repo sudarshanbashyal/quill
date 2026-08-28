@@ -684,7 +684,7 @@ worse than no tile, so D's reminders infrastructure is a real prerequisite, not 
 `fbc25a2` it is built, which is what turned this epic from blocked into next.
 
 **Build order, decided 2026-08-13** — phased by feature, not by language (see the stack decision
-below). **Phase 0**: the `:study` extraction, alone, proven by its own tests. **Phase 1**: the
+below). **Phase 0**: the `:shared` extraction, alone, proven by its own tests. **Phase 1**: the
 projection and the two native surfaces — publish the `DataItem` from the phone, receive and cache
 it on the watch, tile + complication, tap through to the phone. **Phase 2**: the Compose review
 screen and the `MessageClient` return path. Nothing in phase 1 is rewritten by phase 2: the Kotlin
@@ -694,7 +694,7 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
       everything else depends on it.* `FlashcardScheduler`, `ReviewSession`, `QuizSession`,
       `QuizGenerator`, `QuizRules`
       and the `Flashcard` model import nothing but `java.util` today (verified 2026-08-08). Move
-      them to a plain-JVM `:study` module that both `:app` and `:wear` depend on, so SM-2 cannot
+      them to a plain-JVM `:shared` module that both `:app` and `:wear` depend on, so SM-2 cannot
       drift between the two. The existing JVM tests move with it and keep running without a device.
   - [x] **The list above was one class short**: `QuizQuestion` moved too — `QuizGenerator` builds
         them and `QuizSession` holds them, and its constructor is package-private, so leaving it
@@ -750,7 +750,7 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         (M3 Expressive, `MaterialScope`, `Material3TileService`) is **Kotlin-only, with no Java
         builders at all**. A Java tile is therefore a Material 2.5 tile — a *second* divergence
         from Epic H's Material 3 standard, bought to avoid a language boundary the review screen
-        forces anyway. So the boundary goes at the module edge instead: `:app` and `:study` stay
+        forces anyway. So the boundary goes at the module edge instead: `:app` and `:shared` stay
         Java, `:wear` is Kotlin + Compose, and the phasing below is by feature, not by language.
   - [x] **Correction to the note this replaces**: Wear's view-based widgets are *not* deprecated.
         `androidx.wear:wear` ships; individual pieces are retired (`AmbientModeSupport` →
@@ -873,6 +873,6 @@ the three RemoteViews gotchas hit, and what's reused vs. new live in
   Any surface that leaves the phone — the watch today, Epic I's widget tomorrow — has to
   go through `NoteCrypto.hiddenCollectionIds` the way `countDueSync` does. Worth stating
   once here rather than rediscovering it per surface.
-- Epic J's `:study` module extraction is also the cheapest way to keep Epic A's promise
+- Epic J's `:shared` module extraction is also the cheapest way to keep Epic A's promise
   that the study logic stays Android-free — today that's a convention nothing enforces,
   and a module boundary makes the compiler enforce it.
