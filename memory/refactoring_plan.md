@@ -713,7 +713,7 @@ it honest packages inside.
 
 ---
 
-## R14 — `util/` is four packages in a trench coat, and `dimen()` is declared seven times `(b) DONE 2026-08-27, (a) partly done`
+## R14 — `util/` is four packages in a trench coat, and `dimen()` is declared seven times `DONE 2026-08-28`
 
 **Cause (a).** `util/` holds 19 files, 1901 lines, in four unrelated groups:
 
@@ -754,11 +754,24 @@ five verbatim copies are gone, and so is the pass-through in `NoteRowView` — w
 three `ui/home` classes that were reaching through a *View class* to get at a utility now
 name the utility.
 
-(a) is partly done by accident: R10 took the four exporters into `export/`, so `util/` is 19
-files down to **15**. Still three groups — UI behaviour (`SwipeToDelete`, `Reveal`,
-`UndoDelete`, `MaxHeightScrollView`, `WindowInsetsUtils`, `Haptics`, `CardStyles`,
-`TextFieldUtils`), one data operation (`DataWipe`), and the genuine helpers. Steps 2 and 3
-stand.
+(a) finished 2026-08-28. R10 had already taken the four exporters into `export/`; the rest
+went by group:
+
+- `DataWipe` → `data/`. It destroys the database and every file the app owns; `data/` is
+  where someone looks for that, and it now sits beside the `AppDatabase.destroy` it calls.
+- The eight UI-behaviour classes → **`ui/common/`**: `SwipeToDelete`, `Reveal`, `UndoDelete`,
+  `MaxHeightScrollView`, `WindowInsetsUtils`, `Haptics`, `CardStyles`, `TextFieldUtils`. Two
+  of them hold static mutable UI state (`SwipeToDelete.activeSwipes`,
+  `WindowInsetsUtils.chromeOwnsTopInset`) — still true, but at least no longer owned by a
+  package called `util`. R16's note on static state still covers them.
+
+`util/` is six files now: `BitmapUtils`, `ColorUtils`, `NoteDisplayUtils`, `RelativeTime`,
+`TimeStamps` and the `PipAware` interface. Five stateless helpers and one contract, which is
+the `util/` step 5 predicted.
+
+Checked before moving: `MaxHeightScrollView` is a `View` subclass, so a layout inflating it by
+fully-qualified name would have broken at runtime rather than at compile time. Nothing does —
+all four callers construct it in code.
 
 ---
 

@@ -20,10 +20,10 @@ import java.util.Locale;
 
 import mse.quill.R;
 import mse.quill.data.NoteStore;
-import mse.quill.util.MaxHeightScrollView;
+import mse.quill.ui.common.MaxHeightScrollView;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.TextFieldUtils;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.TextFieldUtils;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Picks the note a new deck or quiz should be made from.

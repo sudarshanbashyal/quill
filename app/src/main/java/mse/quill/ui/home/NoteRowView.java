@@ -13,7 +13,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Builds a note row entirely in code rather than via an XML layout + LayoutInflater.

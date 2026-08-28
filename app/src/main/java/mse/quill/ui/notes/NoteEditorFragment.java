@@ -66,7 +66,7 @@ import mse.quill.data.WhiteboardRepository;
 import mse.quill.ui.whiteboard.WhiteboardFragment;
 import mse.quill.ui.whiteboard.WhiteboardPickerDialog;
 import mse.quill.ui.whiteboard.WhiteboardPreferences;
-import mse.quill.util.WindowInsetsUtils;
+import mse.quill.ui.common.WindowInsetsUtils;
 import mse.quill.export.StoragePermission;
 
 public class NoteEditorFragment extends Fragment

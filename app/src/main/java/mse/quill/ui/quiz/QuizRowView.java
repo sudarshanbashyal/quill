@@ -20,7 +20,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * One quiz row: a best-score badge, the note's title with two lines of detail, and a delete button.

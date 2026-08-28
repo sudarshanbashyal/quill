@@ -26,10 +26,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
-import mse.quill.util.Haptics;
+import mse.quill.ui.common.Haptics;
 import mse.quill.util.RelativeTime;
-import mse.quill.util.Reveal;
-import mse.quill.util.UndoDelete;
+import mse.quill.ui.common.Reveal;
+import mse.quill.ui.common.UndoDelete;
 import mse.quill.data.FlashcardStore;
 import mse.quill.data.Repositories;
 import mse.quill.data.NoteStore;

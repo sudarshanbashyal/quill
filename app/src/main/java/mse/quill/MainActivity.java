@@ -45,8 +45,8 @@ import mse.quill.security.AppLock;
 import mse.quill.security.CollectionLock;
 import mse.quill.ui.audio.MiniPlayerView;
 import mse.quill.util.PipAware;
-import mse.quill.util.SwipeToDelete;
-import mse.quill.util.WindowInsetsUtils;
+import mse.quill.ui.common.SwipeToDelete;
+import mse.quill.ui.common.WindowInsetsUtils;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 

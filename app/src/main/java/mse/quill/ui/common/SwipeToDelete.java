@@ -1,4 +1,4 @@
-package mse.quill.util;
+package mse.quill.ui.common;
 
 import android.graphics.Canvas;
 import android.graphics.Rect;

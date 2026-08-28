@@ -11,7 +11,7 @@ import androidx.core.content.ContextCompat;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * One answer option: a full-width tappable card.

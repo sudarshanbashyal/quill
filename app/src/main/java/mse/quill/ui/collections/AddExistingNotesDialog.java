@@ -19,8 +19,8 @@ import mse.quill.R;
 import mse.quill.data.NoteStore;
 import mse.quill.data.model.Note;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.MaxHeightScrollView;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.ui.common.MaxHeightScrollView;
+import mse.quill.ui.common.TextFieldUtils;
 
 /**
  * Dialog for finding existing notes (from anywhere in the app) and adding them to a collection:

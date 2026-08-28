@@ -14,7 +14,7 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.model.Tag;
 import mse.quill.util.ColorUtils;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Renders a note's tags as small pastel pill chips — reused on note rows, pinned cards, and the

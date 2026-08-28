@@ -1,4 +1,4 @@
-package mse.quill.util;
+package mse.quill.data;
 
 import android.content.Context;
 import android.content.SharedPreferences;

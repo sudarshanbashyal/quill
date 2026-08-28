@@ -17,8 +17,8 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.model.Tag;
 import mse.quill.util.ColorUtils;
-import mse.quill.util.MaxHeightScrollView;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.MaxHeightScrollView;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Sorting and tag filtering, behind the search bar's filter button.

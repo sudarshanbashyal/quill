@@ -51,7 +51,7 @@ public class AppDatabase extends SQLiteOpenHelper {
     }
 
     /**
-     * Closes the shared connection and deletes the database file. Only {@link mse.quill.util.DataWipe}
+     * Closes the shared connection and deletes the database file. Only {@link mse.quill.data.DataWipe}
      * has any business calling this.
      *
      * <p>The close and the null have to happen before the delete, and together: deleting the file

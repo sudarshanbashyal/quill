@@ -12,7 +12,7 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.model.Collection;
 import mse.quill.ui.collections.CollectionLockFlow;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.ui.common.TextFieldUtils;
 
 /**
  * Static MaterialAlertDialogBuilder-based helpers for collection CRUD and note-move/delete

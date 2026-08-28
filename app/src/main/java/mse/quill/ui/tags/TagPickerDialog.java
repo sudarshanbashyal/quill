@@ -22,7 +22,7 @@ import java.util.Set;
 import mse.quill.R;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.ui.common.TextFieldUtils;
 
 /**
  * Dialog for attaching/removing a note's tags: a checklist of every existing tag plus an inline

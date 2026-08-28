@@ -52,9 +52,9 @@ import mse.quill.collab.CollabSessionHolder;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
 import java.util.Random;
-import mse.quill.util.SwipeToDelete;
-import mse.quill.util.UndoDelete;
-import mse.quill.util.WindowInsetsUtils;
+import mse.quill.ui.common.SwipeToDelete;
+import mse.quill.ui.common.UndoDelete;
+import mse.quill.ui.common.WindowInsetsUtils;
 
 public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
 

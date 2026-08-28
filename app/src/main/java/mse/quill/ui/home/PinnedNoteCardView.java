@@ -16,7 +16,7 @@ import mse.quill.data.model.Note;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Builds a single pastel pinned-note card, added directly (not via RecyclerView) into

@@ -25,7 +25,7 @@ import mse.quill.data.model.Whiteboard;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.whiteboard.WhiteboardThumbnails;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Single adapter driving the Collections + Whiteboards + Notes scroll area below Home's
