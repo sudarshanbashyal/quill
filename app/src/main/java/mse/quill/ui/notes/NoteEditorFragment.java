@@ -854,7 +854,7 @@ public class NoteEditorFragment extends Fragment
 
     private void showImageSourceDialog() {
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Insert image")
+                .setTitle(R.string.dialog_insert_image_title)
                 .setItems(new String[]{"Take photo", "Choose from gallery"}, (dialog, which) -> {
                     if (which == 0) imageEmbedder.openCamera();
                     else imageEmbedder.openGallery();

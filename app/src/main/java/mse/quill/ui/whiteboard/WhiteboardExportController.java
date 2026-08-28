@@ -109,7 +109,10 @@ final class WhiteboardExportController {
         // board behind it is what the user asked to export.
         Bitmap bitmap = host.renderBoard();
         if (bitmap == null) return;
-        storagePermission.require(() -> writeImage(bitmap), () -> {});
+        // A refusal has to say so. Silence here reads as the button being broken, and on API 26-28
+        // — the only place the prompt appears — that is the whole of the feedback there is.
+        storagePermission.require(() -> writeImage(bitmap),
+                () -> host.showMessage(R.string.whiteboard_export_needs_storage));
     }
 
     private void writeImage(Bitmap bitmap) {

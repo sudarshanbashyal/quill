@@ -49,8 +49,10 @@ import mse.quill.ui.common.SwipeToDelete;
 import mse.quill.ui.common.WindowInsetsUtils;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import mse.quill.ui.whiteboard.WhiteboardFragment;
+import mse.quill.widget.WidgetUpdater;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements PipAware.PipHost {
 
     /** Latest bottom system-bar inset, re-applied whenever the bottom bar is shown or hidden. */
     private int bottomSystemInset;
@@ -371,6 +373,7 @@ public class MainActivity extends AppCompatActivity {
      * {@link PictureInPictureParams} accepts (between 1:2.39 and 2.39:1), so a very tall or very
      * wide board still gets a window shaped roughly like it rather than the system's default.
      */
+    @Override
     public void enterWhiteboardPip(float aspectWidth, float aspectHeight) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return;
@@ -398,8 +401,8 @@ public class MainActivity extends AppCompatActivity {
     public void onUserLeaveHint() {
         super.onUserLeaveHint();
         Fragment current = currentPrimaryFragment();
-        if (current instanceof mse.quill.ui.whiteboard.WhiteboardFragment) {
-            ((mse.quill.ui.whiteboard.WhiteboardFragment) current).enterPipIfPossible();
+        if (current instanceof WhiteboardFragment) {
+            ((WhiteboardFragment) current).enterPipIfPossible();
         }
     }
 
@@ -439,7 +442,7 @@ public class MainActivity extends AppCompatActivity {
         // have no periodic refresh (updatePeriodMillis is 0), so this is a backstop rather than
         // the mechanism: each repository pushes its own change as it makes it. Cheap when there is
         // no widget on the home screen — every call short-circuits on an empty id array.
-        mse.quill.widget.WidgetUpdater.notifyAllChanged(this);
+        WidgetUpdater.notifyAllChanged(this);
     }
 
     private void showLockGate() {

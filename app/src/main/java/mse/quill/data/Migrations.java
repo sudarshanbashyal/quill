@@ -314,7 +314,7 @@ final class Migrations {
                 android.content.ContentValues cv = new android.content.ContentValues();
                 cv.put("note_id", c.getString(0));
                 cv.put("title", c.isNull(1) ? "" : c.getString(1));
-                cv.put("body", mse.quill.data.serialization.NoteDocument.toPlainText(markdown));
+                cv.put("body", NoteDocument.toPlainText(markdown));
                 db.insert("notes_fts", null, cv);
             }
         } catch (SQLException e) {

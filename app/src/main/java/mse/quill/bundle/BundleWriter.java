@@ -29,6 +29,7 @@ import mse.quill.data.serialization.NoteDocument;
 import mse.quill.data.model.AudioSegment;
 import mse.quill.data.model.ImageSegment;
 import mse.quill.data.model.NoteSegment;
+import mse.quill.security.MediaFiles;
 
 /**
  * Packs one note into a {@link QuillBundle}.
@@ -102,7 +103,7 @@ public final class BundleWriter {
         // so the media goes in readable rather than as ciphertext nothing on the other side could
         // open. Sharing a locked collection's note is refused before this point; what this covers
         // is a note whose media is still encrypted at rest while the collection is open.
-        byte[] plaintext = mse.quill.security.MediaFiles.readPlaintext(source.getAbsolutePath());
+        byte[] plaintext = MediaFiles.readPlaintext(source.getAbsolutePath());
         if (plaintext == null) return null;
 
         zip.putNextEntry(new ZipEntry(entryName));

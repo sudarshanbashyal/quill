@@ -55,6 +55,9 @@ import java.util.Random;
 import mse.quill.ui.common.SwipeToDelete;
 import mse.quill.ui.common.UndoDelete;
 import mse.quill.ui.common.WindowInsetsUtils;
+import mse.quill.data.CollectionImporter;
+import mse.quill.data.WhiteboardImporter;
+import mse.quill.ui.whiteboard.WhiteboardPreferences;
 
 public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
 
@@ -104,8 +107,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private TagRepository tagRepository;
 
     private NoteImporter noteImporter;
-    private mse.quill.data.WhiteboardImporter whiteboardImporter;
-    private mse.quill.data.CollectionImporter collectionImporter;
+    private WhiteboardImporter whiteboardImporter;
+    private CollectionImporter collectionImporter;
     private ActivityResultLauncher<String[]> importPicker;
 
     @Override
@@ -134,8 +137,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         tagRepository = new TagRepository(requireContext());
         whiteboardRepository = new WhiteboardRepository(requireContext());
         noteImporter = new NoteImporter(requireContext());
-        whiteboardImporter = new mse.quill.data.WhiteboardImporter(requireContext());
-        collectionImporter = new mse.quill.data.CollectionImporter(requireContext());
+        whiteboardImporter = new WhiteboardImporter(requireContext());
+        collectionImporter = new CollectionImporter(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCreateCollectionRequested() { createCollection(); }
@@ -383,7 +386,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
      */
     private void createWhiteboard() {
         whiteboardRepository.createWhiteboard(null, null,
-                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
+                WhiteboardPreferences.defaultBackground(requireContext()),
                 whiteboardId -> openWhiteboard(whiteboardId, null, true));
     }
 
@@ -438,7 +441,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     private void importWhiteboardBundle(android.net.Uri source) {
-        whiteboardImporter.importFrom(source, new mse.quill.data.WhiteboardImporter.OnImported() {
+        whiteboardImporter.importFrom(source, new WhiteboardImporter.OnImported() {
             @Override public void onImported(String whiteboardId, String title) {
                 if (!isAdded()) return;
                 reloadAll();
@@ -450,7 +453,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                         .show();
             }
 
-            @Override public void onFailed(mse.quill.data.WhiteboardImporter.Failure failure) {
+            @Override public void onFailed(WhiteboardImporter.Failure failure) {
                 if (!isAdded()) return;
                 importCollectionBundle(source);
             }
@@ -458,7 +461,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     private void importCollectionBundle(android.net.Uri source) {
-        collectionImporter.importFrom(source, new mse.quill.data.CollectionImporter.OnImported() {
+        collectionImporter.importFrom(source, new CollectionImporter.OnImported() {
             @Override public void onImported(String collectionId, String name, int imported, int total) {
                 if (!isAdded()) return;
                 reloadAll();
@@ -472,10 +475,10 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                         .show();
             }
 
-            @Override public void onFailed(mse.quill.data.CollectionImporter.Failure failure) {
+            @Override public void onFailed(CollectionImporter.Failure failure) {
                 if (!isAdded()) return;
                 Snackbar.make(requireView(),
-                        failure == mse.quill.data.CollectionImporter.Failure.NOT_A_BUNDLE
+                        failure == CollectionImporter.Failure.NOT_A_BUNDLE
                                 ? R.string.import_not_a_bundle : R.string.import_failed,
                         Snackbar.LENGTH_LONG).show();
             }

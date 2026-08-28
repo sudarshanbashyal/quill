@@ -900,7 +900,7 @@ closing it should be someone's deliberate choice, not a side effect of moving co
 
 ---
 
-## R16 — Small things `OPEN`
+## R16 — Small things `DONE 2026-08-28`
 
 Fix opportunistically; none is worth its own trip.
 
@@ -949,3 +949,39 @@ Fix opportunistically; none is worth its own trip.
 - **Six RecyclerView adapters with no shared base class.** Checked; they genuinely differ
   (multi-view-type sections vs. flat lists). A common base would be inheritance for its own
   sake.
+
+
+---
+
+## What R16 actually did, and what it declined
+
+- **Fully-qualified inline references: 26 → 0.** Replaced with imports across nine files. The
+  three that look like matches and stayed are `"mse.quill.audio.TOGGLE"` and friends in
+  `AudioPlaybackService` — intent action *strings*, not type references. Any tool doing this
+  sweep has to skip string literals; a blind regex would have broken the media notification's
+  buttons, silently, at runtime.
+- **Hardcoded user-facing strings: 7 → 0.** The five known ones plus the two the earlier grep
+  could not see, because `describeVoice` built its labels by concatenation rather than passing
+  them to a UI method (found during R11 step 3).
+- **19 unused resources deleted**, per lint — `ic_stop.png`, `circle_indicator`, three colours
+  and fourteen strings/plurals.
+- **A regression caught by that same lint pass.** `whiteboard_export_needs_storage` showed up
+  as newly unused, which meant R17 had quietly dropped the message a refused storage permission
+  used to show — `StoragePermission` hands back an `onDenied` callback and the whiteboard was
+  passing an empty one. Restored. Worth noting how it surfaced: not from reading the diff, but
+  from a string becoming unreferenced.
+- **PIP is symmetric now.** `PipAware.PipHost` is the return half, so the fragment reaches the
+  Activity through the same kind of contract the Activity uses to reach the fragment, instead of
+  casting to the concrete `MainActivity`.
+
+**Declined, with reasons:**
+
+- **The `EmptyState` helper.** Proposed for the four fragments that write
+  `recycler.setVisibility(empty ? GONE : VISIBLE); emptyView.setVisibility(empty ? VISIBLE :
+  GONE)`. On inspection that is a two-line idiom, not duplication — like a null check. A helper
+  class plus four imports to save four lines is indirection for its own sake.
+- **`ReadAloud`'s static state.** See R11, which explains why at length.
+- **`WhiteboardThumbnails`' package.** It sits in `ui/whiteboard/` while reading the database and
+  writing `widget/WidgetThumbnailCache`, so it is neither a screen nor a view. Real, but moving it
+  needs a decision about where thumbnail rendering belongs that this sweep did not earn. Left as
+  the one item still open.

@@ -29,6 +29,7 @@ import mse.quill.data.model.ImageSegment;
 import mse.quill.data.model.NoteSegment;
 import mse.quill.data.model.QaSegment;
 import mse.quill.data.model.TextSegment;
+import mse.quill.security.MediaFiles;
 
 /**
  * A note as a paginated PDF that still looks like the note.
@@ -373,7 +374,7 @@ public final class PdfExporter {
 
         // Same door as every other decode: an image in a locked collection is encrypted on disk,
         // and an export of that note runs while the collection is open. See MediaFiles.
-        byte[] data = mse.quill.security.MediaFiles.readPlaintext(path);
+        byte[] data = MediaFiles.readPlaintext(path);
         if (data == null) return null;
 
         BitmapFactory.Options bounds = new BitmapFactory.Options();

@@ -38,6 +38,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
+import mse.quill.util.PipAware;
 
 /**
  * WhiteboardFragment  (SINGLE-DEVICE VERSION — no networking)
@@ -59,7 +60,7 @@ import java.util.UUID;
  *                       omit it to create a new one.
  */
 public class WhiteboardFragment extends Fragment
-        implements WhiteboardView.StrokeListener, mse.quill.util.PipAware,
+        implements WhiteboardView.StrokeListener, PipAware,
                    WhiteboardCollabController.Host, WhiteboardExportController.Host {
 
     private static final String TAG = "WhiteboardFragment";
@@ -697,10 +698,10 @@ public class WhiteboardFragment extends Fragment
 
     private void confirmClear() {
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Clear Whiteboard")
-                .setMessage("This will erase everything on this whiteboard. Continue?")
-                .setPositiveButton("Clear", (d, w) -> clearWhiteboard())
-                .setNegativeButton("Cancel", null)
+                .setTitle(R.string.whiteboard_clear_title)
+                .setMessage(R.string.whiteboard_clear_message)
+                .setPositiveButton(R.string.whiteboard_clear_confirm, (d, w) -> clearWhiteboard())
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 
@@ -751,7 +752,11 @@ public class WhiteboardFragment extends Fragment
         int w = whiteboardView.getWidth();
         int h = whiteboardView.getHeight();
         if (w <= 0 || h <= 0) return; // not laid out yet
-        ((mse.quill.MainActivity) requireActivity()).enterWhiteboardPip(w, h);
+        // The interface, not the concrete Activity: the trip out to PIP now goes through the same
+        // contract the trip back in does — see PipAware.
+        if (requireActivity() instanceof PipAware.PipHost) {
+            ((PipAware.PipHost) requireActivity()).enterWhiteboardPip(w, h);
+        }
     }
 
     /** Where the canvas was scrolled to before PIP took over, so leaving PIP puts the window back
