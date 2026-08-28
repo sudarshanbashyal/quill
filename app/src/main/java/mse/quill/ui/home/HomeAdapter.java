@@ -25,6 +25,7 @@ import mse.quill.data.model.Whiteboard;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.whiteboard.WhiteboardThumbnails;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Single adapter driving the Collections + Whiteboards + Notes scroll area below Home's
@@ -188,18 +189,18 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
         params.setMargins(
-                NoteRowView.dimen(context, R.dimen.list_item_gutter),
-                NoteRowView.dimen(context, R.dimen.section_header_margin_top),
+                CardStyles.dimen(context, R.dimen.list_item_gutter),
+                CardStyles.dimen(context, R.dimen.section_header_margin_top),
                 // Matching end margin, which the leading icon never needed: the trailing plus
                 // would otherwise sit hard against the edge of the screen.
-                NoteRowView.dimen(context, R.dimen.list_item_gutter),
-                NoteRowView.dimen(context, R.dimen.section_header_margin_bottom));
+                CardStyles.dimen(context, R.dimen.list_item_gutter),
+                CardStyles.dimen(context, R.dimen.section_header_margin_bottom));
         header.setLayoutParams(params);
         header.setBackground(rippleBackground(context));
-        header.setPadding(0, NoteRowView.dimen(context, R.dimen.spacing_xs),
-                0, NoteRowView.dimen(context, R.dimen.spacing_xs));
+        header.setPadding(0, CardStyles.dimen(context, R.dimen.spacing_xs),
+                0, CardStyles.dimen(context, R.dimen.spacing_xs));
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setCompoundDrawablePadding(NoteRowView.dimen(context, R.dimen.spacing_sm));
+        header.setCompoundDrawablePadding(CardStyles.dimen(context, R.dimen.spacing_sm));
         header.setCompoundDrawableTintList(
                 ColorStateList.valueOf(context.getColor(R.color.text_primary)));
         header.setTextColor(context.getColor(R.color.text_primary));
@@ -221,7 +222,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         TextView empty = new TextView(context);
         RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
-        params.topMargin = NoteRowView.dimen(context, R.dimen.spacing_lg);
+        params.topMargin = CardStyles.dimen(context, R.dimen.spacing_lg);
         empty.setLayoutParams(params);
         empty.setGravity(Gravity.CENTER);
         empty.setTextColor(context.getColor(R.color.text_secondary));
@@ -417,7 +418,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             nameView.setCompoundDrawablesRelativeWithIntrinsicBounds(
                     collection.biometricLocked ? R.drawable.ic_lock_small : 0, 0, 0, 0);
             nameView.setCompoundDrawablePadding(
-                    NoteRowView.dimen(itemView.getContext(), R.dimen.spacing_sm));
+                    CardStyles.dimen(itemView.getContext(), R.dimen.spacing_sm));
 
             countView.setText(formatContents(itemView.getContext(), collection));
             updatedView.setText(itemView.getContext().getString(

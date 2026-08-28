@@ -29,8 +29,15 @@ import mse.quill.security.CollectionLock;
  *
  * <p>Every method here runs on the disk thread — {@link AppExecutors#diskIO}. None of them may be
  * called from the main thread.
+ *
+ * <p><b>Visibility.</b> The class and three lock-state queries are public; everything that touches
+ * a key or a ciphertext — {@code encryptTitle}, {@code decryptBody} and the rest — stays
+ * package-private and is only ever reached through a repository. The three exceptions exist for
+ * {@code data.wear}, which has to know which collections are hidden before it puts note titles on
+ * a watch, and which is a sibling package rather than this one since 2026-08-26. They answer
+ * "which collections are shut", not "what does this say".
  */
-final class NoteCrypto {
+public final class NoteCrypto {
 
     private static final String TAG = "NoteCrypto";
 
@@ -39,7 +46,7 @@ final class NoteCrypto {
     // ---------- Lock state ----------
 
     /** True if this collection is locked at rest. Says nothing about whether it is open now. */
-    static boolean isLocked(SQLiteDatabase db, String collectionId) {
+    public static boolean isLocked(SQLiteDatabase db, String collectionId) {
         if (collectionId == null) return false;
         try (Cursor c = db.rawQuery("SELECT biometric_locked FROM collections WHERE id = ?",
                 new String[]{collectionId})) {
@@ -80,7 +87,7 @@ final class NoteCrypto {
 
     /** Every collection encrypted at rest, open or not. Read once per query rather than asked
      *  per note — {@link #isLocked} is a round trip, and a list is a loop. */
-    static Set<String> lockedCollectionIds(SQLiteDatabase db) {
+    public static Set<String> lockedCollectionIds(SQLiteDatabase db) {
         Set<String> locked = new HashSet<>();
         try (Cursor c = db.rawQuery(
                 "SELECT id FROM collections WHERE biometric_locked = 1", null)) {
@@ -107,7 +114,7 @@ final class NoteCrypto {
      * appearing in a list, and reading {@code hiddenClause(lockedIds)} at the call site would look
      * like a bug rather than the stricter rule it is.
      */
-    static String excludeCollectionsClause(Set<String> collectionIds) {
+    public static String excludeCollectionsClause(Set<String> collectionIds) {
         if (collectionIds.isEmpty()) return "";
         StringBuilder sql = new StringBuilder(" AND (n.collection_id IS NULL OR n.collection_id NOT IN (");
         for (int i = 0; i < collectionIds.size(); i++) {

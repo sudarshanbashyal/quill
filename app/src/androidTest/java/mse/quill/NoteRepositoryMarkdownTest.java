@@ -28,11 +28,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Note;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.HeadingMarker;
-import mse.quill.ui.notes.editor.model.ImageSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.HeadingMarker;
+import mse.quill.data.model.ImageSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.TextSegment;
 
 /**
  * End-to-end coverage of the storage layer: segments → Markdown in {@code notes.content_blob}

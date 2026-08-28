@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+
+    <!--
+        Quill ships one copy of each raster icon, at xxxhdpi, and lets Android downsample.
+
+        Lint wants five copies — hdpi through xxxhdpi — and says so once per missing bucket.
+        That is the right advice for an icon set authored per density. Ours is not: these are
+        single high-resolution exports from an icon pack, drawn at 18-40dp, and downsampling from
+        one 4x source is visually indistinguishable from a hand-tuned 2x asset at those sizes.
+        Five copies of 41 icons would be 205 files and roughly 2 MB to maintain by hand.
+
+        Suppressed here rather than left as a warning, because the obvious way to "fix" it is to
+        generate the other four buckets, and that would be a mistake made on lint's authority.
+
+        The real fix is to convert these to vector drawables, at which point the whole question
+        disappears — see the drawable convention in memory/note.md.
+    -->
+    <issue id="IconDensities" severity="ignore" />
+
+</lint>

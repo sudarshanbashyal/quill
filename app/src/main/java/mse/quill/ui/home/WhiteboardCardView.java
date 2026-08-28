@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
 
 import mse.quill.R;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Builds a whiteboard-grid card in code — same reasons and same flat-card styling as
@@ -50,8 +51,8 @@ final class WhiteboardCardView {
     }
 
     static Views build(Context context) {
-        int spacingSm = NoteRowView.dimen(context, R.dimen.spacing_sm);
-        int spacingMd = NoteRowView.dimen(context, R.dimen.spacing_md);
+        int spacingSm = CardStyles.dimen(context, R.dimen.spacing_sm);
+        int spacingMd = CardStyles.dimen(context, R.dimen.spacing_md);
         int minHeight = (int) (110 * context.getResources().getDisplayMetrics().density);
 
         MaterialCardView root = new MaterialCardView(context);
@@ -74,14 +75,14 @@ final class WhiteboardCardView {
         ImageView thumbnail = new ImageView(context);
         thumbnail.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                NoteRowView.dimen(context, R.dimen.whiteboard_thumbnail_height)));
+                CardStyles.dimen(context, R.dimen.whiteboard_thumbnail_height)));
         thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
         thumbnail.setBackgroundColor(context.getColor(R.color.white));
         // Rounds the preview's top corners to match the card, leaving its bottom edge square where
         // it meets the title. The outline is a rounded rect pushed a radius past the bottom of the
         // view, so only its top two corners are inside — a plain rounded outline would curve the
         // join in the middle of the card, and the card's own outline doesn't clip its children.
-        int radius = NoteRowView.dimen(context, R.dimen.card_corner_radius);
+        int radius = CardStyles.dimen(context, R.dimen.card_corner_radius);
         thumbnail.setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {

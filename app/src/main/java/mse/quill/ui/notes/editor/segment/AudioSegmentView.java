@@ -18,7 +18,7 @@ import mse.quill.audio.ReadAloud;
 import mse.quill.audio.WaveformCache;
 import mse.quill.ui.audio.PlaybackTime;
 import mse.quill.ui.audio.WaveformBarsView;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 
 /**
  * A recording in a note: a full-width card with a play button, the clip's waveform, and how far

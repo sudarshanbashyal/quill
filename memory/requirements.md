@@ -30,31 +30,71 @@ Suggested sequencing for a 2-person team:
 
 ## Epic A — Engineering Foundations & Data Safety (P0)
 
+*Structural work found alongside this epic — god classes, misplaced packages, upward
+dependencies — is planned separately in [refactoring_plan.md](refactoring_plan.md) rather than
+here, because it is behaviour-preserving cleanup and this list is about what the app does.*
+
 **Why first**: the app is about to grow encryption, P2P sync, and background jobs on
 top of it. All three are hard to debug on an SQLite layer with a destructive
 `onUpgrade`, two different threading patterns, and no automated tests. Fixing this now
 costs little (small codebase); fixing it after Epic C lands costs a lot (sync bugs
 masquerading as migration bugs).
 
-- [ ] **Safe schema migrations** — *more urgent since 2026-07-28: the schema moved to v3
-      for the Markdown migration and the destructive `onUpgrade` duly wiped every
-      existing note on next launch. That was accepted as dev-stage policy at the time,
-      but it will not be acceptable once anyone else installs this.*
-  - [ ] Replace `AppDatabase.onUpgrade`'s drop-and-recreate with real `ALTER TABLE` /
-        versioned migration steps — **v3 → v4 done 2026-08-03** (whiteboards gained
-        title/created_at/updated_at; additive, so it migrates in place and keeps user data).
-        Every other version step still takes the destructive branch
-  - [ ] Add a migration test: seed an older-shaped DB with data, run the upgrade, assert
-        rows survive
-- [ ] **Unify background DB access**
-  - [ ] Port `StrokeRepository` / `WhiteboardRepository`'s Sync methods / `WhiteboardFragment`
-        off ad hoc `new Thread(...)` calls onto the shared `AppExecutors.diskIO()` used by the
-        other repositories. *(2026-08-07: the DAOs were renamed to repositories and
-        `WhiteboardDao` folded into `WhiteboardRepository`, with its synchronous methods carrying a
-        `Sync` suffix so a UI-thread call reads as wrong. The naming is consistent now; the
-        threading is not.)*
-  - [ ] Audit all fragments for any accidental main-thread `SQLiteDatabase` access
-- [ ] **Automated test coverage** *(70 instrumented tests under `app/src/androidTest` as of
+- [x] **Safe schema migrations** — *done 2026-08-23. Was: the schema moved to v3 for the
+      Markdown migration on 2026-07-28 and the destructive `onUpgrade` duly wiped every existing
+      note on next launch. Accepted as dev-stage policy at the time; not acceptable once anyone
+      else installs this.*
+  - [x] Replace `AppDatabase.onUpgrade`'s drop-and-recreate with real migration steps —
+        **v3 → v4 done 2026-08-03** (whiteboards gained title/created_at/updated_at), and
+        **the pre-v3 branch done 2026-08-23**. `rebuild()` is now *deleted*, not merely
+        unreachable, so no later edit can fall back into it. A pre-v3 database is converted in
+        place by `migrateLegacyNotesToMarkdown`: each note's old `note_segments` rows are read in
+        `position` order and composed into one Markdown document, then the table is rebuilt in its
+        v3 shape keeping the media rows. Possible only because the old `text_content` blobs were
+        `Html.toHtml` output rather than a custom binary format — the decode is ten lines, and
+        lives with the migration rather than as a resurrected `SpanSerializer`
+  - [x] **The reshape is not cosmetic**: the old table declares `position INTEGER NOT NULL` and
+        nothing since v3 supplies a position, so leaving the old shape would have failed every
+        image or recording insert afterwards — a database that upgraded but could not be written to
+  - [x] `onDowngrade` no longer throws. The default crashes on every launch for anyone who
+        installs an older build over a newer one; the schema only grows, so the honest response is
+        to leave the file alone
+  - [x] **`biometric_locked` is now added before the FTS backfill runs**, not after. It was after,
+        and `backfillNotesFts` joins on that column — so a database old enough to lack it (every
+        pre-v3 one) silently skipped the search backfill and came out with an empty index
+  - [x] Add a migration test: `DatabaseMigrationTest` seeds a v2-shaped database with a note, a
+        picture, a board, a card, a tag and a collection, upgrades it, and asserts every row
+        survives, the document is composed in the right order with formatting intact, the media
+        registry keeps its ids, a second open changes nothing, and the result is still *writable*.
+        Needs `AppDatabase.openForTest(context, name)` — the only seam that makes it possible,
+        since the real helper is a singleton bound to `quill.db` and a test there would be
+        upgrading the device's actual notes
+- [x] **Unify background DB access** — *done 2026-08-23*
+  - [x] Port `StrokeRepository` / `WhiteboardRepository`'s Sync methods / `WhiteboardFragment`
+        off ad hoc `new Thread(...)` calls onto the shared `AppExecutors.diskIO()`. All 21 sites
+        (20 in `WhiteboardFragment`, one in `CollabSessionHolder`) now go through the single shared
+        disk thread. **This was a correctness fix, not tidying**: a thread was spawned per
+        completed stroke and another to delete on undo, with nothing ordering them, so a fast undo
+        could issue its delete on a thread that beat the insert
+  - [x] `StrokeRepository` and `WhiteboardTextRepository` gained the same async/`Sync` split the
+        other repositories have — the unsuffixed methods post to `diskIO`, the `Sync` ones block
+        and are for callers already off the main thread. The naming convention now covers every
+        repository rather than all but two
+  - [x] Several of those threads called `requireActivity().runOnUiThread(...)` and
+        `requireContext()` *from the background thread*, which throws if the fragment detached
+        first — the same crash class the collab crash fix patched at the listener level. Gone with
+        the port: `AppExecutors.mainThread` needs no activity
+  - [x] The DAO-era field names `strokeDao`/`textDao` in `WhiteboardFragment` finally became
+        `strokeRepo`/`textRepo`
+  - [x] Audit all fragments for any accidental main-thread `SQLiteDatabase` access. Every blocking
+        call outside `data/` was checked; **one real finding**, `WhiteboardFragment.onCreate`'s
+        `insertSync` of a new board, justified at the time because `strokes` has a foreign key onto
+        that row and the stroke inserts ran on unordered threads. Now that every write on the
+        screen goes through one FIFO thread, queueing it first is enough, and it moved off the main
+        thread. Everything else — the widgets' `RemoteViewsFactory`, `StudyReminderWorker`,
+        `StartupTasks`, the bundle writers — was already on a background thread
+- [x] **Automated test coverage** — *all listed gaps closed 2026-08-23; CI dropped at the user's
+      request, see the last item* *(70 instrumented tests under `app/src/androidTest` as of
       2026-07-29, run with `./gradlew :app:connectedDebugAndroidTest`; plus 30 JVM unit
       tests under `app/src/test` as of 2026-08-01, run with
       `./gradlew :app:testDebugUnitTest` — the study logic is deliberately Android-free so
@@ -79,11 +119,33 @@ masquerading as migration bugs).
         the correct answer not always in the same slot, shuffled question order — JVM
   - [x] Quiz scoring (`QuizSessionTest`): one pass with no requeue, a timeout counted as
         wrong rather than skipped, an abandoned run scoring what it reached — JVM
-  - [ ] Collection/Tag repository CRUD — still uncovered
-  - [ ] `NoteEditorView` segment split/merge/delete (image/audio insertion mid-text,
-        backspace-merge at segment boundary) — still uncovered
-  - [ ] Wire up CI (e.g. GitHub Actions) to run tests + lint on every PR
-- [ ] **Fix bugs found during architecture review**
+  - [x] Database migration (`DatabaseMigrationTest`) — a v2-shaped database upgraded and every
+        row asserted; see the migrations section above
+  - [x] Collection/Tag repository CRUD (`CollectionAndTagRepositoryTest`, 2026-08-23) — create,
+        rename, delete, note counts, lock state, tag sort order. The two that earn their keep are
+        the relationship cases: deleting a collection must leave its notes alive and unfiled, and
+        `setNoteTags` is a *replace* whose difference from an append only shows on the second call
+  - [x] `NoteEditorView` segment split/merge/delete (`NoteEditorViewSegmentTest`, 2026-08-23) —
+        image/audio insertion mid-text, at both ends of a paragraph, formatting carried across the
+        split, backspace-merge at a segment boundary with the caret landing on the join, and both
+        deliberate refusals: backspacing into a picture does not delete it, and the last remaining
+        segment cannot be removed. Writing it turned up an undocumented fallback —
+        `getFocusedSegmentIndex` defaults to the *last* segment rather than refusing, so a block
+        inserted with nothing focused lands above the final paragraph. Pinned down as a test rather
+        than changed
+  - [x] **Two stale JVM tests fixed** (2026-08-23): `DisplayNameTest` still asserted that spaces
+        are stripped from a display name, which stopped being true when spaces were deliberately
+        allowed ("Sudarshan Bashyal" is a name a person has). The tests were never updated and the
+        JVM suite had been red ever since. Now they assert the documented rule, plus the space
+        handling that had no coverage at all — runs collapsed, ends trimmed, a dropped leading
+        space not charged against the length budget
+  - [ ] ~~Wire up CI to run tests + lint on every PR~~ — **dropped 2026-08-23 at the user's
+        request.** Worth knowing if it ever comes back: `./gradlew :app:lintDebug` currently fails
+        with 5 errors (a `MediaStore.Downloads` field above minSdk in `NoteExportStore`, a
+        FINE/COARSE location pair in the manifest, `RichTextField` not extending
+        `AppCompatEditText`, and two `android:tint` uses that want `app:tint`), so a lint gate
+        would be red on day one
+- [x] **Fix bugs found during architecture review**
   - [x] `WhiteboardFragment.exportWhiteboard()` shows a "Export failed" toast
         unconditionally even after a successful export *(fixed 2026-08-03)*
   - [x] Opening a note or whiteboard and leaving it reported "Updated now" — both save-on-pause
@@ -622,7 +684,7 @@ worse than no tile, so D's reminders infrastructure is a real prerequisite, not 
 `fbc25a2` it is built, which is what turned this epic from blocked into next.
 
 **Build order, decided 2026-08-13** — phased by feature, not by language (see the stack decision
-below). **Phase 0**: the `:study` extraction, alone, proven by its own tests. **Phase 1**: the
+below). **Phase 0**: the `:shared` extraction, alone, proven by its own tests. **Phase 1**: the
 projection and the two native surfaces — publish the `DataItem` from the phone, receive and cache
 it on the watch, tile + complication, tap through to the phone. **Phase 2**: the Compose review
 screen and the `MessageClient` return path. Nothing in phase 1 is rewritten by phase 2: the Kotlin
@@ -632,7 +694,7 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
       everything else depends on it.* `FlashcardScheduler`, `ReviewSession`, `QuizSession`,
       `QuizGenerator`, `QuizRules`
       and the `Flashcard` model import nothing but `java.util` today (verified 2026-08-08). Move
-      them to a plain-JVM `:study` module that both `:app` and `:wear` depend on, so SM-2 cannot
+      them to a plain-JVM `:shared` module that both `:app` and `:wear` depend on, so SM-2 cannot
       drift between the two. The existing JVM tests move with it and keep running without a device.
   - [x] **The list above was one class short**: `QuizQuestion` moved too — `QuizGenerator` builds
         them and `QuizSession` holds them, and its constructor is package-private, so leaving it
@@ -688,7 +750,7 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         (M3 Expressive, `MaterialScope`, `Material3TileService`) is **Kotlin-only, with no Java
         builders at all**. A Java tile is therefore a Material 2.5 tile — a *second* divergence
         from Epic H's Material 3 standard, bought to avoid a language boundary the review screen
-        forces anyway. So the boundary goes at the module edge instead: `:app` and `:study` stay
+        forces anyway. So the boundary goes at the module edge instead: `:app` and `:shared` stay
         Java, `:wear` is Kotlin + Compose, and the phasing below is by feature, not by language.
   - [x] **Correction to the note this replaces**: Wear's view-based widgets are *not* deprecated.
         `androidx.wear:wear` ships; individual pieces are retired (`AmbientModeSupport` →
@@ -811,6 +873,6 @@ the three RemoteViews gotchas hit, and what's reused vs. new live in
   Any surface that leaves the phone — the watch today, Epic I's widget tomorrow — has to
   go through `NoteCrypto.hiddenCollectionIds` the way `countDueSync` does. Worth stating
   once here rather than rediscovering it per surface.
-- Epic J's `:study` module extraction is also the cheapest way to keep Epic A's promise
+- Epic J's `:shared` module extraction is also the cheapest way to keep Epic A's promise
   that the study logic stays Android-free — today that's a convention nothing enforces,
   and a module boundary makes the compiler enforce it.

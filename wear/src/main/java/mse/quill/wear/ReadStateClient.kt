@@ -10,7 +10,7 @@ import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import mse.quill.data.ReadStateKeys
+import mse.quill.sync.ReadStateKeys
 import java.util.concurrent.TimeUnit
 
 /**

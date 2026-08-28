@@ -7,7 +7,7 @@ import android.widget.LinearLayout;
 
 import mse.quill.R;
 import mse.quill.ui.notes.editor.ImageViewerDialog;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 import mse.quill.util.BitmapUtils;
 
 public class ImageSegmentView extends BaseSegmentView {

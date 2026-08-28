@@ -1,6 +1,7 @@
 package mse.quill.data;
 
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.PointF;
@@ -14,24 +15,50 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * StrokeRepository
+ * Reads and writes the {@code strokes} table.
  *
- * Handles reads/writes for the `strokes` table.
+ * <p>Points are stored as a BLOB: each point is 8 bytes (4 bytes float x, 4 bytes float y), packed
+ * sequentially. {@code serializePoints()}/{@code deserializePoints()} convert between this byte
+ * format and the {@code List<PointF>} {@code WhiteboardView} uses.
  *
- * Points are stored as a BLOB: each point is 8 bytes (4 bytes float x, 4 bytes float y),
- * packed sequentially. serializePoints()/deserializePoints() convert between this
- * byte format and List<PointF> used by WhiteboardView.
+ * <p><b>Two surfaces, and the names say which is which.</b> The {@code Sync} methods block and are
+ * for callers already on a background thread — the importers, the bundle writer, the thumbnailer.
+ * The unsuffixed ones hand the same work to {@link AppExecutors#diskIO}, and are what the UI calls.
+ * Until 2026-08-23 only the blocking half existed and {@code WhiteboardFragment} wrapped each call
+ * in a {@code new Thread}, which put every stroke on a connection of its own: unordered against
+ * each other (a fast undo could delete a stroke its insert had not reached yet) and contending for
+ * the write lock that the single shared disk thread exists to serialize.
  */
 public class StrokeRepository {
 
     private final AppDatabase db;
+    private final AppExecutors executors = AppExecutors.getInstance();
 
-    public StrokeRepository(AppDatabase db) {
-        this.db = db;
+    public StrokeRepository(Context context) {
+        this.db = AppDatabase.getInstance(context.getApplicationContext());
     }
 
-    /** Insert or replace a stroke (REPLACE means re-saving the same id overwrites it). */
+    // ── Async: for the UI thread ──────────────────────────────────────────────
+
+    /** Insert or replace a stroke, off the caller's thread. */
     public void insertStroke(Stroke stroke) {
+        executors.diskIO(() -> insertStrokeSync(stroke));
+    }
+
+    /** Delete a single stroke by id (used for undo), off the caller's thread. */
+    public void deleteStroke(String strokeId) {
+        executors.diskIO(() -> deleteStrokeSync(strokeId));
+    }
+
+    /** Delete every stroke on a whiteboard (used by Clear), off the caller's thread. */
+    public void deleteAllForWhiteboard(String whiteboardId) {
+        executors.diskIO(() -> deleteAllForWhiteboardSync(whiteboardId));
+    }
+
+    // ── Blocking: for callers already on the disk thread ──────────────────────
+
+    /** Insert or replace a stroke (REPLACE means re-saving the same id overwrites it). */
+    public void insertStrokeSync(Stroke stroke) {
         if (stroke.id == null) stroke.id = UUID.randomUUID().toString();
 
         ContentValues v = new ContentValues();
@@ -49,7 +76,7 @@ public class StrokeRepository {
     }
 
     /** Fetch all strokes for a whiteboard, ordered by draw order (oldest first). */
-    public List<Stroke> getByWhiteboard(String whiteboardId) {
+    public List<Stroke> getByWhiteboardSync(String whiteboardId) {
         List<Stroke> results = new ArrayList<>();
         Cursor c = db.getReadableDatabase().query(
                 "strokes", null,
@@ -63,12 +90,12 @@ public class StrokeRepository {
     }
 
     /** Delete a single stroke by id (used for undo). */
-    public void deleteStroke(String strokeId) {
+    public void deleteStrokeSync(String strokeId) {
         db.getWritableDatabase().delete("strokes", "id = ?", new String[]{strokeId});
     }
 
     /** Delete all strokes for a whiteboard (used for "Clear" button). */
-    public void deleteAllForWhiteboard(String whiteboardId) {
+    public void deleteAllForWhiteboardSync(String whiteboardId) {
         db.getWritableDatabase().delete(
                 "strokes", "whiteboard_id = ?", new String[]{whiteboardId});
     }

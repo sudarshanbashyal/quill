@@ -11,6 +11,7 @@ import android.os.Looper;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import mse.quill.security.MediaFiles;
 
 /**
  * The app's one audio player, and the reason a recording keeps playing after you leave the note.
@@ -143,10 +144,10 @@ public final class AudioPlayback {
             // random access — so it gets a MediaDataSource over the plaintext in memory rather
             // than a decrypted temp file that would have to be cleaned up. Plaintext clips keep
             // streaming straight from disk.
-            android.media.MediaDataSource source = mse.quill.security.MediaFiles.source(path);
+            android.media.MediaDataSource source = MediaFiles.source(path);
             if (source != null) {
                 player.setDataSource(source);
-            } else if (mse.quill.security.MediaFiles.isEncrypted(path)) {
+            } else if (MediaFiles.isEncrypted(path)) {
                 // Encrypted and it would not open. Handing MediaPlayer the path here would give it
                 // the ciphertext, which it reports as an unhelpful native decoder error; the real
                 // cause is almost always the collection key's authentication window having closed
@@ -184,7 +185,7 @@ public final class AudioPlayback {
             // the user cannot diagnose, and "nothing happened" is what a lapsed key looks like from
             // the outside.
             Toast.makeText(appContext,
-                    appContext.getString(mse.quill.security.MediaFiles.isEncrypted(path)
+                    appContext.getString(MediaFiles.isEncrypted(path)
                             ? mse.quill.R.string.audio_locked_needs_unlock
                             : mse.quill.R.string.audio_playback_failed),
                     Toast.LENGTH_LONG).show();

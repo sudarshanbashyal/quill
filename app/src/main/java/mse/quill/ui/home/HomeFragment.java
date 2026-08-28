@@ -24,7 +24,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 import mse.quill.R;
 import com.google.android.material.snackbar.Snackbar;
@@ -32,7 +31,8 @@ import com.google.android.material.snackbar.Snackbar;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteImporter;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Collection;
 import mse.quill.data.TagRepository;
@@ -47,15 +47,17 @@ import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
 import mse.quill.ui.whiteboard.WhiteboardFragment;
-import mse.quill.collab.CollabPermissions;
+import mse.quill.collab.CollabEntry;
 import mse.quill.collab.CollabSessionHolder;
-import mse.quill.collab.SessionScanner;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
 import java.util.Random;
-import mse.quill.util.SwipeToDelete;
-import mse.quill.util.UndoDelete;
-import mse.quill.util.WindowInsetsUtils;
+import mse.quill.ui.common.SwipeToDelete;
+import mse.quill.ui.common.UndoDelete;
+import mse.quill.ui.common.WindowInsetsUtils;
+import mse.quill.data.CollectionImporter;
+import mse.quill.data.WhiteboardImporter;
+import mse.quill.ui.whiteboard.WhiteboardPreferences;
 
 public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInsetHost {
 
@@ -73,7 +75,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
         return null;
     }
 
-    private NoteRepository noteRepository;
+    private NoteStore noteRepository ;
     private CollectionRepository collectionRepository;
     private WhiteboardRepository whiteboardRepository;
 
@@ -105,8 +107,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private TagRepository tagRepository;
 
     private NoteImporter noteImporter;
-    private mse.quill.data.WhiteboardImporter whiteboardImporter;
-    private mse.quill.data.CollectionImporter collectionImporter;
+    private WhiteboardImporter whiteboardImporter;
+    private CollectionImporter collectionImporter;
     private ActivityResultLauncher<String[]> importPicker;
 
     @Override
@@ -130,13 +132,13 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        noteRepository = new NoteRepository(requireContext());
+        noteRepository = Repositories.notes(requireContext());
         collectionRepository = new CollectionRepository(requireContext());
         tagRepository = new TagRepository(requireContext());
         whiteboardRepository = new WhiteboardRepository(requireContext());
         noteImporter = new NoteImporter(requireContext());
-        whiteboardImporter = new mse.quill.data.WhiteboardImporter(requireContext());
-        collectionImporter = new mse.quill.data.CollectionImporter(requireContext());
+        whiteboardImporter = new WhiteboardImporter(requireContext());
+        collectionImporter = new CollectionImporter(requireContext());
 
         homeAdapter = new HomeAdapter(new HomeAdapter.Listener() {
             @Override public void onCreateCollectionRequested() { createCollection(); }
@@ -307,18 +309,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
     // ── Joining someone else's whiteboard ────────────────────────────────
 
-    /** Set while the permission prompt is up, so a grant can carry on where it left off. */
-    private final ActivityResultLauncher<String[]> joinPermissionLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
-                    result -> {
-                        boolean granted = !result.containsValue(false);
-                        if (granted) {
-                            scanAndJoin();
-                        } else {
-                            Toast.makeText(requireContext(), R.string.collab_permission_denied,
-                                    Toast.LENGTH_LONG).show();
-                        }
-                    });
+    /** Permission, scan, token — the same flow the whiteboard's Collaborate button runs. */
+    private final CollabEntry collabEntry = new CollabEntry(this);
 
     /**
      * Scans a host's code and opens a board already joined to their session.
@@ -338,60 +330,34 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                     .setMessage(CollabSessionHolder.isHost()
                             ? R.string.collab_already_hosting_message
                             : R.string.collab_already_joined_message)
-                    .setPositiveButton(R.string.collab_leave_and_join, (d, w) -> requestJoinPermissions())
+                    .setPositiveButton(R.string.collab_leave_and_join, (d, w) -> scanAndJoin())
                     .setNegativeButton(R.string.action_cancel, null)
                     .show();
-            return;
-        }
-        requestJoinPermissions();
-    }
-
-    private void requestJoinPermissions() {
-        String[] missing = CollabPermissions.missing(requireContext());
-        if (missing.length > 0) {
-            joinPermissionLauncher.launch(missing);
             return;
         }
         scanAndJoin();
     }
 
     private void scanAndJoin() {
-        SessionScanner.scan(requireContext(), new SessionScanner.Listener() {
-            @Override public void onToken(String token) {
-                if (!isAdded()) return;
-                openJoinedWhiteboard(token);
-            }
-
-            @Override public void onCancelled() {
-                // Backing out of the scanner is an answer, not a fault. Nothing was started.
-            }
-
-            @Override public void onFailed(boolean notASession) {
-                if (!isAdded()) return;
-                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                        .setTitle(R.string.collab_error_title)
-                        .setMessage(notASession
-                                ? R.string.collab_error_not_a_session
-                                : R.string.collab_error_scanner)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show();
-            }
-        });
+        collabEntry.scanForToken(this::openJoinedWhiteboard);
     }
 
-    /** A fresh board for the session to fill: the host sends everything it holds on connect. */
+    /**
+     * A fresh board for the session to fill: the host sends everything it holds on connect.
+     *
+     * <p><b>No {@code whiteboard_id}.</b> The screen mints its own row when opened without one,
+     * which is what a joiner needs, and it is what the {@code quill://} link path has always done.
+     * This used to create the row here first and pass its id — the same outcome by a longer route,
+     * with an async hop before the navigation and a reason for Home to know about whiteboard
+     * background preferences. Two paths to one destination that both worked is worse than one:
+     * nobody would have noticed them drifting.
+     */
     private void openJoinedWhiteboard(String token) {
-        whiteboardRepository.createWhiteboard(null, null,
-                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
-                whiteboardId -> {
-                    if (!isAdded()) return;
-                    Bundle args = new Bundle();
-                    args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
-                    args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, true);
-                    args.putString(WhiteboardFragment.ARG_JOIN_TOKEN, token);
-                    NavHostFragment.findNavController(this)
-                            .navigate(R.id.whiteboardFragment, args);
-                });
+        if (!isAdded()) return;
+        Bundle args = new Bundle();
+        args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, true);
+        args.putString(WhiteboardFragment.ARG_JOIN_TOKEN, token);
+        NavHostFragment.findNavController(this).navigate(R.id.whiteboardFragment, args);
     }
 
     // ── The three things Home can add ────────────────────────────────────
@@ -420,7 +386,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
      */
     private void createWhiteboard() {
         whiteboardRepository.createWhiteboard(null, null,
-                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
+                WhiteboardPreferences.defaultBackground(requireContext()),
                 whiteboardId -> openWhiteboard(whiteboardId, null, true));
     }
 
@@ -475,7 +441,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     private void importWhiteboardBundle(android.net.Uri source) {
-        whiteboardImporter.importFrom(source, new mse.quill.data.WhiteboardImporter.OnImported() {
+        whiteboardImporter.importFrom(source, new WhiteboardImporter.OnImported() {
             @Override public void onImported(String whiteboardId, String title) {
                 if (!isAdded()) return;
                 reloadAll();
@@ -487,7 +453,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                         .show();
             }
 
-            @Override public void onFailed(mse.quill.data.WhiteboardImporter.Failure failure) {
+            @Override public void onFailed(WhiteboardImporter.Failure failure) {
                 if (!isAdded()) return;
                 importCollectionBundle(source);
             }
@@ -495,7 +461,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     }
 
     private void importCollectionBundle(android.net.Uri source) {
-        collectionImporter.importFrom(source, new mse.quill.data.CollectionImporter.OnImported() {
+        collectionImporter.importFrom(source, new CollectionImporter.OnImported() {
             @Override public void onImported(String collectionId, String name, int imported, int total) {
                 if (!isAdded()) return;
                 reloadAll();
@@ -509,10 +475,10 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                         .show();
             }
 
-            @Override public void onFailed(mse.quill.data.CollectionImporter.Failure failure) {
+            @Override public void onFailed(CollectionImporter.Failure failure) {
                 if (!isAdded()) return;
                 Snackbar.make(requireView(),
-                        failure == mse.quill.data.CollectionImporter.Failure.NOT_A_BUNDLE
+                        failure == CollectionImporter.Failure.NOT_A_BUNDLE
                                 ? R.string.import_not_a_bundle : R.string.import_failed,
                         Snackbar.LENGTH_LONG).show();
             }
@@ -726,7 +692,7 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
             noteRepository.unpinNote(note.id, this::reloadAll);
             return;
         }
-        noteRepository.pinNote(note.id, new NoteRepository.OnPinResult() {
+        noteRepository.pinNote(note.id, new NoteStore.OnPinResult() {
             @Override public void onPinned() { reloadAll(); }
 
             @Override public void onLimitReached() {

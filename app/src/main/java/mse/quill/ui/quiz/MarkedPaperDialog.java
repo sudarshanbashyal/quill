@@ -11,6 +11,7 @@ import java.util.List;
 
 import mse.quill.R;
 import mse.quill.data.model.QuizAttempt;
+import mse.quill.study.quiz.QuizSession;
 
 /**
  * A past attempt's marked paper: every question as it was asked, with the option that was chosen.

@@ -11,7 +11,7 @@ import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import mse.quill.data.NoteListKeys
+import mse.quill.sync.NoteListKeys
 import java.util.concurrent.TimeUnit
 
 /**

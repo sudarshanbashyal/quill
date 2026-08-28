@@ -379,6 +379,15 @@ public class WhiteboardView extends View {
         awakenScrollBars();
     }
 
+    /** Centres the window on one canvas point rather than on all the ink — the whole board may
+     *  span more than what a PIP-sized window can show at once, so PIP wants wherever the most
+     *  recent stroke or text landed, not the midpoint of everything ever drawn on it. */
+    public void centreOn(float canvasX, float canvasY) {
+        scrollTo(clamp(Math.round(canvasX - getWidth() / 2f), maxScrollX()),
+                 clamp(Math.round(canvasY - getHeight() / 2f), maxScrollY()));
+        awakenScrollBars();
+    }
+
     // ── Touch handling ────────────────────────────────────────────────────────
 
     @Override

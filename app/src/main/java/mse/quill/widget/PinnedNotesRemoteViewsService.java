@@ -12,6 +12,7 @@ import mse.quill.MainActivity;
 import mse.quill.R;
 import mse.quill.data.NoteRepository;
 import mse.quill.data.model.Note;
+import mse.quill.DeepLinkRouter;
 
 public class PinnedNotesRemoteViewsService extends RemoteViewsService {
     @Override
@@ -65,7 +66,7 @@ public class PinnedNotesRemoteViewsService extends RemoteViewsService {
                 views.setTextViewText(R.id.widget_item_subtitle, note.preview == null ? "" : note.preview);
 
                 Intent fillIn = new Intent();
-                fillIn.putExtra(MainActivity.EXTRA_OPEN_NOTE_ID, note.id);
+                fillIn.putExtra(DeepLinkRouter.EXTRA_OPEN_NOTE_ID, note.id);
                 views.setOnClickFillInIntent(R.id.widget_item_root, fillIn);
                 return views;
             } catch (RuntimeException e) {

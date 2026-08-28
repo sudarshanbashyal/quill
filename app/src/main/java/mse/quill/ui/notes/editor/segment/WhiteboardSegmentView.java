@@ -10,7 +10,7 @@ import android.widget.TextView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import mse.quill.R;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 import mse.quill.ui.whiteboard.WhiteboardThumbnails;
 import mse.quill.util.NoteDisplayUtils;
 
