@@ -307,6 +307,14 @@
 
     <string name="action_open_quiz">Open quiz</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>
+    <!-- A row in the voice picker: %1$s the voice name, %2$s its quality, %3$s the internet note. -->
+    <string name="voice_label">%1$s (%2$s%3$s)</string>
+    <string name="voice_quality_very_high">Very high</string>
+    <string name="voice_quality_high">High</string>
+    <string name="voice_quality_normal">Normal</string>
+    <string name="voice_quality_low">Low</string>
+    <string name="voice_quality_very_low">Very low</string>
+    <string name="voice_needs_internet"> · needs internet</string>
 
     <!-- Bottom navigation -->
     <string name="nav_home">Home</string>

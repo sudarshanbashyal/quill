@@ -569,7 +569,7 @@ commit — they were defects, not tidying, and did not deserve to wait behind a 
 
 ---
 
-## R11 — `NoteEditorFragment` is the god class now `step 2 DONE 2026-08-26, steps 3-4 OPEN`
+## R11 — `NoteEditorFragment` is the god class now `steps 2-3 DONE, step 4 not needed`
 
 **Cause.** 1298 lines, ~60 methods — bigger than `WhiteboardFragment` was before R1, and
 carrying at least seven unrelated jobs: export (14 methods, `:511–750`, 239 lines),
@@ -618,8 +618,33 @@ Two small things improved on the way, neither planned:
   requested before the permission resolved would clobber each other. They are closure
   captures now, and independent.
 
-**Steps 3 and 4 are untouched.** Read-aloud is still in the fragment; it pairs with R16's
-note on `ReadAloud`'s nine mutable statics and should be done with it, not before.
+**Step 3 landed 2026-08-28.** `NoteReadAloudController` (121 lines) took `toggleReadAloud`,
+`buildReadPlaylist`, `stopReadingIfNothingLeft`, `showVoicePickerDialog` and `describeVoice`.
+Fragment **1025 → 978**, under the 1000 this item originally asked for.
+
+`describeVoice` turned out to hold six hardcoded English strings the earlier sweep's grep
+missed, because they are built by concatenation rather than passed to a `setTitle`/`Toast`
+call — "Very high", "High", "Normal", "Low", "Very low" and " · needs internet". They are
+resources now. Worth remembering that the grep for hardcoded strings only finds the ones
+handed straight to a UI method.
+
+**Step 4 (ViewModels) is not needed and is closed rather than left open.** The condition the
+plan set was "only for screens where a config change visibly re-loads". After R11 and R17 the
+editor's remaining work *is* editing; nothing measured warrants it, and doing it now would be
+exactly the speculation step 4 warns against.
+
+**`ReadAloud`'s nine mutable statics: deliberately not converted.** R16 named it as the one to
+fix. On inspection the honest answer is no, at least not now:
+
+- It is a genuine process-wide playback session that outlives every screen — the same role
+  `CollabSessionHolder` fills, and the first sweep called that one "the good one".
+- Converting static fields to a singleton instance changes nothing observable. It would touch
+  18 public methods across 7 caller files including three Wear services.
+- It is the component least verifiable without a device, and audio and TTS lifecycle bugs do
+  not show up at compile time.
+
+A behaviour-neutral reshape of the one thing that cannot be tested here is a bad trade. Left
+as it is, with the reasoning recorded so the next sweep does not re-derive it.
 
 ---
 

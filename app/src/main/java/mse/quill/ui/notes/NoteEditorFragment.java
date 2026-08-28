@@ -9,7 +9,6 @@ import androidx.navigation.fragment.NavHostFragment;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.speech.tts.Voice;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
@@ -70,7 +69,8 @@ import mse.quill.ui.common.WindowInsetsUtils;
 import mse.quill.export.StoragePermission;
 
 public class NoteEditorFragment extends Fragment
-        implements WindowInsetsUtils.TopInsetHost, NoteExportController.Host {
+        implements WindowInsetsUtils.TopInsetHost, NoteExportController.Host,
+                   NoteReadAloudController.Host {
 
     /** The header, not the root: {@link KeyboardInsetsHandler} claims the root's insets listener,
      *  and a view only gets one — the second to attach silently replaces the first. The editor's
@@ -96,6 +96,8 @@ public class NoteEditorFragment extends Fragment
     private final StoragePermission storagePermission = new StoragePermission(this);
     /** Every way this note leaves Quill — see {@link NoteExportController}. */
     private NoteExportController export;
+    /** Reading it out loud — see {@link NoteReadAloudController}. */
+    private NoteReadAloudController readAloud;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
 
@@ -143,6 +145,7 @@ public class NoteEditorFragment extends Fragment
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         export = new NoteExportController(this, this);
+        readAloud = new NoteReadAloudController(this, this);
     }
 
     @Override
@@ -196,13 +199,13 @@ public class NoteEditorFragment extends Fragment
         // Long-press still opens the voice picker, as it did on the read-aloud button this control
         // replaced — a setting for one menu item doesn't earn a line in a two-item menu.
         optionsButton.setOnLongClickListener(v -> {
-            showVoicePickerDialog();
+            readAloud.showVoicePicker();
             return true;
         });
 
         noteEditorView.setContentChangeListener(() -> {
             scheduleAutoSave();
-            stopReadingIfNothingLeft();
+            readAloud.stopIfNothingLeft();
             updateToolbarState();
         });
         // Heading/bullet markers describe the caret's line, so they have to follow the caret and
@@ -669,18 +672,16 @@ public class NoteEditorFragment extends Fragment
         MenuItem playAloud = menu.getMenu().findItem(R.id.action_play_aloud);
         // Specifically *this* note's reading: another note left reading in the background is the
         // bar's business, and this menu offering to stop it would be a lie about whose voice it is.
-        boolean speaking = ReadAloud.isReadingNote(noteId);
+        boolean speaking = readAloud.isReadingThisNote();
         playAloud.setTitle(speaking ? R.string.action_stop_reading : R.string.action_read_aloud);
         playAloud.setIcon(speaking ? R.drawable.ic_menu_pause : R.drawable.ic_menu_play);
-        // Reading an empty note would just be silence, so the item goes away rather than misleading.
-        // A note with only a recording in it still has something to play, and still offers this.
-        playAloud.setVisible(speaking || !buildReadPlaylist().isEmpty());
+        playAloud.setVisible(readAloud.hasSomethingToRead());
 
         menu.setForceShowIcon(true);
         menu.setOnMenuItemClickListener(item -> {
             int id = item.getItemId();
             if (id == R.id.action_play_aloud) {
-                toggleReadAloud();
+                readAloud.toggle();
                 return true;
             }
             if (id == R.id.action_turn_into_flashcards) {
@@ -700,18 +701,6 @@ public class NoteEditorFragment extends Fragment
         menu.show();
     }
 
-
-    private void toggleReadAloud() {
-        if (ReadAloud.isReadingNote(noteId)) {
-            ReadAloud.stop();
-        } else {
-            // One voice at a time: a recording the user started by hand playing under a note being
-            // read aloud is just noise, and both would be fighting for the same bar. The reading
-            // plays this note's own recordings itself, in the order they sit in the note.
-            AudioPlayback.get(requireContext()).close();
-            ReadAloud.start(requireContext(), noteId, clipTitle(), buildReadPlaylist());
-        }
-    }
 
     /**
      * Opens the review screen for this note's Q&amp;A blocks.
@@ -817,57 +806,21 @@ public class NoteEditorFragment extends Fragment
                 });
     }
 
-    /** The body only — the title is often just the auto-generated "Untitled Note - <date>"
-     *  placeholder, which shouldn't be read aloud (and, since it's never actually empty, would
-     *  otherwise make a blank note look like it has something to say). */
-    private ReadPlaylist buildReadPlaylist() {
+    // ── NoteReadAloudController.Host ─────────────────────────────────────────
+
+    @Override
+    public String noteId() {
+        return noteId;
+    }
+
+    @Override
+    public String noteTitle() {
+        return clipTitle();
+    }
+
+    @Override
+    public ReadPlaylist buildPlaylist() {
         return noteEditorView.buildReadPlaylist();
-    }
-
-    /** Halts a reading in progress if the last thing it had to read just got deleted out from
-     *  under it. Only this note's — emptying one note is no reason to silence another. */
-    private void stopReadingIfNothingLeft() {
-        if (ReadAloud.isReadingNote(noteId) && buildReadPlaylist().isEmpty()) {
-            ReadAloud.stop();
-        }
-    }
-
-    /** Long-press on the options button — lets the user swap out the engine's default
-     *  ("robotic") voice for another one installed on the device. */
-    private void showVoicePickerDialog() {
-        List<Voice> voices = ReadAloud.availableVoices(requireContext());
-        if (voices.isEmpty()) return; // TTS engine not ready yet, or no voices for this locale
-
-        Voice current = ReadAloud.currentVoice(requireContext());
-        String[] labels = new String[voices.size()];
-        int checkedIndex = -1;
-        for (int i = 0; i < voices.size(); i++) {
-            Voice voice = voices.get(i);
-            labels[i] = describeVoice(voice);
-            if (current != null && voice.getName().equals(current.getName())) checkedIndex = i;
-        }
-
-        new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.dialog_choose_voice_title)
-                .setSingleChoiceItems(labels, checkedIndex, (dialog, which) -> {
-                    ReadAloud.setVoice(requireContext(), voices.get(which));
-                    dialog.dismiss();
-                })
-                .setNegativeButton(R.string.action_cancel, null)
-                .show();
-    }
-
-    private String describeVoice(Voice voice) {
-        String quality;
-        switch (voice.getQuality()) {
-            case Voice.QUALITY_VERY_HIGH: quality = "Very high"; break;
-            case Voice.QUALITY_HIGH: quality = "High"; break;
-            case Voice.QUALITY_NORMAL: quality = "Normal"; break;
-            case Voice.QUALITY_LOW: quality = "Low"; break;
-            default: quality = "Very low";
-        }
-        String suffix = voice.isNetworkConnectionRequired() ? " · needs internet" : "";
-        return voice.getName() + " (" + quality + suffix + ")";
     }
 
     /** Polls the in-progress recording's elapsed time and amplitude a few times a second to
