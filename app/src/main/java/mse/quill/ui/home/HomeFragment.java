@@ -24,7 +24,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 import mse.quill.R;
 import com.google.android.material.snackbar.Snackbar;
@@ -48,9 +47,8 @@ import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
 import mse.quill.ui.whiteboard.WhiteboardFragment;
-import mse.quill.collab.CollabPermissions;
+import mse.quill.collab.CollabEntry;
 import mse.quill.collab.CollabSessionHolder;
-import mse.quill.collab.SessionScanner;
 import mse.quill.util.ColorUtils;
 import mse.quill.util.NoteDisplayUtils;
 import java.util.Random;
@@ -308,18 +306,8 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
 
     // ── Joining someone else's whiteboard ────────────────────────────────
 
-    /** Set while the permission prompt is up, so a grant can carry on where it left off. */
-    private final ActivityResultLauncher<String[]> joinPermissionLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
-                    result -> {
-                        boolean granted = !result.containsValue(false);
-                        if (granted) {
-                            scanAndJoin();
-                        } else {
-                            Toast.makeText(requireContext(), R.string.collab_permission_denied,
-                                    Toast.LENGTH_LONG).show();
-                        }
-                    });
+    /** Permission, scan, token — the same flow the whiteboard's Collaborate button runs. */
+    private final CollabEntry collabEntry = new CollabEntry(this);
 
     /**
      * Scans a host's code and opens a board already joined to their session.
@@ -339,60 +327,34 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
                     .setMessage(CollabSessionHolder.isHost()
                             ? R.string.collab_already_hosting_message
                             : R.string.collab_already_joined_message)
-                    .setPositiveButton(R.string.collab_leave_and_join, (d, w) -> requestJoinPermissions())
+                    .setPositiveButton(R.string.collab_leave_and_join, (d, w) -> scanAndJoin())
                     .setNegativeButton(R.string.action_cancel, null)
                     .show();
-            return;
-        }
-        requestJoinPermissions();
-    }
-
-    private void requestJoinPermissions() {
-        String[] missing = CollabPermissions.missing(requireContext());
-        if (missing.length > 0) {
-            joinPermissionLauncher.launch(missing);
             return;
         }
         scanAndJoin();
     }
 
     private void scanAndJoin() {
-        SessionScanner.scan(requireContext(), new SessionScanner.Listener() {
-            @Override public void onToken(String token) {
-                if (!isAdded()) return;
-                openJoinedWhiteboard(token);
-            }
-
-            @Override public void onCancelled() {
-                // Backing out of the scanner is an answer, not a fault. Nothing was started.
-            }
-
-            @Override public void onFailed(boolean notASession) {
-                if (!isAdded()) return;
-                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                        .setTitle(R.string.collab_error_title)
-                        .setMessage(notASession
-                                ? R.string.collab_error_not_a_session
-                                : R.string.collab_error_scanner)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show();
-            }
-        });
+        collabEntry.scanForToken(this::openJoinedWhiteboard);
     }
 
-    /** A fresh board for the session to fill: the host sends everything it holds on connect. */
+    /**
+     * A fresh board for the session to fill: the host sends everything it holds on connect.
+     *
+     * <p><b>No {@code whiteboard_id}.</b> The screen mints its own row when opened without one,
+     * which is what a joiner needs, and it is what the {@code quill://} link path has always done.
+     * This used to create the row here first and pass its id — the same outcome by a longer route,
+     * with an async hop before the navigation and a reason for Home to know about whiteboard
+     * background preferences. Two paths to one destination that both worked is worse than one:
+     * nobody would have noticed them drifting.
+     */
     private void openJoinedWhiteboard(String token) {
-        whiteboardRepository.createWhiteboard(null, null,
-                mse.quill.ui.whiteboard.WhiteboardPreferences.defaultBackground(requireContext()),
-                whiteboardId -> {
-                    if (!isAdded()) return;
-                    Bundle args = new Bundle();
-                    args.putString(WhiteboardFragment.ARG_WHITEBOARD_ID, whiteboardId);
-                    args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, true);
-                    args.putString(WhiteboardFragment.ARG_JOIN_TOKEN, token);
-                    NavHostFragment.findNavController(this)
-                            .navigate(R.id.whiteboardFragment, args);
-                });
+        if (!isAdded()) return;
+        Bundle args = new Bundle();
+        args.putBoolean(WhiteboardFragment.ARG_CREATED_NOW, true);
+        args.putString(WhiteboardFragment.ARG_JOIN_TOKEN, token);
+        NavHostFragment.findNavController(this).navigate(R.id.whiteboardFragment, args);
     }
 
     // ── The three things Home can add ────────────────────────────────────

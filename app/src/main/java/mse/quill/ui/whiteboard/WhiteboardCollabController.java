@@ -15,12 +15,12 @@ import java.util.List;
 import java.util.Set;
 
 import mse.quill.R;
+import mse.quill.collab.CollabEntry;
 import mse.quill.collab.CollabMessage;
 import mse.quill.collab.CollabSession;
 import mse.quill.collab.CollabSessionHolder;
 import mse.quill.collab.QrCodes;
 import mse.quill.collab.SessionCode;
-import mse.quill.collab.SessionScanner;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.WhiteboardText;
 import mse.quill.ui.profile.ProfilePreferences;
@@ -64,9 +64,6 @@ final class WhiteboardCollabController {
         /** Duplicates this board onto Home, then runs {@code then} on the main thread. */
         void saveCopyOfBoard(Runnable then);
 
-        /** Runs {@code onGranted} once the Nearby permission ladder is satisfied, or not at all. */
-        void requestCollabPermissions(Runnable onGranted);
-
         /**
          * Who is at the board right now, this device first — or an empty list when there is no
          * session. The controller derives this fresh on every roster event and hands it over
@@ -84,6 +81,9 @@ final class WhiteboardCollabController {
     private final Fragment fragment;
     private final Host host;
     private final String whiteboardId;
+    /** The permission ladder, the scanner, and the one dialog for a scan going wrong — shared
+     *  with Home, which starts the same flow from its FAB. */
+    private final CollabEntry entry;
 
     /** Mirrors {@code CollabSessionHolder.session()} — see the class comment. */
     private CollabSession session;
@@ -101,6 +101,8 @@ final class WhiteboardCollabController {
         this.fragment = fragment;
         this.whiteboardId = whiteboardId;
         this.host = host;
+        // Built from the fragment's onCreate, which is early enough to register a launcher.
+        this.entry = new CollabEntry(fragment);
     }
 
     // ── State the screen asks about ───────────────────────────────────────────
@@ -206,8 +208,8 @@ final class WhiteboardCollabController {
             return;
         }
         CollabDialogs.showEntryDialog(fragment.requireContext(), new CollabDialogs.EntryListener() {
-            @Override public void onHostChosen() { host.requestCollabPermissions(WhiteboardCollabController.this::startHosting); }
-            @Override public void onJoinChosen() { host.requestCollabPermissions(WhiteboardCollabController.this::startJoinByScan); }
+            @Override public void onHostChosen() { entry.withPermission(WhiteboardCollabController.this::startHosting); }
+            @Override public void onJoinChosen() { entry.withPermission(WhiteboardCollabController.this::startJoinByScan); }
         });
     }
 
@@ -279,28 +281,18 @@ final class WhiteboardCollabController {
     }
 
     private void scanForSession() {
-        if (!fragment.isAdded()) return;
-        SessionScanner.scan(fragment.requireContext(), new SessionScanner.Listener() {
-            @Override public void onToken(String token) {
-                joinWithToken(token);
-            }
-
-            @Override public void onCancelled() {
-                // See HomeFragment: leaving the scanner is not a failure to report.
-            }
-
-            @Override public void onFailed(boolean notASession) {
-                if (!fragment.isAdded()) return;
-                showError(notASession
-                        ? R.string.collab_error_not_a_session
-                        : R.string.collab_error_scanner, notASession);
-            }
-        });
+        entry.scanForToken(this::joinWithToken);
     }
 
     /** Starts joining a session whose token is already in hand — from a scan here, from Home's
      *  own scan, or from a {@code quill://} link the phone's camera opened. */
     void joinWithToken(String token) {
+        // Reached three ways — a scan here, Home's scan, or a quill:// link — and only the first
+        // has certainly climbed the permission ladder already. A no-op when it has.
+        entry.withPermission(() -> doJoin(token));
+    }
+
+    private void doJoin(String token) {
         if (!fragment.isAdded()) return;
         isHost = false;
         statusDialog = CollabDialogs.showJoiningDialog(fragment.requireContext(), this::endSession);

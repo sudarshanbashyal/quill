@@ -436,7 +436,7 @@ worth doing rather than tidying.
 
 ---
 
-## R9 — Three entry points to "join a collaboration session", each with its own copy `OPEN`
+## R9 — Three entry points to "join a collaboration session", each with its own copy `DONE 2026-08-28`
 
 **Cause.** Joining a session can start from three places, and all three implement it
 separately:
@@ -470,6 +470,28 @@ the token and stops.
 3. **Decide the board-row question explicitly** and write the answer down: does a joiner
    arrive on a board Home created, or one the fragment mints? Pick one and make the deep
    link and Home agree. This is the part with actual value — the extraction is the excuse.
+
+**What landed.** `collab/CollabEntry` owns the ladder, the scan and the error dialog, and
+stops at the token — what happens next genuinely differs, so handing one back and getting out
+of the way is the whole contract. Built the way `export.StoragePermission` is, and for the
+same reason: it registers a launcher, so it has to be constructed before STARTED.
+
+`SessionScanner` now has exactly one caller in the tree.
+
+**The board-row question, answered: the fragment mints it.** Home used to create the row,
+wait for the callback, then navigate with its id; the `quill://` path passed no id and let the
+screen mint one. Same destination, and the fragment's minting path has to exist regardless —
+so Home's is the one that goes. That removes an async hop before a navigation and Home's
+reason to know about whiteboard background preferences.
+
+**One behaviour change, deliberate.** Home's scan-failure dialog now offers "scan again",
+which the whiteboard's always had and Home's never did. That was not a decision anyone made —
+it is one copy that never got the improvement, which is the shape this kind of duplication
+rots into. Unifying them means picking the better one.
+
+`HomeFragment` also lost `joinPermissionLauncher` and `requestJoinPermissions`;
+`WhiteboardFragment` lost `collabPermissionLauncher`, `pendingCollabAction` and
+`requestCollabPermissions`, and `Host` lost that method from its interface.
 
 ---
 

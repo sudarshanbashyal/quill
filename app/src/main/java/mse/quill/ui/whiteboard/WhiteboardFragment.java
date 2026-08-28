@@ -16,8 +16,6 @@ import android.widget.PopupMenu;
 import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.google.android.material.button.MaterialButton;
@@ -25,7 +23,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.fragment.app.Fragment;
 
 import mse.quill.R;
-import mse.quill.collab.CollabPermissions;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.WhiteboardRepository;
@@ -107,20 +104,6 @@ public class WhiteboardFragment extends Fragment
     private final StoragePermission storagePermission = new StoragePermission(this);
     /** Both ways this board leaves Quill — see {@link WhiteboardExportController}. */
     private WhiteboardExportController export;
-
-    /** What to do once the Nearby permission prompt below resolves. */
-    private Runnable pendingCollabAction;
-    private final ActivityResultLauncher<String[]> collabPermissionLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), results -> {
-                boolean allGranted = !results.containsValue(false);
-                Runnable action = pendingCollabAction;
-                pendingCollabAction = null;
-                if (allGranted && action != null) {
-                    action.run();
-                } else if (!allGranted) {
-                    Toast.makeText(requireContext(), R.string.collab_permission_denied, Toast.LENGTH_LONG).show();
-                }
-            });
 
     // ── Data ──────────────────────────────────────────────────────────────────
     private StrokeRepository     strokeRepo;
@@ -250,9 +233,9 @@ public class WhiteboardFragment extends Fragment
         // screen is already in would start a second one behind the first.
         String joinToken = getArguments() == null ? null : getArguments().getString(ARG_JOIN_TOKEN);
         if (savedInstanceState == null && joinToken != null) {
-            // The permission ladder still applies — the board was opened for this join, so a
-            // refusal leaves an empty board, which discardIfNeverUsed then takes away again.
-            requestCollabPermissions(() -> collab.joinWithToken(joinToken));
+            // joinWithToken climbs the permission ladder itself; a refusal leaves an empty board,
+            // which discardIfNeverUsed then takes away again.
+            collab.joinWithToken(joinToken);
         }
 
         // Load any strokes already saved for this whiteboard (e.g. reopening a note)
@@ -977,21 +960,6 @@ public class WhiteboardFragment extends Fragment
                 });
             }));
         });
-    }
-
-    /** Nearby needs the Bluetooth/location/Wi-Fi ladder documented in AndroidManifest.xml —
-     *  version-gated, so a device only sees the prompts for permissions it actually has. The
-     *  launcher has to be registered on the fragment, which is why this stays here rather than
-     *  moving to the controller with the rest of the entry flow. */
-    @Override
-    public void requestCollabPermissions(Runnable onGranted) {
-        String[] missing = CollabPermissions.missing(requireContext());
-        if (missing.length == 0) {
-            onGranted.run();
-            return;
-        }
-        pendingCollabAction = onGranted;
-        collabPermissionLauncher.launch(missing);
     }
 
     /** The roster as a count in the top bar; the names are kept for {@link #showCollabRoster}. */
