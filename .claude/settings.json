@@ -17,7 +17,12 @@
       "Bash(./gradlew.bat :app:compileDebugJavaWithJavac --console=plain -q)",
       "Bash(ls \"/c/Users/Avnish Raut/.claude/projects/u--sose2026-MobileSE-quill/memory/\")",
       "Read(//c/Users/Avnish Raut/.claude/projects/u--sose2026-MobileSE-quill/memory//**)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(mkdir -p /tmp/report_extract)",
+      "Bash(python3 -c ' *)",
+      "Bash(py -3 --version)",
+      "Bash(python -c ' *)",
+      "Read(//tmp/**)"
     ]
   }
 }
