@@ -7,6 +7,7 @@ import mse.quill.data.FlashcardStore;
 import mse.quill.data.serialization.MarkdownSerializer;
 import mse.quill.data.model.NoteSegment;
 import mse.quill.data.model.QaSegment;
+import mse.quill.study.quiz.QuizGenerator;
 
 /**
  * The bridge from a loaded note to the strings a quiz is generated from.

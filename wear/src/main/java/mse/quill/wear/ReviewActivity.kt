@@ -42,7 +42,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import mse.quill.data.model.DueCard
 import mse.quill.data.model.Flashcard
-import mse.quill.ui.flashcards.ReviewSession
+import mse.quill.study.review.ReviewSession
+import mse.quill.study.scheduling.DueProjection
+import mse.quill.study.scheduling.FlashcardScheduler
 
 /**
  * Review on the wrist: pick a deck, then front → tap to flip → right or wrong.

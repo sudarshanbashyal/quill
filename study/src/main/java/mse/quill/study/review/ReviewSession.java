@@ -1,4 +1,4 @@
-package mse.quill.ui.flashcards;
+package mse.quill.study.review;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 
 import mse.quill.data.model.Flashcard;
+import mse.quill.study.scheduling.FlashcardScheduler;
 
 /**
  * One pass through a deck.

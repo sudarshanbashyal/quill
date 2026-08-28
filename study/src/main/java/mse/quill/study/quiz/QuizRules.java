@@ -1,4 +1,4 @@
-package mse.quill.ui.quiz;
+package mse.quill.study.quiz;
 
 /**
  * The knobs a quiz is shaped by, in one place because all three are guesses that will want tuning

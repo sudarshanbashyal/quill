@@ -11,7 +11,7 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.TimeZone;
 
-import mse.quill.data.DueProjection;
+import mse.quill.study.scheduling.DueProjection;
 import mse.quill.data.model.DueCard;
 
 /** What the watch is sent: the horizon, the ordering, the cap and the trim. */

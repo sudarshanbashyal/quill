@@ -1,4 +1,4 @@
-package mse.quill.ui.quiz;
+package mse.quill.study.quiz;
 
 import java.util.ArrayList;
 import java.util.Collections;

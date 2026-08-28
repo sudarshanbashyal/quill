@@ -23,6 +23,8 @@ import mse.quill.data.model.NoteSegment;
 import mse.quill.data.model.QaSegment;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.data.wear.WearProjectionPublisher;
+import mse.quill.study.scheduling.DueProjection;
+import mse.quill.study.scheduling.FlashcardScheduler;
 
 /**
  * The flashcards generated from a note's Q&amp;A blocks, and their review schedule.

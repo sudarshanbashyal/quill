@@ -5,7 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
-import mse.quill.data.FlashcardScheduler;
+import mse.quill.study.scheduling.FlashcardScheduler;
 import mse.quill.data.model.Flashcard;
 
 /** The SM-2 schedule behind flashcard review — pure state transitions, no clock and no database. */

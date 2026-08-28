@@ -32,7 +32,7 @@ import mse.quill.R;
 import mse.quill.data.model.AudioSegment;
 import mse.quill.data.model.NoteSegment;
 import mse.quill.data.NoteRepository;
-import mse.quill.data.AudioCaptureKeys;
+import mse.quill.sync.AudioCaptureKeys;
 
 /**
  * Receives a voice memo recorded on the watch and files it into a note.

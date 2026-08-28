@@ -11,9 +11,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-import mse.quill.ui.quiz.QuizGenerator;
-import mse.quill.ui.quiz.QuizQuestion;
-import mse.quill.ui.quiz.QuizSession;
+import mse.quill.study.quiz.QuizGenerator;
+import mse.quill.study.quiz.QuizQuestion;
+import mse.quill.study.quiz.QuizSession;
 
 /** The answer sheet: free movement between questions, changeable answers, and marking at the end. */
 public class QuizSessionTest {

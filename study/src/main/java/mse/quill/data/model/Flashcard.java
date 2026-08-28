@@ -1,4 +1,5 @@
 package mse.quill.data.model;
+import mse.quill.study.scheduling.FlashcardScheduler;
 
 /**
  * One reviewable card, generated from a Q&amp;A block in a note.

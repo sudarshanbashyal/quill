@@ -8,7 +8,7 @@ import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import mse.quill.data.AudioCaptureKeys
+import mse.quill.sync.AudioCaptureKeys
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit

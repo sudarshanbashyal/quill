@@ -14,6 +14,7 @@ import mse.quill.data.model.ImageSegment;
 import mse.quill.data.model.NoteSegment;
 import mse.quill.data.model.TextSegment;
 import mse.quill.data.serialization.NoteDocument;
+import mse.quill.study.quiz.QuizSession;
 
 /**
  * Everything that has to cope with a Quill database that already exists.

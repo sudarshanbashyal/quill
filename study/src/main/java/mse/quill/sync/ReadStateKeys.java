@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.sync;
 
 /**
  * The names on the wire for what the phone's voice is doing — the state behind the watch's

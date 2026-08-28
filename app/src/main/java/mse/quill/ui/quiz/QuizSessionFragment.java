@@ -32,6 +32,10 @@ import mse.quill.data.Repositories;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.model.Quiz;
 import mse.quill.data.serialization.MarkdownSerializer;
+import mse.quill.study.quiz.QuizGenerator;
+import mse.quill.study.quiz.QuizQuestion;
+import mse.quill.study.quiz.QuizRules;
+import mse.quill.study.quiz.QuizSession;
 
 /**
  * Sitting one quiz: a timed paper of multiple-choice questions, marked when it's handed in.

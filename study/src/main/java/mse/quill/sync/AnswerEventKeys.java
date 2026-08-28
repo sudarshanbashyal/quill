@@ -1,4 +1,5 @@
-package mse.quill.data;
+package mse.quill.sync;
+import mse.quill.study.scheduling.FlashcardScheduler;
 
 /**
  * The names on the wire for an answer travelling back from the watch, in one place for the same

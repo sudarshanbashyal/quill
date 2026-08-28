@@ -7,8 +7,8 @@ import android.database.sqlite.SQLiteDatabase;
 
 import org.json.JSONArray;
 import org.json.JSONException;
-import mse.quill.ui.quiz.QuizQuestion;
-import mse.quill.ui.quiz.QuizSession;
+import mse.quill.study.quiz.QuizQuestion;
+import mse.quill.study.quiz.QuizSession;
 import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +17,8 @@ import java.util.UUID;
 
 import mse.quill.data.model.Quiz;
 import mse.quill.data.model.QuizAttempt;
-import mse.quill.ui.quiz.QuizRules;
+import mse.quill.study.quiz.QuizRules;
+import mse.quill.study.quiz.QuizGenerator;
 
 /**
  * Quizzes and the history of sitting them.

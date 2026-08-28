@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit;
 
 import mse.quill.data.model.DueCard;
 import mse.quill.data.FlashcardRepository;
-import mse.quill.data.DueProjection;
-import mse.quill.data.DueProjectionKeys;
+import mse.quill.study.scheduling.DueProjection;
+import mse.quill.sync.DueProjectionKeys;
 
 /**
  * Publishes today's due cards to the paired watch.

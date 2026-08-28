@@ -1,8 +1,9 @@
-package mse.quill.ui.quiz;
+package mse.quill.study.quiz;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import mse.quill.study.review.ReviewSession;
 
 /**
  * One sitting of a quiz: the questions, the answer sheet, and where the user is looking.

@@ -11,8 +11,8 @@ import com.google.android.gms.wearable.WearableListenerService;
 import mse.quill.data.model.Flashcard;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.FlashcardRepository;
-import mse.quill.data.AnswerEventKeys;
-import mse.quill.data.FlashcardScheduler;
+import mse.quill.sync.AnswerEventKeys;
+import mse.quill.study.scheduling.FlashcardScheduler;
 
 /**
  * Receives answers given on the watch and replays them through the phone's scheduler.

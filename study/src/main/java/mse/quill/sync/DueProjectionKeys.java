@@ -1,4 +1,5 @@
-package mse.quill.data;
+package mse.quill.sync;
+import mse.quill.study.scheduling.DueProjection;
 
 /**
  * The names on the wire between the phone and the watch, in one place because both ends have to

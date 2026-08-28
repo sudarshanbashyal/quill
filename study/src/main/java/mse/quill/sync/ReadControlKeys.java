@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.sync;
 
 /**
  * The names on the wire for "pause the thing you are reading", sent from the watch.

@@ -13,7 +13,7 @@ import mse.quill.audio.ReadAloud;
 import mse.quill.data.AppDatabase;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.NoteCrypto;
-import mse.quill.data.ReadStateKeys;
+import mse.quill.sync.ReadStateKeys;
 
 /**
  * Tells the watch what the phone's voice is doing, so the wrist can have transport controls.

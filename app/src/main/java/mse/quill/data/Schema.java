@@ -3,6 +3,7 @@ package mse.quill.data;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Log;
+import mse.quill.study.quiz.QuizSession;
 
 /**
  * What a fresh Quill database looks like.

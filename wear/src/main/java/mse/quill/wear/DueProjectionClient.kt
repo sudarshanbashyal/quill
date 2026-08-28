@@ -8,7 +8,7 @@ import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import mse.quill.data.DueProjectionKeys
+import mse.quill.sync.DueProjectionKeys
 import mse.quill.data.model.DueCard
 import java.util.concurrent.TimeUnit
 

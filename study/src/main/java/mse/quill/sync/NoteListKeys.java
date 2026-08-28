@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.sync;
 
 /**
  * The names on the wire for the list of notes the watch can pick from.

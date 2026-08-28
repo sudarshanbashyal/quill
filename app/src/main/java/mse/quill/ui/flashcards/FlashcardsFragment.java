@@ -36,6 +36,7 @@ import mse.quill.data.NoteStore;
 import mse.quill.data.Repositories;
 import mse.quill.data.model.Flashcard;
 import mse.quill.data.serialization.MarkdownSerializer;
+import mse.quill.study.review.ReviewSession;
 
 /**
  * Reviews the flashcards generated from one note's Q&amp;A blocks.

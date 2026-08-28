@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.study.scheduling;
 
 import java.util.ArrayList;
 import java.util.Calendar;

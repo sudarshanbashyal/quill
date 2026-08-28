@@ -31,6 +31,7 @@ import mse.quill.ui.notes.QaBlockHintDialog;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.ui.common.SwipeToDelete;
 import mse.quill.ui.common.UndoDelete;
+import mse.quill.study.quiz.QuizRules;
 
 /**
  * The Quizzes tab: every note that has been turned into a quiz.

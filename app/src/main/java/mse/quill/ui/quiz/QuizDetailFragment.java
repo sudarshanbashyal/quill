@@ -27,6 +27,7 @@ import mse.quill.data.QuizRepository;
 import mse.quill.data.model.Quiz;
 import mse.quill.data.model.QuizAttempt;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.study.quiz.QuizRules;
 
 /**
  * One quiz between sittings: what it will ask, how it has gone before, and the way in.

@@ -44,7 +44,7 @@ import mse.quill.data.TagRepository;
 import mse.quill.data.model.Tag;
 import mse.quill.ui.flashcards.FlashcardsFragment;
 import mse.quill.ui.quiz.QuizDetailFragment;
-import mse.quill.ui.quiz.QuizRules;
+import mse.quill.study.quiz.QuizRules;
 import mse.quill.ui.notes.editor.AudioRecorder;
 import mse.quill.ui.notes.editor.FormattingToolbarController;
 import mse.quill.ui.notes.editor.ImageEmbedder;

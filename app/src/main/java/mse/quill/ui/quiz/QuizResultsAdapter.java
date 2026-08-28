@@ -19,6 +19,7 @@ import java.util.List;
 import mse.quill.R;
 import mse.quill.data.serialization.MarkdownSerializer;
 import mse.quill.ui.common.CardStyles;
+import mse.quill.study.quiz.QuizSession;
 
 /**
  * The marked paper shown at the end of a quiz: every question with what was picked and what was

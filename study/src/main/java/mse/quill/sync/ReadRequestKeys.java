@@ -1,4 +1,4 @@
-package mse.quill.data;
+package mse.quill.sync;
 
 /**
  * The names on the wire for "read this note to me", sent from the watch.

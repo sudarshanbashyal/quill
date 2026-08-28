@@ -12,9 +12,9 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
-import mse.quill.ui.quiz.QuizGenerator;
-import mse.quill.ui.quiz.QuizQuestion;
-import mse.quill.ui.quiz.QuizRules;
+import mse.quill.study.quiz.QuizGenerator;
+import mse.quill.study.quiz.QuizQuestion;
+import mse.quill.study.quiz.QuizRules;
 
 /** What a note's Q&A blocks turn into: one question each, with wrong options taken from the rest. */
 public class QuizGeneratorTest {

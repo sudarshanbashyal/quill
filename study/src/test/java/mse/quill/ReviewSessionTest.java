@@ -11,9 +11,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import mse.quill.data.FlashcardScheduler;
+import mse.quill.study.scheduling.FlashcardScheduler;
 import mse.quill.data.model.Flashcard;
-import mse.quill.ui.flashcards.ReviewSession;
+import mse.quill.study.review.ReviewSession;
 
 /** What happens within a single sitting: the queue, the repeats, and what counts towards the score. */
 public class ReviewSessionTest {
