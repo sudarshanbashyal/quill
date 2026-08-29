@@ -102,6 +102,33 @@ public final class WhiteboardThumbnails {
         });
     }
 
+    /**
+     * Renders this board purely to fill the widget's disk mirror, for a caller with nowhere to put
+     * a bitmap.
+     *
+     * <p>The whiteboards widget can't render anything itself — see {@link WidgetThumbnailCache} —
+     * so a board Home has never drawn would sit on the placeholder glyph indefinitely, and a
+     * widget full of such boards shows the same picture for every one of them. This is that
+     * render, requested from the widget's own data reload; {@link #load} already mirrors what it
+     * draws to disk and refreshes the widget afterwards.
+     *
+     * <p>The in-memory hit is handled separately because {@code load} short-circuits on it and
+     * would never reach the disk write — exactly the case where this app process has drawn the
+     * board on Home but the file has since been cleared.
+     */
+    public static void cacheForWidget(Context context, Whiteboard whiteboard) {
+        Context appContext = context.getApplicationContext();
+        Bitmap cached = CACHE.get(key(whiteboard));
+        if (cached != null) {
+            AppExecutors.getInstance().diskIO(() -> {
+                WidgetThumbnailCache.write(appContext, whiteboard.id, cached);
+                WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            });
+            return;
+        }
+        load(appContext, whiteboard, thumbnail -> { /* the disk mirror is the point, not the bitmap */ });
+    }
+
     /** Delivered on the main thread. A board that has been deleted since reports a null board. */
     public interface OnPreviewReady {
         void onPreview(Whiteboard board, Bitmap thumbnail);

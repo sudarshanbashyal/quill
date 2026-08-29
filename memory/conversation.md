@@ -4293,3 +4293,53 @@ observed re-loading", not queued.
 **Still not verified on a device.** No emulator ran; only the physical phone was attached, which
 this project's convention says not to use. The API 26–28 storage path, collab, the Wear projection,
 widget refresh and the deep links are all unexercised end to end.
+
+## 2026-08-29 — Widget picker labels, and the duplicated whiteboard thumbnails (Bug fixing)
+
+**The picker showed three widgets all called "Quill".** None of the three `<receiver>`s declared
+`android:label`, so `AppWidgetProviderInfo.label` fell back to the application label and only the
+descriptions underneath differed. Three strings, three attributes: *Pinned & Collections*,
+*Whiteboards*, *Flashcards*. Confirmed in the picker on the emulator. The picker *previews* stay
+as they are — they render `previewLayout` with empty data, which the user explicitly said was fine
+as a placeholder.
+
+**"Thumbnails for the widget's whiteboards are the same."** Two separate causes, and the second one
+took the measuring to find.
+
+*The one visible in the code.* `WidgetThumbnailCache` was only ever written by Home rendering a
+card, so a board never scrolled past — or every board, after the cache was cleared — fell back to
+`ic_whiteboard`, and a widget of such boards is the same glyph repeated. The widget now asks for
+the renders it is missing from its own `onDataSetChanged` (`WhiteboardThumbnails.cacheForWidget`),
+capped at six per pass because the factory loads *every* board and each render is a main-thread
+pass through a `WhiteboardView`. Each batch's refresh brings the next through. Verified with the
+app never in the foreground: cache deleted, widget alone wrote both files.
+
+*The one the emulator found.* With both files on disk and correct, the widget still showed the
+first board's drawing in both cells. Logging `getViewAt` proved the factory was innocent — it
+handed out two bitmaps of different sizes for positions 0 and 1 — so the fault was downstream, in
+how the row was carrying its picture. `setImageViewBitmap` does not send the bitmap with the row;
+it puts it in the RemoteViews bitmap cache and refers to it by index, and every row built in
+`getViewAt` starts a cache of its own and so asks for index 0. When the launcher reloads the grid
+mid-fetch those indices resolve against one shared cache and every board wears the first board's
+drawing — which is exactly the shape of the failure: *always* position 0's image, never a mix.
+
+Two fixes, measured separately against a scripted repro (clear the cache, launch, screenshot,
+compare the two thumbnail regions pixel-for-pixel — a hand-rolled PNG decoder, since the bug is
+invisible to `uiautomator`):
+
+| | duplicated |
+|---|---|
+| `setImageViewBitmap`, refresh per render | 5 / 6 |
+| `setImageViewBitmap`, refreshes coalesced | 1 / 8 |
+| `Icon.createWithBitmap`, refresh per render | 0 / 6 |
+| `Icon.createWithBitmap`, coalesced (shipped) | 0 / 18 |
+
+So both were kept: an `Icon` carries its pixels with the row and has no index to resolve, and
+`WidgetUpdater` now coalesces every widget refresh on a 200 ms handler. The coalescing is worth
+having on its own — `WhiteboardThumbnails.load` fires one refresh per board rendered, so opening
+Home with a screenful of boards was sending a burst of `notifyAppWidgetViewDataChanged` where one
+would do.
+
+**Worth remembering.** The bug reproduces only when thumbnails are being written *underneath* a
+live widget, which is why it looks intermittent and why the first two "fixes" both seemed to work
+once. A/B with a counted trial, not a screenshot.
