@@ -23,10 +23,19 @@ public class DisplayNameTest {
     }
 
     @Test
-    public void stripsPunctuationAndSpaces() {
-        assertEquals("SudarshanB", DisplayName.sanitize("Sudarshan B!"));
+    public void stripsPunctuation() {
+        assertEquals("Sudarshan B", DisplayName.sanitize("Sudarshan B!"));
         assertEquals("Sudrshan", DisplayName.sanitize("Sud@r.sh!an"));
-        assertEquals("SudrshanB", DisplayName.sanitize("Sud@rsh.an, B"));
+        assertEquals("Sudrshan B", DisplayName.sanitize("Sud@rsh.an, B"));
+    }
+
+    @Test
+    public void keepsSpacesButCollapsesAndTrimsThem() {
+        // A display name is not a handle, so "Sudarshan Bashyal" has to survive. What must not
+        // survive is a run of spaces or an edge one — both read as an empty greeting.
+        assertEquals("Sudarshan Bashyal", DisplayName.sanitize("  Sudarshan   Bashyal  "));
+        assertEquals("", DisplayName.sanitize("   "));
+        assertTrue(DisplayName.isAllowed(' '));
     }
 
     @Test
@@ -56,7 +65,6 @@ public class DisplayNameTest {
 
     @Test
     public void rejectsDisallowedCharacters() {
-        assertFalse(DisplayName.isAllowed(' '));
         assertFalse(DisplayName.isAllowed('.'));
         assertFalse(DisplayName.isAllowed('!'));
         assertFalse(DisplayName.isAllowed('@'));

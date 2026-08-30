@@ -87,4 +87,19 @@ dependencies {
     implementation(libs.wear.compose.foundation)
     implementation(libs.activity.compose)
     implementation(libs.compose.material.icons.core)
+
+    constraints {
+        // Nothing in this module uses a Fragment — the two screens are ComponentActivity +
+        // Compose. But play-services-base drags androidx.fragment:fragment 1.1.0 onto the
+        // classpath, and with no AppCompat here to outrank it (:app resolves 1.6.2 that way)
+        // it stays there. That trips lintVital's InvalidFragmentVersionForActivityResult on
+        // `registerForActivityResult` and fails assembleRelease outright.
+        //
+        // A constraint rather than an `implementation` line: the artifact is already being
+        // packaged transitively, so this raises the version that ships instead of adding a
+        // dependency the module does not otherwise want.
+        implementation(libs.fragment) {
+            because("play-services-base pins fragment 1.1.0; ActivityResult needs 1.3.0+")
+        }
+    }
 }
