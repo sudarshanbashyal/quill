@@ -43,11 +43,34 @@ own selection and the back stack.
 ## Persistence layer
 
 **No Room.** `AppDatabase extends SQLiteOpenHelper` directly (`data/AppDatabase.java`),
-hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 4`. `onUpgrade` is still
-**destructive** (drops every table and recreates) for every step *except* v3 → v4, which
-migrates in place with `ALTER TABLE` because that change was purely additive (whiteboards
-gained title/timestamps). The rest still needs real migrations before this ships with user
-data worth keeping.
+hand-written schema and raw SQL everywhere. `DATABASE_VERSION = 12`. Since R15 (2026-08-28) the
+file is three: `AppDatabase` (the helper), `Schema` (every table, for a database being created
+from nothing) and `Migrations` (everything that has to cope with one that already exists).
+
+**Migrations are non-destructive on every path** — corrected here 2026-08-30, because this
+section said the opposite for a month after it stopped being true. `onUpgrade` converts a pre-v3
+database in place (`migrateLegacyNotesToMarkdown` reads the old `note_segments` rows in
+`position` order and composes each note's Markdown document) and then runs
+`ensureAdditiveSchema`. `rebuild()` is deleted rather than merely unreachable, so no later edit
+can fall back into it. `onDowngrade` also runs `ensureAdditiveSchema` instead of throwing:
+`SQLiteOpenHelper`'s default would leave an older build unable to open its own database, which
+on a real device is a crash on every launch with the user's notes intact and unreachable behind
+it.
+
+**`ensureAdditiveSchema` checks for columns rather than trusting the version number.** That
+looks redundant and is not — two branches independently shipped a "version 4" meaning different
+things, so the number alone cannot say what a given database holds. The method is idempotent and
+runs on every upgrade.
+
+**The failure mode to watch is drift between the two paths.** A column added to `Schema` but not
+to `ensureAdditiveSchema` produces a database whose shape depends on when it was installed, and
+it has bitten this project twice: `biometric_locked` was in `onCreate` only, so every read
+consulting the lock threw "no such column" on exactly the devices with notes worth locking; and
+`notes_fts` was created only in `onCreate`, so every upgraded database ran with no search index
+at all — silently, because an absent table is indistinguishable from an absent FTS5 module. Both
+were found in use rather than by a test. `androidTest/DatabaseMigrationTest` covers a v2 upgrade,
+idempotency and a downgrade; **it does not yet assert that the two paths converge**, which is the
+one piece of migration work still genuinely outstanding.
 
 Access pattern: `XRepository` classes (`NoteRepository`, `CollectionRepository`,
 `TagRepository`, `StrokeRepository`, `WhiteboardTextRepository`, …) wrap `AppDatabase` +
@@ -102,17 +125,18 @@ scaffolding, not dead code to delete casually — check before assuming it's unu
   multi-device outbox pattern
 - `notes.author_device_id`, `notes.vector_clock` — sync/conflict-resolution columns
   with no writer yet
-- `notes_fts` FTS5 virtual table — now a **standalone** `fts5(note_id UNINDEXED, title,
-  body)`, maintained by `NoteRepository` on every save and delete. (It was previously
-  declared `content='notes'` with a `body` column that doesn't exist on `notes`, so it
-  could never have been populated at all.) Still wrapped in try/catch since some
-  emulator SQLite builds lack FTS5 — writes are guarded the same way. **Nothing queries
-  it yet**: search in `HomeFragment` is still plain in-memory filtering over the loaded
-  note list. The index is ready; the query path is the remaining work.
+- ~~`notes_fts`~~ — **no longer unwired; this entry is kept only to correct it.** The index is
+  a standalone `fts5(note_id UNINDEXED, title, body)` maintained by `NoteRepository` on every
+  save and delete, and `NoteStore.searchNoteIds` now *queries* it. Every write and read stays
+  wrapped in try/catch because FTS5 is a compile-time SQLite module and a fair number of builds —
+  this project's own emulator image among them — ship without it; `searchNoteIdsSync` falls back
+  to reading the bodies when the index is absent, so search works either way and the fallback is
+  not a formality.
 
 Takeaway: the schema was designed ahead of the current feature set (multi-device sync,
 flashcards, geotagged notes, FTS search). Don't be surprised these tables/columns are
-empty — it's intentional runway, not abandoned work. `WhiteboardFragment`'s class
+empty — it's intentional runway, not abandoned work. But check before repeating it: two of the
+items in this list have since been wired up, and the list said otherwise for weeks. `WhiteboardFragment`'s class
 comment literally says "SINGLE-DEVICE VERSION — no networking" and describes how
 `author_id`/sync would plug back in later via a `WiFiDirectManager`.
 

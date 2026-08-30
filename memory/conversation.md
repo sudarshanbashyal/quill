@@ -4343,3 +4343,34 @@ would do.
 **Worth remembering.** The bug reproduces only when thumbnails are being written *underneath* a
 live widget, which is why it looks intermittent and why the first two "fixes" both seemed to work
 once. A/B with a counted trial, not a screenshot.
+
+## 2026-08-30 — Architecture diagrams for the report, and two stale claims in note.md (Documentation)
+
+**The diagrams.** Built a set of architecture diagrams to draft from for the report's section 3:
+a package-structure map of the three modules, a layered view of the notes/flashcards slice, the
+note-storage pipeline, the copy-vs-live-session split, the segment double hierarchy, the 2.1
+scenario end to end, and the watch round trip. The two that went into the report were redrawn by
+hand afterwards, per the assignment's first rule.
+
+**Two corrections that came out of writing them up, both to `note.md` rather than to code:**
+
+- **"`onUpgrade` is still destructive"** — false since 2026-08-23, and the section said so for a
+  month. Migrations are non-destructive on every path: a pre-v3 database is converted in place,
+  `rebuild()` is deleted rather than unreachable, and `onDowngrade` runs the additive path instead
+  of throwing. `DATABASE_VERSION` was recorded as 4; it is 12.
+- **"Nothing queries `notes_fts` yet"** — also false. `NoteStore.searchNoteIds` queries the index
+  and falls back to reading bodies where FTS5 is absent.
+
+Both had already been fixed in code and recorded correctly in `requirements.md`; only `note.md`
+disagreed. Worth noting how they surfaced: not from reading the code, but from writing a report
+section that *claimed* them as future work, then checking. A document that is read as the
+starting point for onboarding is exactly the one whose stale entries propagate — these two nearly
+went into a submitted report as outstanding work.
+
+**The one piece of migration work genuinely still open**, now written into `note.md`: nothing
+asserts that `Schema.createAll` and `Migrations.ensureAdditiveSchema` converge on the same
+schema. Drift between them has bitten the project twice — `biometric_locked` and `notes_fts`,
+both in `onCreate` only — and both were found in use rather than by a test.
+`DatabaseMigrationTest` covers a v2 upgrade, idempotency and a downgrade, but not convergence.
+
+**Not verified on a device.** Documentation only; no code changed, so nothing was run.
