@@ -21,7 +21,7 @@ wrist. Quill does not require an account, backend, or internet connection for it
 | **`Quill Report.pdf`**  | Written report (PDF) |
 | **`Quill_demo.mp4`**    | Demo video           |
 
-Both files are in the repository root.
+All three files are in the repository root.
 
 ---
 
