@@ -4374,3 +4374,55 @@ both in `onCreate` only — and both were found in use rather than by a test.
 `DatabaseMigrationTest` covers a v2 upgrade, idempotency and a downgrade, but not convergence.
 
 **Not verified on a device.** Documentation only; no code changed, so nothing was run.
+
+
+## 2026-08-31 — README, and getting `assembleRelease` clean for submission
+
+**Asked:** a README covering the submission files, the modules and the features, with install
+instructions for phone and Wear; verify the *release* APK build (not just debug) is free of
+warnings and errors; and a GIF of the splash logo animation for the top of the file.
+
+**The release build was broken, and only for `:wear`.** `./gradlew assembleRelease` failed at
+`:wear:lintVitalRelease` with `InvalidFragmentVersionForActivityResult` on
+`CaptureActivity.kt:79`. Cause: `play-services-base` pulls `androidx.fragment:fragment:1.0.0 →
+1.1.0` transitively, and `:wear` has no AppCompat to outrank it — `:app` resolves 1.6.2 *via*
+AppCompat, which is exactly why the phone module never tripped this. Fixed with a **dependency
+constraint** in `wear/build.gradle.kts` (new `fragment = "1.6.2"` catalog entry) rather than a
+lint suppression or baseline: the artifact already ships transitively, so a constraint raises the
+version that ships without adding a dependency the module doesn't otherwise want. Worth
+remembering that `lintVital` runs on release only — a green `assembleDebug` says nothing about it.
+
+**Two stale unit tests, failing before this session.** `DisplayNameTest.stripsPunctuationAndSpaces`
+and `rejectsDisallowedCharacters` still asserted that `' '` is rejected, but `DisplayName` was
+deliberately changed to allow spaces (its own javadoc: excluding them "quietly meant nobody could
+type their own" name). The tests were never updated with the implementation. Rewrote both to the
+current rule and added `keepsSpacesButCollapsesAndTrimsThem` to cover the collapse/trim behaviour
+that makes the permission safe. **82 JVM tests, 0 failures.**
+
+**Final state:** `./gradlew clean assembleRelease :app:testDebugUnitTest :study:test` —
+BUILD SUCCESSFUL, **zero warnings** in the whole output.
+
+**Release APKs are unsigned**, since neither module declares a `signingConfig`. Verified
+installability by signing both with `~/.android/debug.keystore` via `apksigner` and installing;
+the README documents that step, since `assembleRelease` output cannot be installed as-is.
+Phone release APK installs and runs (Home renders with real content, splash hands off to
+`MainActivity`, no crashes); Wear release APK installs with the tile and complication services
+registered.
+
+**An emulator trap that cost most of the session — worth not rediscovering.** A hung
+`adb install` wedged `Medium_Phone`'s PackageManager so thoroughly that `pm path` itself blocked,
+and afterwards the package would install with `Success`, appear correctly in the Activity Resolver
+Table, and *still* fail `am start` with "Activity class ... does not exist". Two cold boots, a
+`--no-incremental` reinstall and a full uninstall/reinstall did not clear it. **The debug build
+failed there identically**, which is what proved it was the emulator and not the release APK —
+run that control before suspecting a build. Only `emulator -avd Medium_Phone -wipe-data` fixed it;
+the app data was restored afterwards from a `run-as ... tar` backup taken before the first install
+(see the standing note about pulling the DB before touching emulator data — it paid off here).
+Verification of the release build itself was done on a second AVD (`Quill_Phone_4k`).
+
+**Also added:** `README.md` and `docs/quill-logo.gif`. The GIF is not a lookalike — it replays
+`QuillLogoView`'s own constants (the Caprasimo "Q", the 0.30/0.70/0.036/0.071 dot ratios, the
+1400 ms cycle clock, `AccelerateDecelerateInterpolator`, `DOT_MIN_SCALE`), rendered at 4×
+supersampling against `brand_lavender`/`brand_ink`, so it stays correct only as long as those
+constants do. Generator script is not checked in; it lives in the session scratchpad.
+
