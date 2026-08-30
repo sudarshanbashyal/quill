@@ -25,9 +25,11 @@ import mse.quill.ui.welcome.WelcomeActivity;
  * <ul>
  *   <li>{@link #MINIMUM_DISPLAY_MS} of wall clock, so the animation is never a flicker on a fast
  *       device; and
- *   <li>{@link StartupTasks}, which is the seam for the background checks this screen is meant to
- *       cover for. It reports done immediately today, so the timer is what governs — but if it
- *       later takes longer than the minimum, the splash simply stays up and keeps animating.
+ *   <li>{@link StartupTasks}, which is the background work this screen is meant to cover for. It
+ *       reads a preference and, on a first launch after install or a schema change, opens the
+ *       database — which is where migrations run. On a warm launch that finishes long inside the
+ *       minimum, so the timer is what governs; when it doesn't, the splash simply stays up and
+ *       keeps animating.
  * </ul>
  *
  * <p>The wait deliberately does <em>not</em> start the next Activity while this one is stopped:

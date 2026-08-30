@@ -4293,3 +4293,84 @@ observed re-loading", not queued.
 **Still not verified on a device.** No emulator ran; only the physical phone was attached, which
 this project's convention says not to use. The API 26–28 storage path, collab, the Wear projection,
 widget refresh and the deep links are all unexercised end to end.
+
+## 2026-08-29 — Widget picker labels, and the duplicated whiteboard thumbnails (Bug fixing)
+
+**The picker showed three widgets all called "Quill".** None of the three `<receiver>`s declared
+`android:label`, so `AppWidgetProviderInfo.label` fell back to the application label and only the
+descriptions underneath differed. Three strings, three attributes: *Pinned & Collections*,
+*Whiteboards*, *Flashcards*. Confirmed in the picker on the emulator. The picker *previews* stay
+as they are — they render `previewLayout` with empty data, which the user explicitly said was fine
+as a placeholder.
+
+**"Thumbnails for the widget's whiteboards are the same."** Two separate causes, and the second one
+took the measuring to find.
+
+*The one visible in the code.* `WidgetThumbnailCache` was only ever written by Home rendering a
+card, so a board never scrolled past — or every board, after the cache was cleared — fell back to
+`ic_whiteboard`, and a widget of such boards is the same glyph repeated. The widget now asks for
+the renders it is missing from its own `onDataSetChanged` (`WhiteboardThumbnails.cacheForWidget`),
+capped at six per pass because the factory loads *every* board and each render is a main-thread
+pass through a `WhiteboardView`. Each batch's refresh brings the next through. Verified with the
+app never in the foreground: cache deleted, widget alone wrote both files.
+
+*The one the emulator found.* With both files on disk and correct, the widget still showed the
+first board's drawing in both cells. Logging `getViewAt` proved the factory was innocent — it
+handed out two bitmaps of different sizes for positions 0 and 1 — so the fault was downstream, in
+how the row was carrying its picture. `setImageViewBitmap` does not send the bitmap with the row;
+it puts it in the RemoteViews bitmap cache and refers to it by index, and every row built in
+`getViewAt` starts a cache of its own and so asks for index 0. When the launcher reloads the grid
+mid-fetch those indices resolve against one shared cache and every board wears the first board's
+drawing — which is exactly the shape of the failure: *always* position 0's image, never a mix.
+
+Two fixes, measured separately against a scripted repro (clear the cache, launch, screenshot,
+compare the two thumbnail regions pixel-for-pixel — a hand-rolled PNG decoder, since the bug is
+invisible to `uiautomator`):
+
+| | duplicated |
+|---|---|
+| `setImageViewBitmap`, refresh per render | 5 / 6 |
+| `setImageViewBitmap`, refreshes coalesced | 1 / 8 |
+| `Icon.createWithBitmap`, refresh per render | 0 / 6 |
+| `Icon.createWithBitmap`, coalesced (shipped) | 0 / 18 |
+
+So both were kept: an `Icon` carries its pixels with the row and has no index to resolve, and
+`WidgetUpdater` now coalesces every widget refresh on a 200 ms handler. The coalescing is worth
+having on its own — `WhiteboardThumbnails.load` fires one refresh per board rendered, so opening
+Home with a screenful of boards was sending a burst of `notifyAppWidgetViewDataChanged` where one
+would do.
+
+**Worth remembering.** The bug reproduces only when thumbnails are being written *underneath* a
+live widget, which is why it looks intermittent and why the first two "fixes" both seemed to work
+once. A/B with a counted trial, not a screenshot.
+
+## 2026-08-30 — Architecture diagrams for the report, and two stale claims in note.md (Documentation)
+
+**The diagrams.** Built a set of architecture diagrams to draft from for the report's section 3:
+a package-structure map of the three modules, a layered view of the notes/flashcards slice, the
+note-storage pipeline, the copy-vs-live-session split, the segment double hierarchy, the 2.1
+scenario end to end, and the watch round trip. The two that went into the report were redrawn by
+hand afterwards, per the assignment's first rule.
+
+**Two corrections that came out of writing them up, both to `note.md` rather than to code:**
+
+- **"`onUpgrade` is still destructive"** — false since 2026-08-23, and the section said so for a
+  month. Migrations are non-destructive on every path: a pre-v3 database is converted in place,
+  `rebuild()` is deleted rather than unreachable, and `onDowngrade` runs the additive path instead
+  of throwing. `DATABASE_VERSION` was recorded as 4; it is 12.
+- **"Nothing queries `notes_fts` yet"** — also false. `NoteStore.searchNoteIds` queries the index
+  and falls back to reading bodies where FTS5 is absent.
+
+Both had already been fixed in code and recorded correctly in `requirements.md`; only `note.md`
+disagreed. Worth noting how they surfaced: not from reading the code, but from writing a report
+section that *claimed* them as future work, then checking. A document that is read as the
+starting point for onboarding is exactly the one whose stale entries propagate — these two nearly
+went into a submitted report as outstanding work.
+
+**The one piece of migration work genuinely still open**, now written into `note.md`: nothing
+asserts that `Schema.createAll` and `Migrations.ensureAdditiveSchema` converge on the same
+schema. Drift between them has bitten the project twice — `biometric_locked` and `notes_fts`,
+both in `onCreate` only — and both were found in use rather than by a test.
+`DatabaseMigrationTest` covers a v2 upgrade, idempotency and a downgrade, but not convergence.
+
+**Not verified on a device.** Documentation only; no code changed, so nothing was run.

@@ -157,6 +157,7 @@
              from outside the app. -->
         <receiver
             android:name=".widget.CollectionsWidgetProvider"
+            android:label="@string/widget_collections_label"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -168,6 +169,7 @@
 
         <receiver
             android:name=".widget.WhiteboardsWidgetProvider"
+            android:label="@string/widget_whiteboards_label"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -179,6 +181,7 @@
 
         <receiver
             android:name=".widget.FlashcardsWidgetProvider"
+            android:label="@string/widget_flashcards_label"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

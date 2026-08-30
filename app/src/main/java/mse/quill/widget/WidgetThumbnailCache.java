@@ -19,8 +19,10 @@ import java.io.IOException;
  * {@code render} call site), and the whiteboards widget reads here instead of rendering anything
  * itself.
  *
- * <p>A board that has never been opened in-app since install has no cached file yet; the widget
- * falls back to a placeholder for it until that first render happens.
+ * <p>A board with no file here yet — one Home has never drawn — is not left on the placeholder:
+ * the widget asks for a render itself (see {@code WhiteboardsRemoteViewsService.onDataSetChanged}),
+ * because otherwise every such board shows the same glyph and a screen of different boards looks
+ * identical.
  */
 public final class WidgetThumbnailCache {
 
@@ -40,6 +42,18 @@ public final class WidgetThumbnailCache {
         } catch (IOException ignored) {
             // Best-effort: the widget just falls back to its placeholder for this board.
         }
+    }
+
+    /**
+     * Whether the file on disk is a picture of the board <em>as it is now</em>.
+     *
+     * <p>The file's own timestamp is the comparison: it is written at the moment of the render, so
+     * a board drawn on since — its {@code updatedAt} bumped past that — has a picture that is
+     * merely old, which reads as a wrong thumbnail rather than a missing one.
+     */
+    public static boolean isCurrent(Context context, String whiteboardId, long updatedAt) {
+        File file = file(context, whiteboardId);
+        return file.exists() && file.lastModified() >= updatedAt;
     }
 
     /** Synchronous read for the widget's RemoteViewsFactory. Null if nothing was ever cached. */

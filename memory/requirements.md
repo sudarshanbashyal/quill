@@ -707,7 +707,12 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         changed module, zero imports touched" — reviewable at a glance, which a sixty-file rename
         carrying the same zero behaviour change is not. Rename later if it ever earns itself.
 
-- [ ] **Sync architecture — a projection, not a replica** — *built 2026-08-13, round trip unverified*
+- [ ] **Sync architecture — a projection, not a replica** — *built 2026-08-13/14. Two things
+      keep this open: the offline queue below, and the fact that the round trip has never run
+      end to end — the publish path reaches the GMS boundary and fails with `Wearable.API is
+      not available`, because pairing two emulators needs the companion app and a Google
+      sign-in. The tile's never-synced state is verified on `emulator-5556`; every non-empty
+      state is written but unexercised.*
   - [x] The watch holds today's due cards and nothing else, pushed as a `DataItem` over the Wear
         Data Layer. **No Room/SQLite copy of Quill on the watch.** `DataItem`s cap near 100 KB,
         which conveniently forbids the wrong design anyway — no media, no asset registry, no
@@ -726,22 +731,34 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         due continuously, so a projection filtered at publish time says "all caught up" at 09:00
         for a card that came due at 09:05. Ship everything due through end-of-day and let the
         watch re-filter against its own clock.
-  - [ ] Q&A halves reach the watch as `NoteDocument`'s **plain-text projection**. Rich text,
-        bullets and `RichTextField` do not get ported.
-  - [ ] Reviews travel back as append-only events (`card id, grade, timestamp`) via
-        `MessageClient`, replayed through the *phone's* `FlashcardScheduler`. SM-2 state is never
-        computed on the watch and copied over — same reasoning as Epic C's append-only strokes:
-        it turns the merge into a dedupe.
-  - [ ] **`recordReview` has to learn to honour the event's timestamp.** It currently calls
-        `applyReview(card, correct, System.currentTimeMillis())`, which is right for a review
-        answered on the phone and wrong for one replayed off the queue: a session done on a plane
-        and drained at 22:00 would have every interval anchored to 22:00. Needs a
-        `recordReview(card, correct, long now)` overload — small, and the failure is silent
-        interval corruption rather than anything that announces itself.
+  - [x] Q&A halves reach the watch as `NoteDocument`'s **plain-text projection** — *done
+        2026-08-13.* `FlashcardRepository.dueProjectionSync` calls `NoteDocument.toPlainText`:
+        Markdown on disk, plain text on the wrist, converted on the phone rather than on the
+        watch. Rich text, bullets and `RichTextField` are not ported.
+  - [x] Reviews travel back as append-only events via `MessageClient` — *done 2026-08-14.*
+        `AnswerSender` → `AnswerEventKeys.PATH` → `WearAnswerListenerService`, replayed through
+        the *phone's* `FlashcardScheduler`. A message and **not** a `DataItem`, deliberately: an
+        answer is an event, and an item keyed by card id would have a second answer to the same
+        card overwrite the first. SM-2 state is never computed on the watch — `DueCard` carries no
+        easiness, interval or repetitions, so the watch structurally cannot.
+  - [x] **`recordReview` honours the event's timestamp** — *done 2026-08-14.* The
+        `recordReview(card, correct, long answeredAt, Runnable)` overload exists and the watch
+        path uses it; the listener **drops** an event whose `answered_at` is missing rather than
+        falling back to `now()`, since that default is exactly the silent interval corruption the
+        parameter exists to prevent.
   - [ ] `CapabilityClient` for phone discovery; queue events while untethered and drain on
-        reconnect.
-  - [ ] **Tethered, not standalone** — Quill is offline-first with no cloud, so a watch with no
-        phone has no way to obtain content. Declare it as such rather than leaving it ambiguous.
+        reconnect. **Still open, and the only part of the return path that is.** `AnswerSender`
+        uses `NodeClient.connectedNodes` and sends to every node rather than picking `node[0]`,
+        but it **fails soft and does not queue**: a send with no connected node is logged and
+        dropped. That is a deliberate trade recorded in the class — a dropped answer costs one
+        card's schedule advance, while a retry queue means persistence, ordering and duplicate
+        suppression on the device with the least room for any of them. Revisit only if answers
+        are actually observed going missing.
+  - [x] **Tethered, not standalone** — *declared 2026-08-13.* A watch with no phone has no way
+        to obtain content, and the UI says so rather than implying a fault: no `DataItem` renders
+        "Open on phone", which is deliberately distinct from an empty list rendering "All caught
+        up". The complication returns *no data* in the first case rather than 0, so a watch face
+        can never report someone up to date on the strength of never having heard from the phone.
   - [x] **Decided 2026-08-13: `:wear` is Kotlin from the first commit.** The app is 145 Java files
         and no Kotlin, so this is the project's first Kotlin, and the temptation was to defer it —
         build the tile in Java, add Compose later only for the review screen. That plan does not
@@ -757,42 +774,57 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         `AmbientLifecycleObserver`), and Compose is merely "the recommended approach". The reason
         to skip the view path is the M2.5/M3 split above, not deprecation — worth keeping straight
         so the decision isn't defended later on a claim that isn't true.
-  - [ ] The `:wear` module needs its own `minSdk` (30+) against the app's 26.
+  - [x] The `:wear` module has its own `minSdk` — *done 2026-08-13.* `minSdk = 30` in
+        `wear/build.gradle.kts`; watches below 30 run a different app model entirely and
+        supporting them would mean a second UI toolkit.
 
-- [ ] **Flashcard review on the wrist** — the feature that justifies the epic
-  - [ ] Front → tap to flip → right/wrong. That is already `ReviewSession`'s whole API surface;
-        the watch screen is a thin view over it.
-  - [ ] Due-first with the same "all caught up" state as `FlashcardsFragment`, minus
-        "review anyway" (a wrist session is a queue, not a browser).
+- [x] **Flashcard review on the wrist** — *built 2026-08-14 (phase 2).*
+  - [x] Front → tap to flip → right/wrong. `ReviewActivity` is a thin Compose view over
+        `ReviewSession` — the same compiled class the phone runs, from `:shared`.
+  - [x] Due-first, with the same "all caught up" state as `FlashcardsFragment` and no
+        "review anyway": a wrist session is a queue, not a browser.
 
-- [ ] **Tile + complication** — the genuinely watch-native surfaces, and cheap
+- [x] **Tile + complication** — *built 2026-08-13/14.* Both surfaces ship and read the same
+      projection; the one remaining child is closed as superseded rather than outstanding.
   - [x] Tile (`androidx.wear.tiles` / ProtoLayout): due count. Built on `Material3TileService`,
         whose `tileResponse` is an **extension function on `MaterialScope`**, not a method taking
         one — worth knowing, since `this` inside it is the scope and not the service, and the
         scope carries a `Context` of its own that an unqualified `getString` will silently pick
-  - [ ] "Review N" straight into a session — waiting on the phase-2 review screen to send it to
+  - [x] "Review N" straight into a session — *done 2026-08-14.* `DueTileService` sets its click
+        action to `ReviewActivity`, which is what phase 2 re-pointed it to; nothing else changed
   - [x] Watch-face complication (`ComplicationDataSourceService`): the due count alone
-  - [ ] Both read the same projected count. **No longer blocked** (2026-08-13): Epic D's reminder
+  - [x] Both read the same projected count — *done 2026-08-13.* `DueTileService` and
+        `DueComplicationService` both call `DueProjectionClient.read()`, so neither can drift
+        from the other. **Was blocked, then not** (2026-08-13): Epic D's reminder
         infrastructure shipped in `fbc25a2`, and `StudyReminderWorker` is exactly the scheduled
         refresh this was waiting for — it already runs daily and already computes the count, so a
         `getUpdater().requestUpdate()` beside its `notify()` keeps the tile fresh for free
-  - [ ] **Phase 1's tile taps through to the phone**, via `RemoteActivityHelper`, before the
-        on-watch review screen exists. That is a real feature and not a placeholder — "12 due,
-        tap to open Quill" — and phase 2 re-points the click without touching anything else.
-        **Not built yet, and deliberately not stubbed**: `RemoteActivityHelper` needs an
-        `ACTION_VIEW` intent with a data URI, so it needs a deep link on `:app`'s `MainActivity`
-        first. The dependency is declared and the tile is shipping without an edge button rather
-        than with a dead one
+  - [ ] ~~**Phase 1's tile taps through to the phone**, via `RemoteActivityHelper`~~ —
+        **superseded, not outstanding.** This existed to give the tile somewhere to send a tap
+        *before* an on-watch review screen existed. Phase 2 landed the day after, so the tile taps
+        into `ReviewActivity` instead and there is nothing left for this to solve. Close it rather
+        than carrying it: building it now would add a second, worse destination for the same tap.
+        **One consequence to act on:** `wear-remote-interactions` is still declared in
+        `wear/build.gradle.kts` and nothing imports it — a dead dependency, alongside
+        `barcode-scanning-common` in `:app`. Verify the build resolves without both and drop them
 
-- [ ] **Voice capture → note** — the one authoring act a watch does better than a pocketed phone
-  - [ ] `RecognizerIntent` on-watch → text appended to an "Inbox" note (or a new note)
-  - [ ] Optional: record audio on the watch and ship the file down when tethered — the receiving
-        end already exists (`AudioRecorder`, audio segments, waveform)
+- [x] **Voice capture → note** — *built 2026-08-14, by the second route rather than the first.*
+  - [ ] `RecognizerIntent` on-watch → text appended to an "Inbox" note. **Not built, and now the
+        optional half rather than the primary one.** Speech recognition on a watch needs a network
+        round trip on most devices, which is the one thing Quill's offline-first design will not
+        assume. Worth revisiting only with on-device recognition; see also the transcription item
+        in Future Work, which would serve both this and the phone's existing memos
+  - [x] Record audio on the watch and ship the file down when tethered — *done 2026-08-14.*
+        `MemoRecorder` (`MediaRecorder`) → `AudioCaptureSender` → `WearAudioCaptureListenerService`
+        on the phone, landing as an ordinary audio segment. The "optional" route turned out to be
+        the honest one: it needs no network and reuses the receiving end that already existed
 
-- [ ] **Read-aloud media controls** — near-free, take it
-  - [ ] `AudioPlaybackService` already runs a real `MediaSession` with a `PlaybackState` and a
-        `Notification.MediaStyle`, so the watch's media card can drive note playback with no new
-        playback code. The actual work is notification bridging config (don't mark it local-only).
+- [x] **Read-aloud media controls** — *built 2026-08-14, and more than a media card.*
+  - [x] Rather than relying on notification bridging alone, `:wear` drives playback through the
+        Data Layer like everything else: `ReadRequestSender` and `ReadControlSender` on the watch,
+        `WearReadListenerService` and `WearReadControlListenerService` on the phone, with
+        `WearReadStatePublisher` → `ReadStateClient` carrying state back so `ReadAloudActivity`
+        shows what is actually playing. `AudioPlaybackService`'s `MediaSession` is unchanged.
 
 **Out of scope, deliberately** (each of these is a reason, not an omission):
 

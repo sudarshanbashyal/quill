@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.RelativeTime;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
@@ -366,7 +367,8 @@ public class CollectionDetailFragment extends Fragment {
         List<Note> filtered = new ArrayList<>();
         // A note waiting out its undo window is out of this list too, or reloading the collection
         // would put it back under the bar still offering to undo it.
-        for (Note note : filter.apply(allNotesInCollection)) {
+        for (Note note : filter.apply(allNotesInCollection,
+                note -> NoteDisplayUtils.resolveTitle(requireContext(), note))) {
             if (!UndoDelete.isHidden(noteKey(note.id))) filtered.add(note);
         }
         notesAdapter.submitList(filtered);

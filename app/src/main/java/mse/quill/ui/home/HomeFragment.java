@@ -819,13 +819,15 @@ public class HomeFragment extends Fragment implements WindowInsetsUtils.TopInset
     private void applyFilters() {
         homeAdapter.submitCollections(
                 withoutHidden(filter.applyToCollections(allCollections), c -> collectionKey(c.id)));
-        // Boards are matched on their *displayed* title, so searching "untitled" finds the unnamed
-        // ones — the fallback name is what the card shows.
+        // Notes and boards are both matched on their *displayed* title, so searching "untitled"
+        // finds the unnamed ones — the fallback name is what the row shows.
         homeAdapter.submitWhiteboards(withoutHidden(
                 filter.applyToWhiteboards(allWhiteboards,
                         board -> NoteDisplayUtils.resolveWhiteboardTitle(requireContext(), board)),
                 board -> whiteboardKey(board.id)));
-        homeAdapter.submitNotes(withoutHidden(filter.apply(allNotes), note -> noteKey(note.id)));
+        homeAdapter.submitNotes(withoutHidden(
+                filter.apply(allNotes, note -> NoteDisplayUtils.resolveTitle(requireContext(), note)),
+                note -> noteKey(note.id)));
     }
 
     private static <T> List<T> withoutHidden(List<T> items, java.util.function.Function<T, String> key) {

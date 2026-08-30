@@ -80,21 +80,34 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     public void submitCollections(List<Collection> collections) {
-        emptyMessages.clear();
         this.collections = collections;
+        releaseEmptyMessage(R.array.empty_collections_lines, collections);
         notifyDataSetChanged();
     }
 
     public void submitWhiteboards(List<Whiteboard> whiteboards) {
-        emptyMessages.clear();
         this.whiteboards = whiteboards;
+        releaseEmptyMessage(R.array.empty_whiteboards_lines, whiteboards);
         notifyDataSetChanged();
     }
 
     public void submitNotes(List<Note> notes) {
-        emptyMessages.clear();
         this.notes = notes;
+        releaseEmptyMessage(R.array.empty_notes_lines, notes);
         notifyDataSetChanged();
+    }
+
+    /**
+     * Lets a section pick a new line, but only once it has something in it again.
+     *
+     * <p>Every submit used to drop all three held lines. Home re-submits on every keystroke in the
+     * search bar — twice, once for the typed query and once for the index's answer — so a section
+     * that stayed empty across a search still redrew a different line each time, and the same
+     * search run twice said two different things. Held until the section is non-empty, the line a
+     * section is showing changes only when there was something there to replace it.
+     */
+    private void releaseEmptyMessage(int arrayRes, List<?> items) {
+        if (!items.isEmpty()) emptyMessages.remove(arrayRes);
     }
 
     public GridLayoutManager.SpanSizeLookup spanSizeLookup() {
@@ -263,8 +276,8 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      *
      * <p>A fresh line on every bind would reshuffle as the list scrolls or reloads, which reads as
      * a glitch rather than as variety — the same reason Home's greeting is picked once per visit.
-     * Cleared whenever a section's contents change, so an emptied section can say something new
-     * next time.
+     * Released only once the section has contents again (see {@link #releaseEmptyMessage}), so a
+     * section that goes on being empty — search after search — goes on saying the same thing.
      */
     private String emptyMessage(Context context, int position) {
         int arrayRes = emptyMessageArrayRes(position);
