@@ -15,10 +15,11 @@ wrist. Quill does not require an account, backend, or internet connection for it
 
 ## Submission files
 
-| File                    | Description    |
-| ----------------------- | -------------- |
-| **`Quill Report.docx`** | Written report |
-| **`Quill_demo.mp4`**    | Demo video     |
+| File                    | Description          |
+|-------------------------|----------------------|
+| **`Quill Report.docx`** | Written report       |
+| **`Quill Report.pdf`**  | Written report (PDF) |
+| **`Quill_demo.mp4`**    | Demo video           |
 
 Both files are in the repository root.
 
