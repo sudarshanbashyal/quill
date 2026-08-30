@@ -6,28 +6,27 @@
     <string name="widget_pinned_notes_empty">No pinned notes yet</string>
     <string name="widget_collections_header">Collections</string>
     <string name="widget_collections_empty">No collections yet</string>
+    <string name="widget_collections_label">Pinned &amp; Collections</string>
     <string name="widget_collections_description">Pinned notes and collections</string>
     <string name="widget_whiteboards_header">Whiteboards</string>
     <string name="widget_whiteboards_empty">No whiteboards yet</string>
+    <string name="widget_whiteboards_label">Whiteboards</string>
     <string name="widget_whiteboards_description">Recent whiteboards</string>
     <string name="widget_due_cards_header">Due Now</string>
     <string name="widget_due_cards_empty">Nothing due</string>
     <string name="widget_flashcard_decks_header">Decks</string>
     <string name="widget_flashcard_decks_empty">No flashcards yet</string>
+    <string name="widget_flashcards_label">Flashcards</string>
     <string name="widget_flashcards_description">Due flashcards and decks</string>
 
     <!-- Spoken by TalkBack for every header's back arrow (see Widget.Quill.Button.Back). -->
     <string name="action_back">Back</string>
 
     <string name="home_greeting">Welcome back</string>
-    <!-- %1$s is the display name set on the Profile screen. Used only once there is one — the
-         plain greeting above is what an unnamed user gets, rather than a trailing comma. -->
-    <string name="home_greeting_named">Welcome back, %1$s</string>
     <string name="home_greeting_subtitle">Wishing you a productive day…</string>
     <!-- %1$s is one of the home_greetings_* lines, %2$s the display name. Kept as a format string
          rather than concatenated so a translation can put the name first if its language does. -->
     <string name="home_greeting_with_name">%1$s, %2$s</string>
-    <string name="home_header_stars_description">Night sky</string>
     <!-- Whiteboards joined the searchable set on master, so the hint names them too. -->
     <string name="search_hint">Search notes, whiteboards or collections…</string>
     <string name="search_hint_collection">Search notes in this collection…</string>
@@ -81,8 +80,6 @@
     <!-- Quoted so aapt keeps the spaces around the dot; unquoted it collapses to a bare "·". -->
     <string name="count_separator" translatable="false">" · "</string>
 
-    <string name="empty_collections">No collections yet — tap + to make one</string>
-    <string name="empty_notes">No notes yet — tap + to create one</string>
     <string name="empty_notes_in_collection">No notes in this collection yet</string>
     <string name="action_add_note_to_collection">Add a note</string>
     <!-- The two ways a note gets into a collection, offered wherever the collection screen asks. -->
@@ -229,7 +226,14 @@
 
     <!-- Sharing a whiteboard: a lossless .quillboard bundle, distinct from the existing flat-image
          export ("Export as image" reuses export_complete_* below it since it produces a picture). -->
+    <string name="whiteboard_clear_title">Clear whiteboard</string>
+    <string name="whiteboard_clear_message">This will erase everything on this whiteboard. Continue?</string>
+    <string name="whiteboard_clear_confirm">Clear</string>
     <string name="whiteboard_export_image">Export as image</string>
+    <string name="whiteboard_export_failed">Could not export this whiteboard</string>
+    <!-- %1$s is the album folder, %2$s the file name — e.g. "Saved to Pictures/Quill/Quill_20260826_181200.png" -->
+    <string name="whiteboard_export_saved">Saved to %1$s/%2$s</string>
+    <string name="whiteboard_export_needs_storage">Quill needs permission to save into your gallery</string>
     <string name="whiteboard_share">Share whiteboard</string>
     <string name="whiteboard_share_chooser">Share whiteboard</string>
     <string name="import_succeeded_whiteboard">Imported \"%1$s\"</string>
@@ -244,8 +248,6 @@
     <string name="collab_connecting">Connecting…</string>
     <string name="collab_connected">Connected — drawing together now</string>
     <string name="collab_disconnected">Collaboration session ended</string>
-    <string name="collab_scan_failed">Could not read that code</string>
-    <string name="collab_connect_failed">Could not connect to that session</string>
     <!-- One per way joining can fail, so the dialog says what to do rather than what went wrong.
          See CollabSession.Failure. -->
     <string name="collab_error_title">Couldn\'t join</string>
@@ -302,7 +304,16 @@
     <string name="import_succeeded_collection_partial">Imported \"%1$s\" (%2$d of %3$d notes)</string>
 
     <string name="action_open_quiz">Open quiz</string>
+    <string name="dialog_insert_image_title">Insert image</string>
     <string name="dialog_choose_voice_title">Choose a voice</string>
+    <!-- A row in the voice picker: %1$s the voice name, %2$s its quality, %3$s the internet note. -->
+    <string name="voice_label">%1$s (%2$s%3$s)</string>
+    <string name="voice_quality_very_high">Very high</string>
+    <string name="voice_quality_high">High</string>
+    <string name="voice_quality_normal">Normal</string>
+    <string name="voice_quality_low">Low</string>
+    <string name="voice_quality_very_low">Very low</string>
+    <string name="voice_needs_internet"> · needs internet</string>
 
     <!-- Bottom navigation -->
     <string name="nav_home">Home</string>
@@ -374,7 +385,6 @@
     <string name="quizzes_subtitle">Multiple choice, built from your notes\' Q&amp;A blocks</string>
     <string name="quizzes_empty">No quizzes yet. Make one from any note with at least %1$d Q&amp;A blocks.</string>
     <string name="quiz_row_never_taken">Not taken yet</string>
-    <string name="quiz_row_best_format">Best %1$d%%</string>
     <string name="quiz_row_last_taken_format">Last taken %1$s</string>
     <string name="quiz_row_not_completed">Started, never finished</string>
     <plurals name="quiz_row_attempts">
@@ -456,7 +466,6 @@
     <string name="quiz_unavailable_title">Can\'t start this quiz</string>
     <string name="quiz_summary_title">Quiz complete</string>
     <string name="quiz_summary_format">%1$d of %2$d correct · %3$d%%</string>
-    <string name="quiz_results_heading">Your answers</string>
     <!-- ^1 rather than %1$s: these are filled with the Markdown-rendered answer, and only
          TextUtils.expandTemplate keeps its bold/italic spans intact through the substitution. -->
     <string name="quiz_results_your_answer_format">You picked: ^1</string>
@@ -494,15 +503,7 @@
     <string name="delete_audio_message">This audio clip will be removed from the note.</string>
     <string name="action_create_whiteboard">Whiteboard</string>
 
-    <string name="whiteboard_icon_glyph">🎨</string>
     <string name="untitled_whiteboard_with_date">Untitled Whiteboard - %s</string>
-    <string name="empty_whiteboards">No whiteboards yet — tap + to draw one</string>
-    <string name="strokes_count_zero">Empty board</string>
-    <plurals name="strokes_count">
-        <item quantity="one">%d stroke</item>
-        <item quantity="other">%d strokes</item>
-    </plurals>
-    <string name="dialog_new_whiteboard_title">New whiteboard</string>
     <string name="dialog_rename_whiteboard_title">Rename whiteboard</string>
     <string name="whiteboard_name_hint">Whiteboard name</string>
     <string name="whiteboard_nothing_to_undo">Nothing to undo</string>
@@ -582,7 +583,6 @@
     <string name="profile_delete_all_final_message">Type DELETE to confirm. This cannot be undone.</string>
     <string name="profile_delete_all_keyword">DELETE</string>
     <string name="profile_delete_all_hint">Type DELETE</string>
-    <string name="profile_delete_all_done">All data deleted.</string>
 
     <!-- ==================== App lock gate ==================== -->
 

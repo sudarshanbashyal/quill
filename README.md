@@ -32,10 +32,10 @@ study logic independent from Android so that it can be shared between the phone 
 | Module       | Language                            | Description                                                                                                                                                                                                   |
 | ------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`:app`**   | Java · `minSdk 26` / `targetSdk 36` | Main Android application. Contains the UI, SQLite database, sharing, P2P collaboration, exports, and home-screen widgets. Uses one `Activity` with Navigation Component fragments.                            |
-| **`:study`** | Java · plain JVM                    | Contains the study logic: SM-2 scheduling, review sessions, quiz generation, and the data structures used to communicate with the watch. It is deliberately an Android-free `java-library`.                   |
+| **`:shared`** | Java · plain JVM                    | Contains the study logic: SM-2 scheduling, review sessions, quiz generation, and the data structures used to communicate with the watch. It is deliberately an Android-free `java-library`.                   |
 | **`:wear`**  | Kotlin + Compose · `minSdk 30`      | Wear OS companion app. Contains the tile, complication, flashcard review, voice capture, and read-aloud controls. Kotlin is used here because the `protolayout-material3` API does not provide Java builders. |
 
-The `:wear` module depends on `:study`, so both the phone and watch use the same SM-2
+The `:wear` module depends on `:shared`, so both the phone and watch use the same SM-2
 implementation instead of maintaining separate versions of the scheduling logic.
 
 ---
@@ -209,7 +209,7 @@ through the watch face editor.
 Run the JVM tests:
 
 ```bash
-./gradlew :app:testDebugUnitTest :study:test
+./gradlew :app:testDebugUnitTest :shared:test
 ```
 
 Run the instrumented Android tests:
@@ -218,8 +218,8 @@ Run the instrumented Android tests:
 ./gradlew :app:connectedDebugAndroidTest
 ```
 
-The `:study` tests cover SM-2 scheduling, review sessions, quiz generation and scoring, and the
-phone-to-watch due-card projection. Keeping this code in the Android-free `:study` module means
+The `:shared` tests cover SM-2 scheduling, review sessions, quiz generation and scoring, and the
+phone-to-watch due-card projection. Keeping this code in the Android-free `:shared` module means
 these tests can run on the JVM.
 
 ---
@@ -228,7 +228,7 @@ these tests can run on the JVM.
 
 ```text
 app/            Phone application (:app)
-study/          Android-free study logic shared with the watch (:study)
+shared/         Android-free study logic shared with the watch (:shared)
 wear/           Wear OS companion (:wear)
 docs/           README assets
 memory/         Architecture notes, requirements, and build log

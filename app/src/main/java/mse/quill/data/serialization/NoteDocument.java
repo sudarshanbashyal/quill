@@ -8,11 +8,11 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import mse.quill.ui.notes.editor.model.HeadingMarker;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.QaSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
-import mse.quill.ui.notes.editor.model.WhiteboardSegment;
+import mse.quill.data.model.HeadingMarker;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.QaSegment;
+import mse.quill.data.model.TextSegment;
+import mse.quill.data.model.WhiteboardSegment;
 
 /**
  * Converts a note's whole segment list to and from a single Markdown document — the note's source

@@ -14,12 +14,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.audio.ReadPlaylist;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.ImageSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
-import mse.quill.ui.notes.editor.model.QaSegment;
-import mse.quill.ui.notes.editor.model.WhiteboardSegment;
-import mse.quill.ui.notes.editor.model.TextSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.ImageSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.model.QaSegment;
+import mse.quill.data.model.WhiteboardSegment;
+import mse.quill.data.model.TextSegment;
 import mse.quill.ui.notes.editor.segment.AudioSegmentView;
 import mse.quill.ui.notes.editor.segment.BaseSegmentView;
 import mse.quill.ui.notes.editor.segment.ImageSegmentView;

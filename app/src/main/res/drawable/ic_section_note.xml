@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ic_note.png is a 512px asset, so it can't be used as a compound drawable directly — with
-     intrinsic bounds it would draw at 512px. This wrapper pins it to the section-header icon size
-     for both XML (drawableStart) and code (setCompoundDrawablesRelativeWithIntrinsicBounds). -->
+<!-- ic_note.png is a 512px asset in drawable-xxxhdpi/, so its intrinsic size is 128dp and it
+     can't be used as a compound drawable directly. This wrapper pins it to the section-header icon
+     size for both XML (drawableStart) and code
+     (setCompoundDrawablesRelativeWithIntrinsicBounds). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:width="@dimen/section_header_icon"

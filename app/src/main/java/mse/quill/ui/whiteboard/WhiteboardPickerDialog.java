@@ -19,10 +19,11 @@ import java.util.Locale;
 
 import mse.quill.R;
 import mse.quill.data.model.Whiteboard;
-import mse.quill.util.MaxHeightScrollView;
+import mse.quill.ui.common.MaxHeightScrollView;
 import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.RelativeTime;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.ui.common.TextFieldUtils;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Picks an existing whiteboard — used when attaching one to a note.
@@ -42,7 +43,7 @@ public final class WhiteboardPickerDialog {
     private WhiteboardPickerDialog() {}
 
     public static void show(Context context, List<Whiteboard> whiteboards, OnPicked onPicked) {
-        int pad = dimen(context, R.dimen.spacing_lg);
+        int pad = CardStyles.dimen(context, R.dimen.spacing_lg);
 
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -56,10 +57,10 @@ public final class WhiteboardPickerDialog {
         list.setOrientation(LinearLayout.VERTICAL);
 
         MaxHeightScrollView scroll = new MaxHeightScrollView(context);
-        scroll.setMaxHeight(dimen(context, R.dimen.note_picker_max_height));
+        scroll.setMaxHeight(CardStyles.dimen(context, R.dimen.note_picker_max_height));
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        scrollParams.topMargin = dimen(context, R.dimen.spacing_md);
+        scrollParams.topMargin = CardStyles.dimen(context, R.dimen.spacing_md);
         scroll.setLayoutParams(scrollParams);
         scroll.addView(list);
         content.addView(scroll);
@@ -67,7 +68,7 @@ public final class WhiteboardPickerDialog {
         TextView empty = new TextView(context);
         empty.setText(R.string.whiteboard_search_no_match);
         empty.setGravity(Gravity.CENTER);
-        empty.setPadding(0, dimen(context, R.dimen.spacing_md), 0, dimen(context, R.dimen.spacing_md));
+        empty.setPadding(0, CardStyles.dimen(context, R.dimen.spacing_md), 0, CardStyles.dimen(context, R.dimen.spacing_md));
         empty.setAlpha(0.7f);
         empty.setVisibility(android.view.View.GONE);
         content.addView(empty);
@@ -113,15 +114,15 @@ public final class WhiteboardPickerDialog {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        int padding = dimen(context, R.dimen.spacing_sm);
+        int padding = CardStyles.dimen(context, R.dimen.spacing_sm);
         row.setPadding(0, padding, 0, padding);
         row.setClickable(true);
         row.setOnClickListener(v -> onClick.run());
 
         ImageView preview = new ImageView(context);
-        int size = dimen(context, R.dimen.whiteboard_picker_preview_size);
+        int size = CardStyles.dimen(context, R.dimen.whiteboard_picker_preview_size);
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(size, size);
-        previewParams.setMarginEnd(dimen(context, R.dimen.spacing_md));
+        previewParams.setMarginEnd(CardStyles.dimen(context, R.dimen.spacing_md));
         preview.setLayoutParams(previewParams);
         preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
         preview.setBackgroundColor(context.getColor(R.color.surface_container));
@@ -155,7 +156,4 @@ public final class WhiteboardPickerDialog {
         return row;
     }
 
-    private static int dimen(Context context, int dimenRes) {
-        return context.getResources().getDimensionPixelSize(dimenRes);
-    }
 }

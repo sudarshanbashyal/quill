@@ -19,10 +19,11 @@ import java.util.List;
 import java.util.Locale;
 
 import mse.quill.R;
-import mse.quill.data.NoteRepository;
-import mse.quill.util.MaxHeightScrollView;
+import mse.quill.data.NoteStore;
+import mse.quill.ui.common.MaxHeightScrollView;
 import mse.quill.util.NoteDisplayUtils;
-import mse.quill.util.TextFieldUtils;
+import mse.quill.ui.common.TextFieldUtils;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Picks the note a new deck or quiz should be made from.
@@ -40,14 +41,14 @@ import mse.quill.util.TextFieldUtils;
 public final class NoteQaPickerDialog {
 
     public interface OnPicked {
-        void onPicked(NoteRepository.QaCandidate candidate);
+        void onPicked(NoteStore.QaCandidate candidate);
     }
 
     private NoteQaPickerDialog() {}
 
     public static void show(Context context, int titleRes,
-                            List<NoteRepository.QaCandidate> candidates, OnPicked onPicked) {
-        int pad = dimen(context, R.dimen.spacing_lg);
+                            List<NoteStore.QaCandidate> candidates, OnPicked onPicked) {
+        int pad = CardStyles.dimen(context, R.dimen.spacing_lg);
 
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -61,10 +62,10 @@ public final class NoteQaPickerDialog {
         list.setOrientation(LinearLayout.VERTICAL);
 
         MaxHeightScrollView scroll = new MaxHeightScrollView(context);
-        scroll.setMaxHeight(dimen(context, R.dimen.note_picker_max_height));
+        scroll.setMaxHeight(CardStyles.dimen(context, R.dimen.note_picker_max_height));
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        scrollParams.topMargin = dimen(context, R.dimen.spacing_md);
+        scrollParams.topMargin = CardStyles.dimen(context, R.dimen.spacing_md);
         scroll.setLayoutParams(scrollParams);
         scroll.addView(list);
         content.addView(scroll);
@@ -72,7 +73,7 @@ public final class NoteQaPickerDialog {
         TextView noMatch = new TextView(context);
         noMatch.setText(R.string.qa_picker_no_match);
         noMatch.setGravity(Gravity.CENTER);
-        noMatch.setPadding(0, dimen(context, R.dimen.spacing_md), 0, dimen(context, R.dimen.spacing_md));
+        noMatch.setPadding(0, CardStyles.dimen(context, R.dimen.spacing_md), 0, CardStyles.dimen(context, R.dimen.spacing_md));
         noMatch.setAlpha(0.7f);
         noMatch.setVisibility(View.GONE);
         content.addView(noMatch);
@@ -88,7 +89,7 @@ public final class NoteQaPickerDialog {
                     .trim().toLowerCase(Locale.getDefault());
             list.removeAllViews();
             int shown = 0;
-            for (NoteRepository.QaCandidate candidate : candidates) {
+            for (NoteStore.QaCandidate candidate : candidates) {
                 String title = NoteDisplayUtils.resolveTitle(context, candidate.note);
                 if (!query.isEmpty()
                         && !title.toLowerCase(Locale.getDefault()).contains(query)) {
@@ -113,11 +114,11 @@ public final class NoteQaPickerDialog {
         dialog.show();
     }
 
-    private static View buildRow(Context context, NoteRepository.QaCandidate candidate,
+    private static View buildRow(Context context, NoteStore.QaCandidate candidate,
                                  String title, Runnable onClick) {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.VERTICAL);
-        int padding = dimen(context, R.dimen.spacing_sm);
+        int padding = CardStyles.dimen(context, R.dimen.spacing_sm);
         row.setPadding(0, padding, 0, padding);
         row.setClickable(true);
         row.setFocusable(true);
@@ -141,7 +142,4 @@ public final class NoteQaPickerDialog {
         return row;
     }
 
-    private static int dimen(Context context, int dimenRes) {
-        return context.getResources().getDimensionPixelSize(dimenRes);
-    }
 }

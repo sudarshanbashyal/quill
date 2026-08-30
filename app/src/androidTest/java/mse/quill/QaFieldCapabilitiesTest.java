@@ -17,7 +17,7 @@ import org.junit.runner.RunWith;
 import java.util.concurrent.atomic.AtomicReference;
 
 import mse.quill.ui.notes.editor.RichTextField;
-import mse.quill.ui.notes.editor.model.HeadingMarker;
+import mse.quill.data.model.HeadingMarker;
 import mse.quill.ui.notes.editor.segment.QASegmentView;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
 

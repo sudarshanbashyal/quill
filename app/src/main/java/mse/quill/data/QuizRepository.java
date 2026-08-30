@@ -7,8 +7,8 @@ import android.database.sqlite.SQLiteDatabase;
 
 import org.json.JSONArray;
 import org.json.JSONException;
-import mse.quill.ui.quiz.QuizQuestion;
-import mse.quill.ui.quiz.QuizSession;
+import mse.quill.study.quiz.QuizQuestion;
+import mse.quill.study.quiz.QuizSession;
 import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +17,8 @@ import java.util.UUID;
 
 import mse.quill.data.model.Quiz;
 import mse.quill.data.model.QuizAttempt;
-import mse.quill.ui.quiz.QuizRules;
+import mse.quill.study.quiz.QuizRules;
+import mse.quill.study.quiz.QuizGenerator;
 
 /**
  * Quizzes and the history of sitting them.
@@ -76,7 +77,7 @@ public class QuizRepository {
     /** Whether this note already has a quiz — what decides between "Make quiz" and "Open quiz". */
     public void existsForNote(String noteId, OnExists cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Cursor c = db.rawQuery("SELECT COUNT(*) FROM quizzes WHERE note_id = ?",
                     new String[]{noteId});
             boolean exists = false;
@@ -296,7 +297,7 @@ public class QuizRepository {
      */
     public void loadAttemptAnswers(String attemptId, OnAnswersLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<QuizSession.Result> results = new ArrayList<>();
             try (Cursor c = db.rawQuery(
                     "SELECT source_id, prompt, options, correct_index, selected_index "

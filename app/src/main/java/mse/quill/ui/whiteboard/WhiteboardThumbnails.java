@@ -7,7 +7,6 @@ import android.view.View;
 
 import java.util.List;
 
-import mse.quill.data.AppDatabase;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.WhiteboardRepository;
@@ -15,6 +14,8 @@ import mse.quill.data.WhiteboardTextRepository;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.model.WhiteboardText;
+import mse.quill.widget.WidgetThumbnailCache;
+import mse.quill.widget.WidgetUpdater;
 
 /**
  * Draws the little preview of a board that Home's cards show.
@@ -69,9 +70,8 @@ public final class WhiteboardThumbnails {
         Context appContext = context.getApplicationContext();
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
-            AppDatabase db = AppDatabase.getInstance(appContext);
-            List<Stroke> strokes = new StrokeRepository(db).getByWhiteboard(whiteboard.id);
-            List<WhiteboardText> texts = new WhiteboardTextRepository(db).getByWhiteboard(whiteboard.id);
+            List<Stroke> strokes = new StrokeRepository(appContext).getByWhiteboardSync(whiteboard.id);
+            List<WhiteboardText> texts = new WhiteboardTextRepository(appContext).getByWhiteboardSync(whiteboard.id);
             if (strokes.isEmpty() && texts.isEmpty()) {
                 executors.mainThread(() -> onReady.onThumbnail(null));
                 return;
@@ -87,19 +87,46 @@ public final class WhiteboardThumbnails {
                     // WhiteboardView off-screen the way this method does — has something to read
                     // synchronously. See mse.quill.widget.WidgetThumbnailCache.
                     executors.diskIO(() -> {
-                        mse.quill.widget.WidgetThumbnailCache.write(
+                        WidgetThumbnailCache.write(
                                 appContext, whiteboard.id, rendered);
                         // The widget reads that file rather than rendering anything, so a board
                         // edited since the widget last drew keeps showing the old picture until it
                         // is asked again. Here rather than on every canvas change: a re-render only
                         // happens when the in-memory cache misses, which is exactly when the
                         // picture on disk has actually changed.
-                        mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+                        WidgetUpdater.notifyWhiteboardsChanged(appContext);
                     });
                 }
                 onReady.onThumbnail(rendered);
             });
         });
+    }
+
+    /**
+     * Renders this board purely to fill the widget's disk mirror, for a caller with nowhere to put
+     * a bitmap.
+     *
+     * <p>The whiteboards widget can't render anything itself — see {@link WidgetThumbnailCache} —
+     * so a board Home has never drawn would sit on the placeholder glyph indefinitely, and a
+     * widget full of such boards shows the same picture for every one of them. This is that
+     * render, requested from the widget's own data reload; {@link #load} already mirrors what it
+     * draws to disk and refreshes the widget afterwards.
+     *
+     * <p>The in-memory hit is handled separately because {@code load} short-circuits on it and
+     * would never reach the disk write — exactly the case where this app process has drawn the
+     * board on Home but the file has since been cleared.
+     */
+    public static void cacheForWidget(Context context, Whiteboard whiteboard) {
+        Context appContext = context.getApplicationContext();
+        Bitmap cached = CACHE.get(key(whiteboard));
+        if (cached != null) {
+            AppExecutors.getInstance().diskIO(() -> {
+                WidgetThumbnailCache.write(appContext, whiteboard.id, cached);
+                WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            });
+            return;
+        }
+        load(appContext, whiteboard, thumbnail -> { /* the disk mirror is the point, not the bitmap */ });
     }
 
     /** Delivered on the main thread. A board that has been deleted since reports a null board. */
@@ -115,7 +142,7 @@ public final class WhiteboardThumbnails {
         Context appContext = context.getApplicationContext();
         AppExecutors executors = AppExecutors.getInstance();
         executors.diskIO(() -> {
-            Whiteboard board = new WhiteboardRepository(AppDatabase.getInstance(appContext))
+            Whiteboard board = new WhiteboardRepository(appContext)
                     .getByIdSync(whiteboardId);
             executors.mainThread(() -> {
                 if (board == null) {

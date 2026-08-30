@@ -1,7 +1,6 @@
 package mse.quill.ui.collections;
 
 import android.content.Context;
-import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -23,31 +22,37 @@ import java.util.ArrayList;
 import java.util.List;
 
 import mse.quill.R;
+import mse.quill.util.NoteDisplayUtils;
 import mse.quill.util.RelativeTime;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.NoteRepository;
+import mse.quill.data.NoteStore;
 import mse.quill.data.model.Collection;
 import mse.quill.data.TagRepository;
 import mse.quill.data.model.Note;
 import mse.quill.data.model.Tag;
-import mse.quill.share.CollectionBundle;
-import mse.quill.share.CollectionBundleWriter;
+import mse.quill.bundle.CollectionBundle;
+import mse.quill.bundle.CollectionBundleWriter;
 import mse.quill.ui.home.CollectionDialogs;
 import mse.quill.ui.home.NotesAdapter;
 import mse.quill.ui.notes.NoteEditorFragment;
-import mse.quill.util.SwipeToDelete;
-import mse.quill.util.UndoDelete;
+import mse.quill.ui.common.SwipeToDelete;
+import mse.quill.ui.common.UndoDelete;
 import mse.quill.ui.search.NoteFilter;
 import mse.quill.ui.search.SearchFilterBar;
 import mse.quill.ui.search.SearchFilterDialog;
-import mse.quill.util.NoteExportStore;
+import mse.quill.export.NoteExportStore;
+import mse.quill.export.ShareIntents;
 
 public class CollectionDetailFragment extends Fragment {
 
     public static final String ARG_COLLECTION_ID = "collection_id";
     public static final String ARG_COLLECTION_NAME = "collection_name";
 
+    /** The concrete repository, not {@link NoteStore}: this screen exports a collection, and
+     *  {@code loadForBundleSync} is deliberately off the interface. Holding the concrete type is
+     *  the signal that it is doing something a screen normally should not. */
     private NoteRepository noteRepository;
     private CollectionRepository collectionRepository;
     private NotesAdapter notesAdapter;
@@ -260,14 +265,10 @@ public class CollectionDetailFragment extends Fragment {
                     Toast.makeText(requireContext(), R.string.share_failed, Toast.LENGTH_SHORT).show();
                     return;
                 }
-                Intent send = new Intent(Intent.ACTION_SEND)
-                        .setType(CollectionBundle.MIME_TYPE)
-                        .putExtra(Intent.EXTRA_STREAM, saved.uri)
-                        .putExtra(Intent.EXTRA_TITLE, saved.displayName)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                try {
-                    startActivity(Intent.createChooser(send, getString(R.string.share_collection_chooser)));
-                } catch (android.content.ActivityNotFoundException e) {
+                boolean opened = ShareIntents.sendFile(requireContext(), saved.uri,
+                        CollectionBundle.MIME_TYPE, saved.displayName,
+                        getString(R.string.share_collection_chooser));
+                if (!opened) {
                     Toast.makeText(requireContext(), R.string.share_no_target, Toast.LENGTH_LONG).show();
                 }
             });
@@ -295,7 +296,7 @@ public class CollectionDetailFragment extends Fragment {
         if (isPinned) {
             noteRepository.unpinNote(note.id, this::reloadNotes);
         } else {
-            noteRepository.pinNote(note.id, new NoteRepository.OnPinResult() {
+            noteRepository.pinNote(note.id, new NoteStore.OnPinResult() {
                 @Override public void onPinned() { reloadNotes(); }
 
                 @Override public void onLimitReached() {
@@ -366,7 +367,8 @@ public class CollectionDetailFragment extends Fragment {
         List<Note> filtered = new ArrayList<>();
         // A note waiting out its undo window is out of this list too, or reloading the collection
         // would put it back under the bar still offering to undo it.
-        for (Note note : filter.apply(allNotesInCollection)) {
+        for (Note note : filter.apply(allNotesInCollection,
+                note -> NoteDisplayUtils.resolveTitle(requireContext(), note))) {
             if (!UndoDelete.isHidden(noteKey(note.id))) filtered.add(note);
         }
         notesAdapter.submitList(filtered);

@@ -1,6 +1,7 @@
 package mse.quill.data;
 
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
@@ -12,21 +13,41 @@ import mse.quill.data.model.WhiteboardText;
 /**
  * Reads and writes the typed text placed on a whiteboard.
  *
- * <p>Deliberately the same shape as {@link StrokeRepository} — insert, read a board's worth, delete one,
- * delete them all — because a text item behaves exactly like a stroke: added, undone, or cleared,
- * never edited. Kept as a lower-level DAO alongside StrokeRepository rather than a repository, matching
- * how {@code WhiteboardFragment} already talks to the database (see note.md, Epic A).
+ * <p>Deliberately the same shape as {@link StrokeRepository}, down to the async/{@code Sync} split
+ * — insert, read a board's worth, delete one, delete them all — because a text item behaves exactly
+ * like a stroke: added, undone, or cleared, never edited. See {@link StrokeRepository} for why the
+ * two surfaces exist.
  */
 public class WhiteboardTextRepository {
 
     private final AppDatabase db;
+    private final AppExecutors executors = AppExecutors.getInstance();
 
-    public WhiteboardTextRepository(AppDatabase db) {
-        this.db = db;
+    public WhiteboardTextRepository(Context context) {
+        this.db = AppDatabase.getInstance(context.getApplicationContext());
     }
 
-    /** Insert or replace a text item (REPLACE means re-saving the same id overwrites it). */
+    // ── Async: for the UI thread ──────────────────────────────────────────────
+
+    /** Insert or replace a text item, off the caller's thread. */
     public void insert(WhiteboardText item) {
+        executors.diskIO(() -> insertSync(item));
+    }
+
+    /** Remove one text item (used by Undo), off the caller's thread. */
+    public void delete(String id) {
+        executors.diskIO(() -> deleteSync(id));
+    }
+
+    /** Remove every text item on a whiteboard (used by Clear), off the caller's thread. */
+    public void deleteAllForWhiteboard(String whiteboardId) {
+        executors.diskIO(() -> deleteAllForWhiteboardSync(whiteboardId));
+    }
+
+    // ── Blocking: for callers already on the disk thread ──────────────────────
+
+    /** Insert or replace a text item (REPLACE means re-saving the same id overwrites it). */
+    public void insertSync(WhiteboardText item) {
         ContentValues v = new ContentValues();
         v.put("id", item.id);
         v.put("whiteboard_id", item.whiteboardId);
@@ -43,7 +64,7 @@ public class WhiteboardTextRepository {
     }
 
     /** Fetch every text item on a whiteboard, oldest first, so undo order survives reopening. */
-    public List<WhiteboardText> getByWhiteboard(String whiteboardId) {
+    public List<WhiteboardText> getByWhiteboardSync(String whiteboardId) {
         List<WhiteboardText> results = new ArrayList<>();
         Cursor c = db.getReadableDatabase().query(
                 "whiteboard_texts", null,
@@ -58,12 +79,12 @@ public class WhiteboardTextRepository {
     }
 
     /** Remove one text item (used by Undo). */
-    public void delete(String id) {
+    public void deleteSync(String id) {
         db.getWritableDatabase().delete("whiteboard_texts", "id = ?", new String[]{id});
     }
 
     /** Remove every text item on a whiteboard (used by Clear, and when a board is deleted). */
-    public void deleteAllForWhiteboard(String whiteboardId) {
+    public void deleteAllForWhiteboardSync(String whiteboardId) {
         db.getWritableDatabase().delete(
                 "whiteboard_texts", "whiteboard_id = ?", new String[]{whiteboardId});
     }

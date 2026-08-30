@@ -30,31 +30,71 @@ Suggested sequencing for a 2-person team:
 
 ## Epic A — Engineering Foundations & Data Safety (P0)
 
+*Structural work found alongside this epic — god classes, misplaced packages, upward
+dependencies — is planned separately in [refactoring_plan.md](refactoring_plan.md) rather than
+here, because it is behaviour-preserving cleanup and this list is about what the app does.*
+
 **Why first**: the app is about to grow encryption, P2P sync, and background jobs on
 top of it. All three are hard to debug on an SQLite layer with a destructive
 `onUpgrade`, two different threading patterns, and no automated tests. Fixing this now
 costs little (small codebase); fixing it after Epic C lands costs a lot (sync bugs
 masquerading as migration bugs).
 
-- [ ] **Safe schema migrations** — *more urgent since 2026-07-28: the schema moved to v3
-      for the Markdown migration and the destructive `onUpgrade` duly wiped every
-      existing note on next launch. That was accepted as dev-stage policy at the time,
-      but it will not be acceptable once anyone else installs this.*
-  - [ ] Replace `AppDatabase.onUpgrade`'s drop-and-recreate with real `ALTER TABLE` /
-        versioned migration steps — **v3 → v4 done 2026-08-03** (whiteboards gained
-        title/created_at/updated_at; additive, so it migrates in place and keeps user data).
-        Every other version step still takes the destructive branch
-  - [ ] Add a migration test: seed an older-shaped DB with data, run the upgrade, assert
-        rows survive
-- [ ] **Unify background DB access**
-  - [ ] Port `StrokeRepository` / `WhiteboardRepository`'s Sync methods / `WhiteboardFragment`
-        off ad hoc `new Thread(...)` calls onto the shared `AppExecutors.diskIO()` used by the
-        other repositories. *(2026-08-07: the DAOs were renamed to repositories and
-        `WhiteboardDao` folded into `WhiteboardRepository`, with its synchronous methods carrying a
-        `Sync` suffix so a UI-thread call reads as wrong. The naming is consistent now; the
-        threading is not.)*
-  - [ ] Audit all fragments for any accidental main-thread `SQLiteDatabase` access
-- [ ] **Automated test coverage** *(70 instrumented tests under `app/src/androidTest` as of
+- [x] **Safe schema migrations** — *done 2026-08-23. Was: the schema moved to v3 for the
+      Markdown migration on 2026-07-28 and the destructive `onUpgrade` duly wiped every existing
+      note on next launch. Accepted as dev-stage policy at the time; not acceptable once anyone
+      else installs this.*
+  - [x] Replace `AppDatabase.onUpgrade`'s drop-and-recreate with real migration steps —
+        **v3 → v4 done 2026-08-03** (whiteboards gained title/created_at/updated_at), and
+        **the pre-v3 branch done 2026-08-23**. `rebuild()` is now *deleted*, not merely
+        unreachable, so no later edit can fall back into it. A pre-v3 database is converted in
+        place by `migrateLegacyNotesToMarkdown`: each note's old `note_segments` rows are read in
+        `position` order and composed into one Markdown document, then the table is rebuilt in its
+        v3 shape keeping the media rows. Possible only because the old `text_content` blobs were
+        `Html.toHtml` output rather than a custom binary format — the decode is ten lines, and
+        lives with the migration rather than as a resurrected `SpanSerializer`
+  - [x] **The reshape is not cosmetic**: the old table declares `position INTEGER NOT NULL` and
+        nothing since v3 supplies a position, so leaving the old shape would have failed every
+        image or recording insert afterwards — a database that upgraded but could not be written to
+  - [x] `onDowngrade` no longer throws. The default crashes on every launch for anyone who
+        installs an older build over a newer one; the schema only grows, so the honest response is
+        to leave the file alone
+  - [x] **`biometric_locked` is now added before the FTS backfill runs**, not after. It was after,
+        and `backfillNotesFts` joins on that column — so a database old enough to lack it (every
+        pre-v3 one) silently skipped the search backfill and came out with an empty index
+  - [x] Add a migration test: `DatabaseMigrationTest` seeds a v2-shaped database with a note, a
+        picture, a board, a card, a tag and a collection, upgrades it, and asserts every row
+        survives, the document is composed in the right order with formatting intact, the media
+        registry keeps its ids, a second open changes nothing, and the result is still *writable*.
+        Needs `AppDatabase.openForTest(context, name)` — the only seam that makes it possible,
+        since the real helper is a singleton bound to `quill.db` and a test there would be
+        upgrading the device's actual notes
+- [x] **Unify background DB access** — *done 2026-08-23*
+  - [x] Port `StrokeRepository` / `WhiteboardRepository`'s Sync methods / `WhiteboardFragment`
+        off ad hoc `new Thread(...)` calls onto the shared `AppExecutors.diskIO()`. All 21 sites
+        (20 in `WhiteboardFragment`, one in `CollabSessionHolder`) now go through the single shared
+        disk thread. **This was a correctness fix, not tidying**: a thread was spawned per
+        completed stroke and another to delete on undo, with nothing ordering them, so a fast undo
+        could issue its delete on a thread that beat the insert
+  - [x] `StrokeRepository` and `WhiteboardTextRepository` gained the same async/`Sync` split the
+        other repositories have — the unsuffixed methods post to `diskIO`, the `Sync` ones block
+        and are for callers already off the main thread. The naming convention now covers every
+        repository rather than all but two
+  - [x] Several of those threads called `requireActivity().runOnUiThread(...)` and
+        `requireContext()` *from the background thread*, which throws if the fragment detached
+        first — the same crash class the collab crash fix patched at the listener level. Gone with
+        the port: `AppExecutors.mainThread` needs no activity
+  - [x] The DAO-era field names `strokeDao`/`textDao` in `WhiteboardFragment` finally became
+        `strokeRepo`/`textRepo`
+  - [x] Audit all fragments for any accidental main-thread `SQLiteDatabase` access. Every blocking
+        call outside `data/` was checked; **one real finding**, `WhiteboardFragment.onCreate`'s
+        `insertSync` of a new board, justified at the time because `strokes` has a foreign key onto
+        that row and the stroke inserts ran on unordered threads. Now that every write on the
+        screen goes through one FIFO thread, queueing it first is enough, and it moved off the main
+        thread. Everything else — the widgets' `RemoteViewsFactory`, `StudyReminderWorker`,
+        `StartupTasks`, the bundle writers — was already on a background thread
+- [x] **Automated test coverage** — *all listed gaps closed 2026-08-23; CI dropped at the user's
+      request, see the last item* *(70 instrumented tests under `app/src/androidTest` as of
       2026-07-29, run with `./gradlew :app:connectedDebugAndroidTest`; plus 30 JVM unit
       tests under `app/src/test` as of 2026-08-01, run with
       `./gradlew :app:testDebugUnitTest` — the study logic is deliberately Android-free so
@@ -79,11 +119,33 @@ masquerading as migration bugs).
         the correct answer not always in the same slot, shuffled question order — JVM
   - [x] Quiz scoring (`QuizSessionTest`): one pass with no requeue, a timeout counted as
         wrong rather than skipped, an abandoned run scoring what it reached — JVM
-  - [ ] Collection/Tag repository CRUD — still uncovered
-  - [ ] `NoteEditorView` segment split/merge/delete (image/audio insertion mid-text,
-        backspace-merge at segment boundary) — still uncovered
-  - [ ] Wire up CI (e.g. GitHub Actions) to run tests + lint on every PR
-- [ ] **Fix bugs found during architecture review**
+  - [x] Database migration (`DatabaseMigrationTest`) — a v2-shaped database upgraded and every
+        row asserted; see the migrations section above
+  - [x] Collection/Tag repository CRUD (`CollectionAndTagRepositoryTest`, 2026-08-23) — create,
+        rename, delete, note counts, lock state, tag sort order. The two that earn their keep are
+        the relationship cases: deleting a collection must leave its notes alive and unfiled, and
+        `setNoteTags` is a *replace* whose difference from an append only shows on the second call
+  - [x] `NoteEditorView` segment split/merge/delete (`NoteEditorViewSegmentTest`, 2026-08-23) —
+        image/audio insertion mid-text, at both ends of a paragraph, formatting carried across the
+        split, backspace-merge at a segment boundary with the caret landing on the join, and both
+        deliberate refusals: backspacing into a picture does not delete it, and the last remaining
+        segment cannot be removed. Writing it turned up an undocumented fallback —
+        `getFocusedSegmentIndex` defaults to the *last* segment rather than refusing, so a block
+        inserted with nothing focused lands above the final paragraph. Pinned down as a test rather
+        than changed
+  - [x] **Two stale JVM tests fixed** (2026-08-23): `DisplayNameTest` still asserted that spaces
+        are stripped from a display name, which stopped being true when spaces were deliberately
+        allowed ("Sudarshan Bashyal" is a name a person has). The tests were never updated and the
+        JVM suite had been red ever since. Now they assert the documented rule, plus the space
+        handling that had no coverage at all — runs collapsed, ends trimmed, a dropped leading
+        space not charged against the length budget
+  - [ ] ~~Wire up CI to run tests + lint on every PR~~ — **dropped 2026-08-23 at the user's
+        request.** Worth knowing if it ever comes back: `./gradlew :app:lintDebug` currently fails
+        with 5 errors (a `MediaStore.Downloads` field above minSdk in `NoteExportStore`, a
+        FINE/COARSE location pair in the manifest, `RichTextField` not extending
+        `AppCompatEditText`, and two `android:tint` uses that want `app:tint`), so a lint gate
+        would be red on day one
+- [x] **Fix bugs found during architecture review**
   - [x] `WhiteboardFragment.exportWhiteboard()` shows a "Export failed" toast
         unconditionally even after a successful export *(fixed 2026-08-03)*
   - [x] Opening a note or whiteboard and leaving it reported "Updated now" — both save-on-pause
@@ -622,7 +684,7 @@ worse than no tile, so D's reminders infrastructure is a real prerequisite, not 
 `fbc25a2` it is built, which is what turned this epic from blocked into next.
 
 **Build order, decided 2026-08-13** — phased by feature, not by language (see the stack decision
-below). **Phase 0**: the `:study` extraction, alone, proven by its own tests. **Phase 1**: the
+below). **Phase 0**: the `:shared` extraction, alone, proven by its own tests. **Phase 1**: the
 projection and the two native surfaces — publish the `DataItem` from the phone, receive and cache
 it on the watch, tile + complication, tap through to the phone. **Phase 2**: the Compose review
 screen and the `MessageClient` return path. Nothing in phase 1 is rewritten by phase 2: the Kotlin
@@ -632,7 +694,7 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
       everything else depends on it.* `FlashcardScheduler`, `ReviewSession`, `QuizSession`,
       `QuizGenerator`, `QuizRules`
       and the `Flashcard` model import nothing but `java.util` today (verified 2026-08-08). Move
-      them to a plain-JVM `:study` module that both `:app` and `:wear` depend on, so SM-2 cannot
+      them to a plain-JVM `:shared` module that both `:app` and `:wear` depend on, so SM-2 cannot
       drift between the two. The existing JVM tests move with it and keep running without a device.
   - [x] **The list above was one class short**: `QuizQuestion` moved too — `QuizGenerator` builds
         them and `QuizSession` holds them, and its constructor is package-private, so leaving it
@@ -645,7 +707,12 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         changed module, zero imports touched" — reviewable at a glance, which a sixty-file rename
         carrying the same zero behaviour change is not. Rename later if it ever earns itself.
 
-- [ ] **Sync architecture — a projection, not a replica** — *built 2026-08-13, round trip unverified*
+- [ ] **Sync architecture — a projection, not a replica** — *built 2026-08-13/14. Two things
+      keep this open: the offline queue below, and the fact that the round trip has never run
+      end to end — the publish path reaches the GMS boundary and fails with `Wearable.API is
+      not available`, because pairing two emulators needs the companion app and a Google
+      sign-in. The tile's never-synced state is verified on `emulator-5556`; every non-empty
+      state is written but unexercised.*
   - [x] The watch holds today's due cards and nothing else, pushed as a `DataItem` over the Wear
         Data Layer. **No Room/SQLite copy of Quill on the watch.** `DataItem`s cap near 100 KB,
         which conveniently forbids the wrong design anyway — no media, no asset registry, no
@@ -664,22 +731,34 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         due continuously, so a projection filtered at publish time says "all caught up" at 09:00
         for a card that came due at 09:05. Ship everything due through end-of-day and let the
         watch re-filter against its own clock.
-  - [ ] Q&A halves reach the watch as `NoteDocument`'s **plain-text projection**. Rich text,
-        bullets and `RichTextField` do not get ported.
-  - [ ] Reviews travel back as append-only events (`card id, grade, timestamp`) via
-        `MessageClient`, replayed through the *phone's* `FlashcardScheduler`. SM-2 state is never
-        computed on the watch and copied over — same reasoning as Epic C's append-only strokes:
-        it turns the merge into a dedupe.
-  - [ ] **`recordReview` has to learn to honour the event's timestamp.** It currently calls
-        `applyReview(card, correct, System.currentTimeMillis())`, which is right for a review
-        answered on the phone and wrong for one replayed off the queue: a session done on a plane
-        and drained at 22:00 would have every interval anchored to 22:00. Needs a
-        `recordReview(card, correct, long now)` overload — small, and the failure is silent
-        interval corruption rather than anything that announces itself.
+  - [x] Q&A halves reach the watch as `NoteDocument`'s **plain-text projection** — *done
+        2026-08-13.* `FlashcardRepository.dueProjectionSync` calls `NoteDocument.toPlainText`:
+        Markdown on disk, plain text on the wrist, converted on the phone rather than on the
+        watch. Rich text, bullets and `RichTextField` are not ported.
+  - [x] Reviews travel back as append-only events via `MessageClient` — *done 2026-08-14.*
+        `AnswerSender` → `AnswerEventKeys.PATH` → `WearAnswerListenerService`, replayed through
+        the *phone's* `FlashcardScheduler`. A message and **not** a `DataItem`, deliberately: an
+        answer is an event, and an item keyed by card id would have a second answer to the same
+        card overwrite the first. SM-2 state is never computed on the watch — `DueCard` carries no
+        easiness, interval or repetitions, so the watch structurally cannot.
+  - [x] **`recordReview` honours the event's timestamp** — *done 2026-08-14.* The
+        `recordReview(card, correct, long answeredAt, Runnable)` overload exists and the watch
+        path uses it; the listener **drops** an event whose `answered_at` is missing rather than
+        falling back to `now()`, since that default is exactly the silent interval corruption the
+        parameter exists to prevent.
   - [ ] `CapabilityClient` for phone discovery; queue events while untethered and drain on
-        reconnect.
-  - [ ] **Tethered, not standalone** — Quill is offline-first with no cloud, so a watch with no
-        phone has no way to obtain content. Declare it as such rather than leaving it ambiguous.
+        reconnect. **Still open, and the only part of the return path that is.** `AnswerSender`
+        uses `NodeClient.connectedNodes` and sends to every node rather than picking `node[0]`,
+        but it **fails soft and does not queue**: a send with no connected node is logged and
+        dropped. That is a deliberate trade recorded in the class — a dropped answer costs one
+        card's schedule advance, while a retry queue means persistence, ordering and duplicate
+        suppression on the device with the least room for any of them. Revisit only if answers
+        are actually observed going missing.
+  - [x] **Tethered, not standalone** — *declared 2026-08-13.* A watch with no phone has no way
+        to obtain content, and the UI says so rather than implying a fault: no `DataItem` renders
+        "Open on phone", which is deliberately distinct from an empty list rendering "All caught
+        up". The complication returns *no data* in the first case rather than 0, so a watch face
+        can never report someone up to date on the strength of never having heard from the phone.
   - [x] **Decided 2026-08-13: `:wear` is Kotlin from the first commit.** The app is 145 Java files
         and no Kotlin, so this is the project's first Kotlin, and the temptation was to defer it —
         build the tile in Java, add Compose later only for the review screen. That plan does not
@@ -688,49 +767,64 @@ plugin is already there and adding Compose to a module that compiles Kotlin is p
         (M3 Expressive, `MaterialScope`, `Material3TileService`) is **Kotlin-only, with no Java
         builders at all**. A Java tile is therefore a Material 2.5 tile — a *second* divergence
         from Epic H's Material 3 standard, bought to avoid a language boundary the review screen
-        forces anyway. So the boundary goes at the module edge instead: `:app` and `:study` stay
+        forces anyway. So the boundary goes at the module edge instead: `:app` and `:shared` stay
         Java, `:wear` is Kotlin + Compose, and the phasing below is by feature, not by language.
   - [x] **Correction to the note this replaces**: Wear's view-based widgets are *not* deprecated.
         `androidx.wear:wear` ships; individual pieces are retired (`AmbientModeSupport` →
         `AmbientLifecycleObserver`), and Compose is merely "the recommended approach". The reason
         to skip the view path is the M2.5/M3 split above, not deprecation — worth keeping straight
         so the decision isn't defended later on a claim that isn't true.
-  - [ ] The `:wear` module needs its own `minSdk` (30+) against the app's 26.
+  - [x] The `:wear` module has its own `minSdk` — *done 2026-08-13.* `minSdk = 30` in
+        `wear/build.gradle.kts`; watches below 30 run a different app model entirely and
+        supporting them would mean a second UI toolkit.
 
-- [ ] **Flashcard review on the wrist** — the feature that justifies the epic
-  - [ ] Front → tap to flip → right/wrong. That is already `ReviewSession`'s whole API surface;
-        the watch screen is a thin view over it.
-  - [ ] Due-first with the same "all caught up" state as `FlashcardsFragment`, minus
-        "review anyway" (a wrist session is a queue, not a browser).
+- [x] **Flashcard review on the wrist** — *built 2026-08-14 (phase 2).*
+  - [x] Front → tap to flip → right/wrong. `ReviewActivity` is a thin Compose view over
+        `ReviewSession` — the same compiled class the phone runs, from `:shared`.
+  - [x] Due-first, with the same "all caught up" state as `FlashcardsFragment` and no
+        "review anyway": a wrist session is a queue, not a browser.
 
-- [ ] **Tile + complication** — the genuinely watch-native surfaces, and cheap
+- [x] **Tile + complication** — *built 2026-08-13/14.* Both surfaces ship and read the same
+      projection; the one remaining child is closed as superseded rather than outstanding.
   - [x] Tile (`androidx.wear.tiles` / ProtoLayout): due count. Built on `Material3TileService`,
         whose `tileResponse` is an **extension function on `MaterialScope`**, not a method taking
         one — worth knowing, since `this` inside it is the scope and not the service, and the
         scope carries a `Context` of its own that an unqualified `getString` will silently pick
-  - [ ] "Review N" straight into a session — waiting on the phase-2 review screen to send it to
+  - [x] "Review N" straight into a session — *done 2026-08-14.* `DueTileService` sets its click
+        action to `ReviewActivity`, which is what phase 2 re-pointed it to; nothing else changed
   - [x] Watch-face complication (`ComplicationDataSourceService`): the due count alone
-  - [ ] Both read the same projected count. **No longer blocked** (2026-08-13): Epic D's reminder
+  - [x] Both read the same projected count — *done 2026-08-13.* `DueTileService` and
+        `DueComplicationService` both call `DueProjectionClient.read()`, so neither can drift
+        from the other. **Was blocked, then not** (2026-08-13): Epic D's reminder
         infrastructure shipped in `fbc25a2`, and `StudyReminderWorker` is exactly the scheduled
         refresh this was waiting for — it already runs daily and already computes the count, so a
         `getUpdater().requestUpdate()` beside its `notify()` keeps the tile fresh for free
-  - [ ] **Phase 1's tile taps through to the phone**, via `RemoteActivityHelper`, before the
-        on-watch review screen exists. That is a real feature and not a placeholder — "12 due,
-        tap to open Quill" — and phase 2 re-points the click without touching anything else.
-        **Not built yet, and deliberately not stubbed**: `RemoteActivityHelper` needs an
-        `ACTION_VIEW` intent with a data URI, so it needs a deep link on `:app`'s `MainActivity`
-        first. The dependency is declared and the tile is shipping without an edge button rather
-        than with a dead one
+  - [ ] ~~**Phase 1's tile taps through to the phone**, via `RemoteActivityHelper`~~ —
+        **superseded, not outstanding.** This existed to give the tile somewhere to send a tap
+        *before* an on-watch review screen existed. Phase 2 landed the day after, so the tile taps
+        into `ReviewActivity` instead and there is nothing left for this to solve. Close it rather
+        than carrying it: building it now would add a second, worse destination for the same tap.
+        **One consequence to act on:** `wear-remote-interactions` is still declared in
+        `wear/build.gradle.kts` and nothing imports it — a dead dependency, alongside
+        `barcode-scanning-common` in `:app`. Verify the build resolves without both and drop them
 
-- [ ] **Voice capture → note** — the one authoring act a watch does better than a pocketed phone
-  - [ ] `RecognizerIntent` on-watch → text appended to an "Inbox" note (or a new note)
-  - [ ] Optional: record audio on the watch and ship the file down when tethered — the receiving
-        end already exists (`AudioRecorder`, audio segments, waveform)
+- [x] **Voice capture → note** — *built 2026-08-14, by the second route rather than the first.*
+  - [ ] `RecognizerIntent` on-watch → text appended to an "Inbox" note. **Not built, and now the
+        optional half rather than the primary one.** Speech recognition on a watch needs a network
+        round trip on most devices, which is the one thing Quill's offline-first design will not
+        assume. Worth revisiting only with on-device recognition; see also the transcription item
+        in Future Work, which would serve both this and the phone's existing memos
+  - [x] Record audio on the watch and ship the file down when tethered — *done 2026-08-14.*
+        `MemoRecorder` (`MediaRecorder`) → `AudioCaptureSender` → `WearAudioCaptureListenerService`
+        on the phone, landing as an ordinary audio segment. The "optional" route turned out to be
+        the honest one: it needs no network and reuses the receiving end that already existed
 
-- [ ] **Read-aloud media controls** — near-free, take it
-  - [ ] `AudioPlaybackService` already runs a real `MediaSession` with a `PlaybackState` and a
-        `Notification.MediaStyle`, so the watch's media card can drive note playback with no new
-        playback code. The actual work is notification bridging config (don't mark it local-only).
+- [x] **Read-aloud media controls** — *built 2026-08-14, and more than a media card.*
+  - [x] Rather than relying on notification bridging alone, `:wear` drives playback through the
+        Data Layer like everything else: `ReadRequestSender` and `ReadControlSender` on the watch,
+        `WearReadListenerService` and `WearReadControlListenerService` on the phone, with
+        `WearReadStatePublisher` → `ReadStateClient` carrying state back so `ReadAloudActivity`
+        shows what is actually playing. `AudioPlaybackService`'s `MediaSession` is unchanged.
 
 **Out of scope, deliberately** (each of these is a reason, not an omission):
 
@@ -811,6 +905,6 @@ the three RemoteViews gotchas hit, and what's reused vs. new live in
   Any surface that leaves the phone — the watch today, Epic I's widget tomorrow — has to
   go through `NoteCrypto.hiddenCollectionIds` the way `countDueSync` does. Worth stating
   once here rather than rediscovering it per surface.
-- Epic J's `:study` module extraction is also the cheapest way to keep Epic A's promise
+- Epic J's `:shared` module extraction is also the cheapest way to keep Epic A's promise
   that the study logic stays Android-free — today that's a convention nothing enforces,
   and a module boundary makes the compiler enforce it.

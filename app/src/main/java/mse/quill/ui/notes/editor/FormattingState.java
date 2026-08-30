@@ -1,6 +1,6 @@
 package mse.quill.ui.notes.editor;
 
-import mse.quill.ui.notes.editor.model.HeadingMarker;
+import mse.quill.data.model.HeadingMarker;
 
 /**
  * What the toolbar should show right now: which formats are on, and which are even offered.

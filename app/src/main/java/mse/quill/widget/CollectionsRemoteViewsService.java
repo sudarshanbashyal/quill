@@ -13,6 +13,7 @@ import mse.quill.MainActivity;
 import mse.quill.R;
 import mse.quill.data.CollectionRepository;
 import mse.quill.data.model.Collection;
+import mse.quill.DeepLinkRouter;
 
 public class CollectionsRemoteViewsService extends RemoteViewsService {
     @Override
@@ -64,8 +65,8 @@ public class CollectionsRemoteViewsService extends RemoteViewsService {
                         collection.noteCount + (collection.noteCount == 1 ? " note" : " notes"));
 
                 Intent fillIn = new Intent();
-                fillIn.putExtra(MainActivity.EXTRA_OPEN_COLLECTION_ID, collection.id);
-                fillIn.putExtra(MainActivity.EXTRA_OPEN_COLLECTION_NAME, collection.name);
+                fillIn.putExtra(DeepLinkRouter.EXTRA_OPEN_COLLECTION_ID, collection.id);
+                fillIn.putExtra(DeepLinkRouter.EXTRA_OPEN_COLLECTION_NAME, collection.name);
                 views.setOnClickFillInIntent(R.id.widget_item_root, fillIn);
                 return views;
             } catch (RuntimeException e) {

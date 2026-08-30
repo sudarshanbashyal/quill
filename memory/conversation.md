@@ -4009,6 +4009,373 @@ one specifically needs a live two-plus-device collab session to exercise the par
 whether a peer's stroke landing in a far corner actually re-aims this device's PIP window the way
 it's meant to.
 
+## 2026-08-23 (later still) — A refactoring plan, and the whole of Epic A (Architecture / Feature implementation)
+
+Two halves. First an architecture sweep of `feat/multiUserWhiteboard` — what is left to build, and
+what does not follow good practice — written up as a plan to tackle later. Then everything
+outstanding in Epic A, implemented.
+
+**The sweep found seven structural problems and one bug class.** They live in the new
+`memory/refactoring_plan.md` as cause → solution → steps, `OPEN` except the one done here. In
+order of leverage: `WhiteboardFragment` is a god class (1421 lines, ~90 methods, four
+responsibilities, with snapshot-reassembly state as *fragment fields*, so a half-received board
+belongs to an object Android may destroy mid-transfer); the domain model (`NoteSegment` and its six
+subclasses) sits in `ui/notes/editor/model/` and is imported by eleven packages including
+`data/` and `share/`, so persistence and the export format depend on the editor's package; the data
+layer calls *upward* into `widget/` — `NoteRepository` alone has eight inline fully-qualified
+`WidgetUpdater` calls, written fully-qualified rather than imported, which is the tell it was
+bolted on; three different repository constructor conventions; no abstraction boundary between UI
+and data (ten fragments `new` their concrete repositories, `NoteEditorFragment` six of them), which
+is precisely why repository tests had to be instrumented; and `data/` is a grab bag holding eight
+Wear transport classes among the repositories.
+
+Deliberately *not* on the list, recorded so a later sweep doesn't re-discover them: `NoteCrypto`
+living in `data/` rather than `security/` (it is the notes-table side of `CollectionCrypto` and
+says so), the `:study`/`:app` split packages (a documented trade from the extraction — noted that
+the cost has since accrued, and to fix it only when something else forces the files open), and the
+things that are already right: zero hardcoded strings across 27 layouts, `isAdded()` guards in
+every fragment, `ensureAdditiveSchema` checking for columns rather than trusting version numbers.
+
+**The migration was possible because of what the deleted `SpanSerializer` turned out to be.**
+Epic A's oldest item was the destructive `onUpgrade`. The obstacle looked fatal: a pre-v3 database
+stores note bodies as `note_segments` rows with formatted text in a `text_content` BLOB, and the
+class that wrote that blob was deleted in `1aa1045`. Recovering it from git showed the format was
+`Html.toHtml` output — plain HTML, not a custom binary encoding — so the decode is ten lines and
+the conversion is lossless for everything v2 could express. It lives inside `AppDatabase` with the
+migration rather than as a resurrected class, because it decodes a format nothing writes any more.
+
+`rebuild()` is now **deleted, not merely unreachable**: leaving a drop-and-recreate branch in place
+is leaving somewhere for a later edit to fall.
+
+Three things the migration turned up that were not on anyone's list. The old table declares
+`position INTEGER NOT NULL` and nothing since v3 supplies a position, so *not* reshaping it would
+have produced a database that upgraded successfully and then failed every image insert afterwards.
+`onDowngrade` was inherited from `SQLiteOpenHelper`, which throws — meaning anyone installing an
+older Quill over a newer one gets a crash on every launch with their notes intact and unreachable.
+And `biometric_locked` was added to `collections` *after* `ensureNotesFts` ran, while
+`backfillNotesFts` joins on that column — so every database old enough to lack it silently skipped
+the search backfill and came out with an empty index. Moving one line up fixed it.
+
+`DatabaseMigrationTest` needed a seam: the real helper is a singleton bound to `quill.db`, so a
+test seeding an old-shaped database there would be upgrading — and on failure destroying — the
+notes actually on the device. `AppDatabase.openForTest(context, name)` is that seam and does not
+route through `getInstance`, so a test connection is never handed to app code.
+
+**The threading port was a correctness fix, not tidying.** All 21 `new Thread` sites (20 in
+`WhiteboardFragment`, one in `CollabSessionHolder`) now go through `AppExecutors`' single disk
+thread. A thread was being spawned per completed stroke and another to delete on undo, with nothing
+ordering them — a fast undo could issue its delete on a thread that beat the insert. Several of
+those threads also called `requireActivity().runOnUiThread(...)` and `requireContext()` *from the
+background thread*, which throws once the fragment detaches: the same crash class the collab crash
+fix patched at the listener level, still sitting here. `AppExecutors.mainThread` needs no activity,
+so the port removed it.
+
+`StrokeRepository` and `WhiteboardTextRepository` gained the async/`Sync` split the other
+repositories already had, so the convention now covers every repository rather than all but two.
+The DAO-era `strokeDao`/`textDao` field names finally went.
+
+The main-thread audit found exactly **one** real offender: `WhiteboardFragment.onCreate`'s
+`insertSync` of a new board, justified when it was written because `strokes` has a foreign key onto
+that row and the stroke inserts ran on unordered threads. Unifying the threading is what made it
+removable — one FIFO thread means queueing it first is enough.
+
+**Two JVM tests had been red and nobody noticed.** `DisplayNameTest` still asserted that spaces are
+stripped from a display name; that stopped being true when spaces were deliberately allowed
+("Sudarshan Bashyal" is a name a person has, and excluding the space quietly meant nobody could
+type their own). The tests were never updated. Fixed to assert the documented rule, plus the space
+handling that had no coverage at all — runs collapsed, ends trimmed, a dropped leading space not
+charged against the length budget.
+
+**Writing the editor test found an undocumented fallback.** `getFocusedSegmentIndex` defaults to
+the *last* segment rather than returning -1, so a block inserted with nothing focused lands *above*
+the final paragraph rather than after it. Pinned down as a test rather than changed — it is
+reachable only before the user has touched the editor. Two other traps for anyone writing view
+tests here: segment views inflate Material widgets, so the bare application context fails with
+"requires your app theme to be Theme.MaterialComponents" and needs a `ContextThemeWrapper`; and
+`requestFocus()` does work on a detached hierarchy, which is what makes caret-position tests
+possible without an Activity.
+
+**CI was built and then removed** — the user said they don't need it, mid-turn. Worth knowing if it
+returns: `:app:lintDebug` currently fails with 5 errors (a `MediaStore.Downloads` field above
+minSdk in `NoteExportStore`, a FINE/COARSE location pair in the manifest, `RichTextField` not
+extending `AppCompatEditText`, two `android:tint` uses wanting `app:tint`), so a lint gate would be
+red on day one.
+
+**Verification, and its limit.** 139 instrumented tests and the full JVM suite pass — 26 of those
+instrumented tests are new. The connected suite uninstalls the app each run, so `quill.db`,
+`shared_prefs` and `files` were tarred out through `run-as` beforehand and restored after each of
+the four runs, md5-identical every time (`19a04b99037df05ab270f8fdb9b072d3`). The app launches
+clean afterwards. What could **not** be checked: the whiteboard fragment's live persistence and
+collab paths by hand — this install has App Lock on and opens straight onto the PIN sheet, and no
+PIN was supplied this session. The whiteboard tests that pass cover `WhiteboardView`, not the
+fragment's database path.
+
+## 2026-08-26 — The refactoring pass: seven of eight items (Architecture)
+
+**Asked:** resolve the merge conflicts, then do the refactoring — meaning
+`memory/refactoring_plan.md`, written three days earlier and untouched since.
+
+**The merge first.** `refactor` had the R4 threading work; `9d925b4` brought Picture-in-Picture
+across. Two conflicts, both from work done in parallel rather than disagreement.
+`WhiteboardFragment.commitText` had the repository insert on one side and PIP's `noteLastEdit` on
+the other — both wanted, so both kept and the raw thread dropped. `conversation.md` had two session
+entries appended at the same spot; kept both.
+
+**Then R1, R2, R3, R5, R6 (steps 1–3), R7a and R8, one commit each.** R7b is the only thing left
+OPEN, and the plan says to leave it until something forces those files open. Every commit compiled
+clean and ran `testDebugUnitTest`; three also built the APK.
+
+Things the plan did not anticipate, which are the parts worth remembering:
+
+- **R1 came out at 1124 lines, not the 800 targeted.** Not incomplete work — the 800 was measured
+  against the 1421-line file, and PIP landed on that screen afterwards. Export and share are the
+  next extractable seam there; deliberately not touched, since they were not in R1's scope.
+- **R3 needed an `Application` subclass, and there wasn't one.** `MainActivity` was the plan's
+  fallback, but a widget's `RemoteViewsService` or a Wear message can write without the activity
+  ever starting, which would leave widgets stale. `QuillApplication` is one class and one manifest
+  attribute. R3 also needed a `Change.EVERYTHING` the plan didn't list — locking a collection
+  genuinely is not one list's business.
+- **R3 changed behaviour on purpose, once.** `WhiteboardRepository.appContext` existed only to
+  hand back to `WidgetUpdater` and was null for the database-only constructor, silently skipping
+  the refresh. It's gone, so create/rename/delete now always notify. The old comment justified the
+  gap by saying those callers "run far more often than a widget needs" — but they call
+  `insertSync`/`getByIdSync`, not the three notifying methods, so nothing fires more often.
+- **R5's escape hatch wasn't needed.** The plan allowed keeping a package-private `AppDatabase`
+  constructor if some caller needed to share a handle. All twelve call sites already had a
+  `Context` and were calling `AppDatabase.getInstance(...)` on the line above purely to satisfy the
+  constructor — and `AppDatabase` is a singleton anyway.
+- **R7a ran straight into R7b.** Java gives a subpackage no package-private access, so moving the
+  `Wear*` classes exposed that the `*Keys` classes they speak in live in **`:study`**, in package
+  `mse.quill.data`. That split package has now imposed a real cost rather than a threatened one.
+  It also forced a visibility decision on `NoteCrypto`: rather than making the whole class public,
+  the class and exactly three lock-state queries (`isLocked`, `lockedCollectionIds`,
+  `excludeCollectionsClause`) are public and everything touching a key or ciphertext stays
+  package-private. Those three answer "which collections are shut", not "what does this say".
+- **R8's `getReadableDatabase` sweep needed transitive checking.** Classifying per method and
+  looking for write verbs is not enough: `CollectionLockRepository.lock`/`unlock` and three
+  `QuizRepository` loaders contain no write call of their own and would have been converted by the
+  obvious regex — they delegate to `writeNotes`, `relinkWhiteboards`, `convertNoteMediaSync` and
+  `abandonStaleSync`, which do `execSQL`. 28 of 68 sites converted.
+- **R6's nested types moved for free.** An implementing class inherits an interface's nested types,
+  so moving `OnNoteLoaded`, `OnPinResult`, `QaCandidate` and friends onto `NoteStore` left
+  `NoteRepository.OnPinResult` still resolving at every call site. Worth knowing — it makes this
+  kind of move far cheaper than it looks.
+
+**What R6 does *not* buy yet, stated plainly.** The item is named for making JVM tests possible.
+`Repositories` is a static factory that fragments call internally, so a fake still cannot be
+substituted into a fragment. What exists today is the documented boundary and the `Sync` methods
+being off it. Step 4 (ViewModels) is untouched, which is what the plan asks for.
+
+**Not verified on-device, and each for a specific reason:** the collab paths need a live two-device
+session; the Wear projection needs a paired watch (`R7a`'s own step 3); the widget refresh needs a
+widget pinned to a home screen; the deep links need a widget tap, a reminder notification and a
+`.quill` opened from a file manager. Everything compiles, `testDebugUnitTest` passes, the APK
+builds from clean, and all 18 manifest components resolve in the *merged* manifest — which covers
+the silent-failure risk in the Wear move, but not the round trips themselves.
+
+`memory/note.md` had three current-tense claims the pass falsified (the DAO-vs-repository access
+pattern, the "second uncoordinated threading pattern" that R4 already removed, and the synchronous
+whiteboard insert). Corrected, and a section describing the structure as it now stands appended.
+
+## 2026-08-26 (later) — Icons, a second sweep, and two real bugs (Architecture / Bug fixing)
+
+Three things after the R1–R8 pass, in one session.
+
+**The PIP icon and the drawable folder.** Swapped in the supplied `pip.png` (renamed `ic_pip.png`;
+the vector had to go, since both resolve to `R.drawable.ic_pip`). Then the user asked how to manage
+`drawable/` having a mix of XML and PNG — and the honest answer turned out not to be about format
+at all. `res/drawable/` with no qualifier means **mdpi**, so a 1024px PNG was being treated as
+1024dp and *upscaled*: `ic_mic.png` decoded to 3072×3072, **37.7 MB of heap**, to be drawn at 40dp.
+The 41 icons moved to `drawable-xxxhdpi/`; `ic_stars.png` (58×62) went to `drawable-xxhdpi/`
+instead, being genuinely a 3x asset for its 20dp box. Nothing on screen changed — every icon is
+drawn at a fixed size, checked before moving. Lint's `IconDensities` now wants five copies of each
+and is switched off in a new `app/lint.xml` with the reasoning *in the file*, because the obvious
+"fix" is to generate 205 files on lint's authority.
+
+**A second architecture sweep, R9–R16.** The first sweep was about layering; this one is mostly
+duplication. Two copies had already drifted into defects, which is what made it worth doing.
+
+**Both defects fixed, before any tidying.** `WhiteboardFragment.exportWhiteboard` had its own copy
+of MediaStore handling instead of calling `ImageExporter`, and the copy set `RELATIVE_PATH`
+unconditionally (an API 29 column, against `minSdk 26`), never asked for `WRITE_EXTERNAL_STORAGE`
+where API 26–28 requires it, and skipped `IS_PENDING`. Whiteboard PNG export was very likely broken
+on 26–28. Separately, `DataWipe` cleared four of six `SharedPreferences` files — `home_prefs` and
+`note_reader_prefs` survived "delete everything", and `home_prefs` holds the pinned count Home
+draws placeholder cards from, so a wiped Quill opened onto ghost cards for notes that no longer
+existed. Its own comment two lines above explains why it clears `filesDir` wholesale: a hand-kept
+list "would quietly rot". The prefs list had rotted. Now enumerated off `shared_prefs/` — but
+cleared through the `SharedPreferences` API, not by deleting files, since the framework caches a
+live instance per name that would write itself back out.
+
+**Then R10 and R11.** R10's plan step was wrong and got changed on contact: it said rename `share/`
+to `export/`, but all nine files there are the bundle *format* and three are readers, which serve
+import. Split three ways instead — `bundle/` (the format), `export/` (the four exporters out of
+`util/`, plus a new `ShareIntents`), `data/*Importer` (unchanged). `ShareIntents` replaced three
+hand-written copies of the `ACTION_SEND` incantation, which is three chances to forget
+`FLAG_GRANT_READ_URI_PERMISSION` — the line whose absence shows up as the target app failing on
+read with nothing to explain why. R11 then pulled `NoteExportController` (330 lines) out of
+`NoteEditorFragment`: 1298 → 1062 lines, and — the better measure — thirteen imports gone, zero
+remaining references to any exporter or bundle class. The fragment no longer knows file formats
+exist.
+
+**Two unplanned improvements fell out of R11.** The storage-permission callback now carries both
+outcomes rather than one action plus a hardcoded `abandonExport()` on refusal; the old shape
+expressed only one and worked by accident. And `exportMedia`'s pending path/result were fragment
+fields, so two picture exports requested before the permission resolved would clobber each other —
+closure captures now.
+
+**Not verified on a device.** No emulator was running all session and only the physical phone was
+attached, which this project's convention says not to use. The export fix specifically wants an API
+26–28 emulator, since that is the only place its symptom was visible. Everything compiles from
+clean, unit tests pass, the APK builds, and all 18 manifest components resolve in the merged
+manifest.
+
+Left open deliberately: R9 (three copies of the collab join flow), R13 (`:study` holding seven
+wire-protocol classes), R14 (`util/` is four packages, `dimen()` declared seven times), R15
+(`AppDatabase` = schema + 400 lines of migrations), R16 (small things), and R11 steps 3–4, which
+want doing alongside R16's note on `ReadAloud`'s nine mutable statics.
+
+## 2026-08-28 — Clearing the second sweep: R9, R13, R14a, R15, R16, R11 step 3 (Architecture)
+
+Everything left in `refactoring_plan.md` bar two deliberate non-items. One commit per item,
+`gradlew assemble` + unit tests + androidTest compile green after each.
+
+**R15 — `AppDatabase` 748 → 133 lines.** Schema (271) and Migrations (387) are their own files
+now. One seam needed a decision rather than a cut: `ensureNotesFts` *creates* the FTS5 table
+(schema) and then *fills it from existing rows* (migration), so it splits along exactly that line —
+`Schema.ensureNotesFts` creates, then calls `Migrations.backfillNotesFts`.
+
+**R9 — three copies of the collab join flow, and the question underneath it.** `CollabEntry` owns
+the ladder, the scan and the error dialog, and stops at the token. The real content was the
+disagreement: Home created the `whiteboards` row and passed its id, the `quill://` path passed none
+and let the screen mint one. **The fragment mints it** — its path has to exist regardless, so
+Home's is the one that goes, taking an async hop before a navigation with it. Home's scan-failure
+dialog also gained the "scan again" button the whiteboard's always had; that was never a decision,
+just one copy that missed an improvement.
+
+**R14a — `util/` broken up by what its files are.** `DataWipe` → `data/`; eight UI-behaviour
+classes → `ui/common/`. Six genuine helpers left. Checked *before* moving that no layout inflates
+`MaxHeightScrollView` by name — a `View` subclass moving package fails at runtime, not compile time.
+
+**R13 — `:study` renamed `:shared`, with honest packages.** `mse.quill.sync` for the seven
+wire-protocol classes, `mse.quill.study.{scheduling,review,quiz}` for the rest. This also closed
+R7(b). The deferred cost came due visibly: 17 imports had to be added across `:app` and `:wear`,
+because classes in `:app`'s own `ui.quiz` and `ui.flashcards` had been reaching these as
+same-package neighbours. That was the deliberate trade when `:study` was extracted; this was the
+bill. `mse.quill.data.model` stays shared on purpose — `Flashcard` and `DueCard` belong beside
+`Note` and `Stroke`.
+
+**R11 step 3 — `NoteReadAloudController`.** Fragment 1025 → **978**, under the 1000 the item asked
+for. `describeVoice` held six hardcoded strings the sweep's grep had missed, because they were
+built by concatenation rather than passed to a UI method — worth remembering as a limit of that
+grep.
+
+**R16 — and a regression it caught.** Fully-qualified inline refs 26 → 0 (the three that look like
+matches are intent-action *strings*; a blind regex would have broken the media notification
+silently). Hardcoded strings 7 → 0. 19 unused resources deleted. `PipAware.PipHost` makes the PIP
+contract symmetric. And the lint pass surfaced a regression **I** had introduced in R17:
+`whiteboard_export_needs_storage` had become unreferenced, meaning a refused storage permission now
+said nothing — `StoragePermission` hands back an `onDenied` and the whiteboard was passing an empty
+one. Restored. It surfaced from a string losing its last reference, not from reading the diff.
+
+**Two things deliberately not done, and closed rather than left open.** `ReadAloud`'s nine mutable
+statics: it is a genuine process-wide playback session — the role `CollabSessionHolder` fills, which
+the first sweep called "the good one" — and converting static fields to a singleton instance changes
+nothing observable while touching 18 methods across 7 files including three Wear services, on the
+one component that cannot be verified without a device. And the `EmptyState` helper: four fragments
+share a *two-line idiom*, not duplication, and a class plus four imports to save four lines is
+indirection for its own sake.
+
+**Still open:** `WhiteboardThumbnails`' package (real, but needs a decision about where thumbnail
+rendering belongs), and the two ViewModel steps, which are closed as "do it when a screen is
+observed re-loading", not queued.
+
+**Still not verified on a device.** No emulator ran; only the physical phone was attached, which
+this project's convention says not to use. The API 26–28 storage path, collab, the Wear projection,
+widget refresh and the deep links are all unexercised end to end.
+
+## 2026-08-29 — Widget picker labels, and the duplicated whiteboard thumbnails (Bug fixing)
+
+**The picker showed three widgets all called "Quill".** None of the three `<receiver>`s declared
+`android:label`, so `AppWidgetProviderInfo.label` fell back to the application label and only the
+descriptions underneath differed. Three strings, three attributes: *Pinned & Collections*,
+*Whiteboards*, *Flashcards*. Confirmed in the picker on the emulator. The picker *previews* stay
+as they are — they render `previewLayout` with empty data, which the user explicitly said was fine
+as a placeholder.
+
+**"Thumbnails for the widget's whiteboards are the same."** Two separate causes, and the second one
+took the measuring to find.
+
+*The one visible in the code.* `WidgetThumbnailCache` was only ever written by Home rendering a
+card, so a board never scrolled past — or every board, after the cache was cleared — fell back to
+`ic_whiteboard`, and a widget of such boards is the same glyph repeated. The widget now asks for
+the renders it is missing from its own `onDataSetChanged` (`WhiteboardThumbnails.cacheForWidget`),
+capped at six per pass because the factory loads *every* board and each render is a main-thread
+pass through a `WhiteboardView`. Each batch's refresh brings the next through. Verified with the
+app never in the foreground: cache deleted, widget alone wrote both files.
+
+*The one the emulator found.* With both files on disk and correct, the widget still showed the
+first board's drawing in both cells. Logging `getViewAt` proved the factory was innocent — it
+handed out two bitmaps of different sizes for positions 0 and 1 — so the fault was downstream, in
+how the row was carrying its picture. `setImageViewBitmap` does not send the bitmap with the row;
+it puts it in the RemoteViews bitmap cache and refers to it by index, and every row built in
+`getViewAt` starts a cache of its own and so asks for index 0. When the launcher reloads the grid
+mid-fetch those indices resolve against one shared cache and every board wears the first board's
+drawing — which is exactly the shape of the failure: *always* position 0's image, never a mix.
+
+Two fixes, measured separately against a scripted repro (clear the cache, launch, screenshot,
+compare the two thumbnail regions pixel-for-pixel — a hand-rolled PNG decoder, since the bug is
+invisible to `uiautomator`):
+
+| | duplicated |
+|---|---|
+| `setImageViewBitmap`, refresh per render | 5 / 6 |
+| `setImageViewBitmap`, refreshes coalesced | 1 / 8 |
+| `Icon.createWithBitmap`, refresh per render | 0 / 6 |
+| `Icon.createWithBitmap`, coalesced (shipped) | 0 / 18 |
+
+So both were kept: an `Icon` carries its pixels with the row and has no index to resolve, and
+`WidgetUpdater` now coalesces every widget refresh on a 200 ms handler. The coalescing is worth
+having on its own — `WhiteboardThumbnails.load` fires one refresh per board rendered, so opening
+Home with a screenful of boards was sending a burst of `notifyAppWidgetViewDataChanged` where one
+would do.
+
+**Worth remembering.** The bug reproduces only when thumbnails are being written *underneath* a
+live widget, which is why it looks intermittent and why the first two "fixes" both seemed to work
+once. A/B with a counted trial, not a screenshot.
+
+## 2026-08-30 — Architecture diagrams for the report, and two stale claims in note.md (Documentation)
+
+**The diagrams.** Built a set of architecture diagrams to draft from for the report's section 3:
+a package-structure map of the three modules, a layered view of the notes/flashcards slice, the
+note-storage pipeline, the copy-vs-live-session split, the segment double hierarchy, the 2.1
+scenario end to end, and the watch round trip. The two that went into the report were redrawn by
+hand afterwards, per the assignment's first rule.
+
+**Two corrections that came out of writing them up, both to `note.md` rather than to code:**
+
+- **"`onUpgrade` is still destructive"** — false since 2026-08-23, and the section said so for a
+  month. Migrations are non-destructive on every path: a pre-v3 database is converted in place,
+  `rebuild()` is deleted rather than unreachable, and `onDowngrade` runs the additive path instead
+  of throwing. `DATABASE_VERSION` was recorded as 4; it is 12.
+- **"Nothing queries `notes_fts` yet"** — also false. `NoteStore.searchNoteIds` queries the index
+  and falls back to reading bodies where FTS5 is absent.
+
+Both had already been fixed in code and recorded correctly in `requirements.md`; only `note.md`
+disagreed. Worth noting how they surfaced: not from reading the code, but from writing a report
+section that *claimed* them as future work, then checking. A document that is read as the
+starting point for onboarding is exactly the one whose stale entries propagate — these two nearly
+went into a submitted report as outstanding work.
+
+**The one piece of migration work genuinely still open**, now written into `note.md`: nothing
+asserts that `Schema.createAll` and `Migrations.ensureAdditiveSchema` converge on the same
+schema. Drift between them has bitten the project twice — `biometric_locked` and `notes_fts`,
+both in `onCreate` only — and both were found in use rather than by a test.
+`DatabaseMigrationTest` covers a v2 upgrade, idempotency and a downgrade, but not convergence.
+
+**Not verified on a device.** Documentation only; no code changed, so nothing was run.
+
+
 ## 2026-08-31 — README, and getting `assembleRelease` clean for submission
 
 **Asked:** a README covering the submission files, the modules and the features, with install
@@ -4058,3 +4425,4 @@ Verification of the release build itself was done on a second AVD (`Quill_Phone_
 1400 ms cycle clock, `AccelerateDecelerateInterpolator`, `DOT_MIN_SCALE`), rendered at 4×
 supersampling against `brand_lavender`/`brand_ink`, so it stays correct only as long as those
 constants do. Generator script is not checked in; it lives in the session scratchpad.
+

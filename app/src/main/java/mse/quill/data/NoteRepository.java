@@ -21,35 +21,25 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
+import mse.quill.data.DataChangeNotifier.Change;
 import mse.quill.data.model.Note;
 import mse.quill.security.CollectionLock;
 import mse.quill.security.MediaFiles;
 import mse.quill.data.model.Tag;
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.ui.notes.editor.model.AudioSegment;
-import mse.quill.ui.notes.editor.model.ImageSegment;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.AudioSegment;
+import mse.quill.data.model.ImageSegment;
+import mse.quill.data.model.NoteSegment;
+import mse.quill.data.wear.WearNoteListPublisher;
+import mse.quill.data.wear.WearProjectionPublisher;
 
-public class NoteRepository {
+public class NoteRepository implements NoteStore {
 
     public static final int MAX_PINNED_NOTES = 3;
 
-    public interface OnNoteLoaded { void onLoaded(Note note, List<NoteSegment> segments); }
-    public interface OnNotesLoaded { void onLoaded(List<Note> notes); }
-    public interface OnPinResult { void onPinned(); void onLimitReached(); }
-
-    /** Outcome of a save into a collection that may be encrypted. */
-    public interface OnNoteSaved {
-        void onSaved();
-
-        /**
-         * The note's collection is locked and its key would not encrypt — the authentication
-         * window closed while the note was open. <b>Nothing was written.</b> The editor still
-         * holds the text, so the caller's job is to get the collection unlocked and save again,
-         * not to warn about lost work.
-         */
-        default void onNeedsUnlock() {}
-    }
+    // The callbacks and QaCandidate live on NoteStore — the interface owns its own vocabulary.
+    // They stay reachable as NoteRepository.OnNoteLoaded and friends, since an implementing class
+    // inherits an interface's nested types, so the concrete callers below did not have to change.
 
     private final AppDatabase appDatabase;
     private final AppExecutors executors;
@@ -70,6 +60,7 @@ public class NoteRepository {
      * to {@link #saveNote} queues behind this insert on the shared single disk thread, so the
      * writes land in order without the caller having to track whether creation is still in flight.
      */
+    @Override
     public void createNote(String noteId, String title, String collectionId, Runnable onCreated) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -85,7 +76,7 @@ public class NoteRepository {
             // The Collections widget counts a collection's notes, so a new one changes a row that
             // is already on the home screen. Widgets have no periodic refresh (updatePeriodMillis
             // is 0), so a change that isn't pushed is a change that never arrives.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
 
             if (onCreated != null) executors.mainThread(onCreated);
         });
@@ -106,7 +97,7 @@ public class NoteRepository {
      * instead — silently, and to a place the user did not choose.
      */
     public boolean noteExistsSync(String noteId) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         try (Cursor c = db.rawQuery(
                 "SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL",
                 new String[]{noteId})) {
@@ -148,15 +139,17 @@ public class NoteRepository {
         return noteId;
     }
 
+    @Override
     public void loadNote(String noteId, OnNoteLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             Note note = getNoteSync(db, noteId);
             List<NoteSegment> segments = note == null ? new ArrayList<>() : getSegmentsSync(db, noteId);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(note, segments));
         });
     }
 
+    @Override
     public void saveNote(String noteId, String title, List<NoteSegment> segments, Runnable onSaved) {
         saveNote(noteId, title, segments, new OnNoteSaved() {
             @Override public void onSaved() {
@@ -165,6 +158,7 @@ public class NoteRepository {
         });
     }
 
+    @Override
     public void saveNote(String noteId, String title, List<NoteSegment> segments, OnNoteSaved cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -259,10 +253,10 @@ public class NoteRepository {
             // so can the whiteboards a note embeds, which is what decides whether a board counts as
             // belonging to a locked collection. Before the Wear publish below, which blocks on a
             // Data Layer round trip — the widgets shouldn't wait behind the watch.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyWhiteboardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
+            DataChangeNotifier.getInstance().notifyChanged(Change.WHITEBOARDS);
             if (flashcardsChanged) {
-                mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+                DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
             }
 
             // After the callback, matching recordReview and syncFromNote: the editor returns at
@@ -335,6 +329,7 @@ public class NoteRepository {
         }
     }
 
+    @Override
     public void deleteNote(String noteId, Runnable onDeleted) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -357,8 +352,8 @@ public class NoteRepository {
             // have had, its collection's note count — and its deck, since the cards stay in the
             // table when a note is trashed (restoring the note restores them) and drop out of the
             // decks and due-now queries by their note's deleted_at alone.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
 
             // The watch's pickers are built from this list, and until now only a *save* rebuilt it.
             // A delete therefore left the note on the wrist — offered, tappable, and gone by the
@@ -380,6 +375,7 @@ public class NoteRepository {
      * <p>A move that can't be converted is abandoned rather than half-done: the note stays where
      * it is, readable, which is the only safe way to fail here.
      */
+    @Override
     public void assignCollection(String noteId, String collectionId, Runnable onDone) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -451,8 +447,8 @@ public class NoteRepository {
             // A move changes both collections' counts, and — moving into a locked collection — can
             // take a pinned note off the widget entirely. It also deletes the note's flashcards on
             // the way in, which is the decks list's business.
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
-            mse.quill.widget.WidgetUpdater.notifyFlashcardsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
+            DataChangeNotifier.getInstance().notifyChanged(Change.FLASHCARDS);
 
             // A move can change whether the watch is allowed to see this note at all: into a
             // locked collection and its title has to leave the wrist, out of one and it may
@@ -462,6 +458,7 @@ public class NoteRepository {
     }
 
     /** Pins the note, unless {@link #MAX_PINNED_NOTES} notes are already pinned. */
+    @Override
     public void pinNote(String noteId, OnPinResult cb) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
@@ -483,35 +480,38 @@ public class NoteRepository {
             ContentValues cv = new ContentValues();
             cv.put("pinned_at", System.currentTimeMillis());
             db.update("notes", cv, "id = ?", new String[]{noteId});
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
             if (cb != null) executors.mainThread(cb::onPinned);
         });
     }
 
+    @Override
     public void unpinNote(String noteId, Runnable onDone) {
         executors.diskIO(() -> {
             SQLiteDatabase db = appDatabase.getWritableDatabase();
             ContentValues cv = new ContentValues();
             cv.putNull("pinned_at");
             db.update("notes", cv, "id = ?", new String[]{noteId});
-            mse.quill.widget.WidgetUpdater.notifyCollectionsChanged(appContext);
+            DataChangeNotifier.getInstance().notifyChanged(Change.NOTES);
             if (onDone != null) executors.mainThread(onDone);
         });
     }
 
     /** filter: null = all notes, else a collection id. */
+    @Override
     public void loadNotes(String filter, OnNotesLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<Note> notes = getAllNotesSync(db, filter, false);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(notes));
         });
     }
 
     /** Up to {@link #MAX_PINNED_NOTES} pinned notes, most-recently-pinned first. */
+    @Override
     public void loadPinnedNotes(OnNotesLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<Note> notes = getAllNotesSync(db, null, true);
             if (cb != null) executors.mainThread(() -> cb.onLoaded(notes));
         });
@@ -519,7 +519,7 @@ public class NoteRepository {
 
     /** Synchronous form of {@link #loadPinnedNotes}, for callers already off the main thread. */
     public List<Note> loadPinnedNotesSync() {
-        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true, false);
+        return getAllNotesSync(appDatabase.getReadableDatabase(), null, true, false);
     }
 
     /**
@@ -535,21 +535,9 @@ public class NoteRepository {
      * notes would sit on the home screen until the app was next backgrounded.
      */
     public List<Note> loadPinnedNotesForWidgetSync() {
-        return getAllNotesSync(appDatabase.getWritableDatabase(), null, true, true);
+        return getAllNotesSync(appDatabase.getReadableDatabase(), null, true, true);
     }
 
-    /** A note, paired with how many of its Q&amp;A blocks could become cards right now. */
-    public static final class QaCandidate {
-        public final Note note;
-        public final int usableQa;
-
-        QaCandidate(Note note, int usableQa) {
-            this.note = note;
-            this.usableQa = usableQa;
-        }
-    }
-
-    public interface OnQaCandidatesLoaded { void onLoaded(List<QaCandidate> candidates); }
 
     /**
      * Every note that could produce at least one card, most recently updated first — what the
@@ -565,9 +553,10 @@ public class NoteRepository {
      * Q&amp;A blocks is a fact about its Markdown, not something the notes table records. Acceptable
      * because this runs once, off the main thread, when a picker is opened — not on any list path.
      */
+    @Override
     public void loadQaCandidates(OnQaCandidatesLoaded cb) {
         executors.diskIO(() -> {
-            SQLiteDatabase db = appDatabase.getWritableDatabase();
+            SQLiteDatabase db = appDatabase.getReadableDatabase();
             List<QaCandidate> candidates = new ArrayList<>();
             // getAllNotesSync rather than a query of its own: it is what already knows to leave
             // shut collections out and to decrypt the open ones, and a picker that offered a note
@@ -615,7 +604,7 @@ public class NoteRepository {
      *     that doesn't depend on them remembering to.
      */
     public NoteBundleData loadForBundleSync(String noteId) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Note note = getNoteSync(db, noteId);
         if (note == null) return null;
         List<NoteSegment> segments = getSegmentsSync(db, noteId);
@@ -899,11 +888,6 @@ public class NoteRepository {
     // Both helpers tolerate notes_fts being absent: AppDatabase skips creating it on SQLite
     // builds without FTS5, and search still works (in-memory filtering) without it.
 
-    public interface OnSearchMatches {
-        /** {@code null} means "no answer" — an unusable query, or a build without FTS5. Callers
-         *  fall back to matching what they already hold in memory rather than showing nothing. */
-        void onMatched(Set<String> noteIds);
-    }
 
     /**
      * The ids of every indexed note matching {@code rawQuery}, title or body.
@@ -918,6 +902,7 @@ public class NoteRepository {
      * collection that is open right now is therefore also unindexed until it is next saved — it
      * still matches on title, which is the same fallback an unsaved note gets.
      */
+    @Override
     public void searchNoteIds(String rawQuery, OnSearchMatches cb) {
         List<String> tokens = searchTokens(rawQuery);
         if (tokens.isEmpty()) {
@@ -943,7 +928,7 @@ public class NoteRepository {
      * on some phones.
      */
     private Set<String> searchNoteIdsSync(List<String> tokens) {
-        SQLiteDatabase db = appDatabase.getWritableDatabase();
+        SQLiteDatabase db = appDatabase.getReadableDatabase();
         Set<String> ids = new HashSet<>();
         try (Cursor c = db.rawQuery(
                 "SELECT note_id FROM notes_fts WHERE notes_fts MATCH ?",

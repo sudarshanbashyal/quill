@@ -25,6 +25,7 @@ import mse.quill.data.model.Whiteboard;
 import mse.quill.ui.tags.TagChipView;
 import mse.quill.ui.whiteboard.WhiteboardThumbnails;
 import mse.quill.util.NoteDisplayUtils;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * Single adapter driving the Collections + Whiteboards + Notes scroll area below Home's
@@ -79,21 +80,34 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     public void submitCollections(List<Collection> collections) {
-        emptyMessages.clear();
         this.collections = collections;
+        releaseEmptyMessage(R.array.empty_collections_lines, collections);
         notifyDataSetChanged();
     }
 
     public void submitWhiteboards(List<Whiteboard> whiteboards) {
-        emptyMessages.clear();
         this.whiteboards = whiteboards;
+        releaseEmptyMessage(R.array.empty_whiteboards_lines, whiteboards);
         notifyDataSetChanged();
     }
 
     public void submitNotes(List<Note> notes) {
-        emptyMessages.clear();
         this.notes = notes;
+        releaseEmptyMessage(R.array.empty_notes_lines, notes);
         notifyDataSetChanged();
+    }
+
+    /**
+     * Lets a section pick a new line, but only once it has something in it again.
+     *
+     * <p>Every submit used to drop all three held lines. Home re-submits on every keystroke in the
+     * search bar — twice, once for the typed query and once for the index's answer — so a section
+     * that stayed empty across a search still redrew a different line each time, and the same
+     * search run twice said two different things. Held until the section is non-empty, the line a
+     * section is showing changes only when there was something there to replace it.
+     */
+    private void releaseEmptyMessage(int arrayRes, List<?> items) {
+        if (!items.isEmpty()) emptyMessages.remove(arrayRes);
     }
 
     public GridLayoutManager.SpanSizeLookup spanSizeLookup() {
@@ -188,18 +202,18 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
         params.setMargins(
-                NoteRowView.dimen(context, R.dimen.list_item_gutter),
-                NoteRowView.dimen(context, R.dimen.section_header_margin_top),
+                CardStyles.dimen(context, R.dimen.list_item_gutter),
+                CardStyles.dimen(context, R.dimen.section_header_margin_top),
                 // Matching end margin, which the leading icon never needed: the trailing plus
                 // would otherwise sit hard against the edge of the screen.
-                NoteRowView.dimen(context, R.dimen.list_item_gutter),
-                NoteRowView.dimen(context, R.dimen.section_header_margin_bottom));
+                CardStyles.dimen(context, R.dimen.list_item_gutter),
+                CardStyles.dimen(context, R.dimen.section_header_margin_bottom));
         header.setLayoutParams(params);
         header.setBackground(rippleBackground(context));
-        header.setPadding(0, NoteRowView.dimen(context, R.dimen.spacing_xs),
-                0, NoteRowView.dimen(context, R.dimen.spacing_xs));
+        header.setPadding(0, CardStyles.dimen(context, R.dimen.spacing_xs),
+                0, CardStyles.dimen(context, R.dimen.spacing_xs));
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setCompoundDrawablePadding(NoteRowView.dimen(context, R.dimen.spacing_sm));
+        header.setCompoundDrawablePadding(CardStyles.dimen(context, R.dimen.spacing_sm));
         header.setCompoundDrawableTintList(
                 ColorStateList.valueOf(context.getColor(R.color.text_primary)));
         header.setTextColor(context.getColor(R.color.text_primary));
@@ -221,7 +235,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         TextView empty = new TextView(context);
         RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT);
-        params.topMargin = NoteRowView.dimen(context, R.dimen.spacing_lg);
+        params.topMargin = CardStyles.dimen(context, R.dimen.spacing_lg);
         empty.setLayoutParams(params);
         empty.setGravity(Gravity.CENTER);
         empty.setTextColor(context.getColor(R.color.text_secondary));
@@ -262,8 +276,8 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      *
      * <p>A fresh line on every bind would reshuffle as the list scrolls or reloads, which reads as
      * a glitch rather than as variety — the same reason Home's greeting is picked once per visit.
-     * Cleared whenever a section's contents change, so an emptied section can say something new
-     * next time.
+     * Released only once the section has contents again (see {@link #releaseEmptyMessage}), so a
+     * section that goes on being empty — search after search — goes on saying the same thing.
      */
     private String emptyMessage(Context context, int position) {
         int arrayRes = emptyMessageArrayRes(position);
@@ -417,7 +431,7 @@ public class HomeAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             nameView.setCompoundDrawablesRelativeWithIntrinsicBounds(
                     collection.biometricLocked ? R.drawable.ic_lock_small : 0, 0, 0, 0);
             nameView.setCompoundDrawablePadding(
-                    NoteRowView.dimen(itemView.getContext(), R.dimen.spacing_sm));
+                    CardStyles.dimen(itemView.getContext(), R.dimen.spacing_sm));
 
             countView.setText(formatContents(itemView.getContext(), collection));
             updatedView.setText(itemView.getContext().getString(

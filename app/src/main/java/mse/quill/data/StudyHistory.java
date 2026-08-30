@@ -65,7 +65,7 @@ public final class StudyHistory {
 
     private static StudyHistory loadSync(Context context) {
         SQLiteDatabase db = AppDatabase.getInstance(context.getApplicationContext())
-                .getWritableDatabase();
+                .getReadableDatabase();
         ZoneId zone = ZoneId.systemDefault();
         LocalDate today = LocalDate.now(zone);
         LocalDate earliest = today.minusWeeks(WEEKS);

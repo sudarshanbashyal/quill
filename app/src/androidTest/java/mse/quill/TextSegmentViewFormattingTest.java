@@ -20,7 +20,7 @@ import org.junit.runner.RunWith;
 
 import java.util.concurrent.atomic.AtomicReference;
 
-import mse.quill.ui.notes.editor.model.HeadingMarker;
+import mse.quill.data.model.HeadingMarker;
 import mse.quill.ui.notes.editor.segment.TextSegmentView;
 
 /** Covers formatting that's toggled on with no selection and then carried into typed text. */

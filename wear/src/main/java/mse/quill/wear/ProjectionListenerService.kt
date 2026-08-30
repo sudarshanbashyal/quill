@@ -5,7 +5,7 @@ import androidx.wear.tiles.TileService
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.WearableListenerService
-import mse.quill.data.DueProjectionKeys
+import mse.quill.sync.DueProjectionKeys
 
 /**
  * Wakes when the phone publishes a new projection and asks the two surfaces to redraw.

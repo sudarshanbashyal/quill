@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The icon set ships as density-less PNGs, whose intrinsic size is their pixel size at mdpi —
-     around 85dp on a 3x screen. Everywhere else they're drawn into an ImageView with a fixed size,
-     but a menu item asks the drawable how big it is and believes the answer, which blows the popup
-     out to the width of the icon. This wrapper is the answer to that question. -->
+<!-- The icon set is raster, and a menu item asks the drawable how big it is and believes the
+     answer — which blows the popup out to the width of the icon. Everywhere else these are drawn
+     into an ImageView with a fixed size, so nothing else has to care. This wrapper is the answer to
+     that question.
+
+     Since 2026-08-26 the PNGs live in drawable-xxxhdpi/ rather than a density-less drawable/, so
+     the answer they'd give unwrapped is 64dp rather than 256dp. Better, still not 22dp. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:drawable="@drawable/ic_flashcard"

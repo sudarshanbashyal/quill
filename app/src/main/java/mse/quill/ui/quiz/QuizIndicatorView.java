@@ -11,7 +11,7 @@ import android.widget.TextView;
 import androidx.core.content.ContextCompat;
 
 import mse.quill.R;
-import mse.quill.util.CardStyles;
+import mse.quill.ui.common.CardStyles;
 
 /**
  * One pip in the row of question indicators.

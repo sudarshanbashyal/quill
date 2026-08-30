@@ -9,7 +9,7 @@ import org.junit.Test;
 
 import java.util.List;
 
-import mse.quill.ui.notes.editor.model.HeadingMarker;
+import mse.quill.data.model.HeadingMarker;
 
 /** What a note sounds like: which parts of it are handed to the voice, and where its recordings
  *  land among them. */

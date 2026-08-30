@@ -8,18 +8,19 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-import mse.quill.data.AppDatabase;
 import mse.quill.data.AppExecutors;
 import mse.quill.data.CollectionRepository;
-import mse.quill.data.FlashcardRepository;
-import mse.quill.data.NoteRepository;
+import mse.quill.data.FlashcardStore;
+import mse.quill.data.Repositories;
+import mse.quill.data.NoteStore;
+import mse.quill.data.Repositories;
 import mse.quill.data.QuizRepository;
 import mse.quill.data.StrokeRepository;
 import mse.quill.data.WhiteboardRepository;
 import mse.quill.data.model.Stroke;
 import mse.quill.data.model.Whiteboard;
 import mse.quill.data.serialization.NoteDocument;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 import mse.quill.ui.whiteboard.WhiteboardView;
 import mse.quill.util.ColorUtils;
 import mse.quill.widget.WidgetUpdater;
@@ -89,7 +90,7 @@ public final class SampleData {
     private static void seedRest(Context appContext, String collectionId,
                                  Summary summary, Callback callback) {
         AppExecutors executors = AppExecutors.getInstance();
-        NoteRepository notes = new NoteRepository(appContext);
+        NoteStore notes = Repositories.notes(appContext);
 
         // Minted here so the welcome note's embed line can point at a board that does not exist
         // yet — the insert below is queued first, so by the time the note is saved it does.
@@ -101,13 +102,13 @@ public final class SampleData {
             executors.mainThread(() -> summary.whiteboards = 1);
         });
 
-        String welcomeId = NoteRepository.newNoteId();
+        String welcomeId = NoteStore.newNoteId();
         List<NoteSegment> welcome = parse(
                 String.format(SampleContent.WELCOME_MARKDOWN, whiteboardId));
         notes.createNote(welcomeId, SampleContent.WELCOME_TITLE, collectionId,
                 () -> summary.notes++);
         notes.saveNote(welcomeId, SampleContent.WELCOME_TITLE, welcome, (Runnable) null);
-        notes.pinNote(welcomeId, new NoteRepository.OnPinResult() {
+        notes.pinNote(welcomeId, new NoteStore.OnPinResult() {
             @Override public void onPinned() {
                 summary.pinnedNotes = 1;
                 summary.pinnedNoteTitle = SampleContent.WELCOME_TITLE;
@@ -119,7 +120,7 @@ public final class SampleData {
             @Override public void onLimitReached() {}
         });
 
-        String techniquesId = NoteRepository.newNoteId();
+        String techniquesId = NoteStore.newNoteId();
         List<NoteSegment> techniques = parse(SampleContent.TECHNIQUES_MARKDOWN);
         notes.createNote(techniquesId, SampleContent.TECHNIQUES_TITLE, collectionId,
                 () -> summary.notes++);
@@ -128,11 +129,11 @@ public final class SampleData {
         // The same segment objects the note was saved from, so the cards carry the block ids that
         // were just written into the document — pass a re-parse and every card would be orphaned
         // from its block by the next edit.
-        new FlashcardRepository(appContext).syncFromNote(techniquesId, techniques,
+        Repositories.flashcards(appContext).syncFromNote(techniquesId, techniques,
                 deck -> summary.flashcards = deck.size());
         new QuizRepository(appContext).ensureForNote(techniquesId, quiz -> summary.quizzes = 1);
 
-        String scratchId = NoteRepository.newNoteId();
+        String scratchId = NoteStore.newNoteId();
         notes.createNote(scratchId, SampleContent.SCRATCH_TITLE, null, () -> summary.notes++);
         notes.saveNote(scratchId, SampleContent.SCRATCH_TITLE,
                 parse(SampleContent.SCRATCH_MARKDOWN), (Runnable) null);
@@ -185,18 +186,18 @@ public final class SampleData {
         board.background = WhiteboardView.BACKGROUND_DOTS;
         new WhiteboardRepository(appContext).insertSync(board);
 
-        StrokeRepository strokes = new StrokeRepository(AppDatabase.getInstance(appContext));
-        strokes.insertStroke(stroke(whiteboardId, AXIS_COLOUR, 6f, now,
+        StrokeRepository strokes = new StrokeRepository(appContext);
+        strokes.insertStrokeSync(stroke(whiteboardId, AXIS_COLOUR, 6f, now,
                 line(LEFT, TOP, LEFT, BASE)));
-        strokes.insertStroke(stroke(whiteboardId, AXIS_COLOUR, 6f, now + 1,
+        strokes.insertStrokeSync(stroke(whiteboardId, AXIS_COLOUR, 6f, now + 1,
                 line(LEFT, BASE, RIGHT, BASE)));
-        strokes.insertStroke(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 2,
+        strokes.insertStrokeSync(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 2,
                 decay(LEFT, REVIEW_X, TOP + 20f, BASE - 40f, 3.2f)));
         // The review itself: straight back up to where it started.
-        strokes.insertStroke(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 3,
+        strokes.insertStrokeSync(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 3,
                 line(REVIEW_X, BASE - 40f, REVIEW_X, TOP + 20f)));
         // Shallower, because a reviewed memory decays more slowly — the whole point of the curve.
-        strokes.insertStroke(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 4,
+        strokes.insertStrokeSync(stroke(whiteboardId, CURVE_COLOUR, 7f, now + 4,
                 decay(REVIEW_X, RIGHT, TOP + 20f, BASE - 140f, 1.4f)));
     }
 

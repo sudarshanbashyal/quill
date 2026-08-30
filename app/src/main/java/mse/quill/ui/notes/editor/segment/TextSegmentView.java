@@ -7,7 +7,7 @@ import android.widget.EditText;
 
 import mse.quill.R;
 import mse.quill.ui.notes.editor.RichTextField;
-import mse.quill.ui.notes.editor.model.NoteSegment;
+import mse.quill.data.model.NoteSegment;
 
 /**
  * A run of body prose. Thin wrapper around a single {@link RichTextField} — all the formatting

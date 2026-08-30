@@ -112,16 +112,23 @@ public final class NoteFilter {
     /**
      * Notes matching the query and the selected tags, in the chosen order.
      *
+     * <p>An untitled note is matched on its <em>displayed</em> name, the same way a board is: the
+     * title column is empty on purpose, so matching that column alone left every unnamed note
+     * unfindable by the one name the user can actually see on its row.
+     *
      * <p>There was a "pinned only" switch here too. It was dropped because pinning is capped at
-     * {@code NoteRepository.MAX_PINNED_NOTES} — three — and those three already have a band of
+     * {@code NoteStore.MAX_PINNED_NOTES} — three — and those three already have a band of
      * their own at the top of Home. A filter that narrows a list to something permanently on
      * screen a few centimetres above it is a control with nothing to do.
+     *
+     * @param titleOf resolves a note's displayed name — the "Untitled Note - <date>" fallback is
+     *                built from a Context this class deliberately doesn't hold.
      */
-    public List<Note> apply(List<Note> notes) {
+    public List<Note> apply(List<Note> notes, Function<Note, String> titleOf) {
         List<Note> result = new ArrayList<>();
         for (Note note : notes) {
             if (!matchesTags(note)) continue;
-            if (!matchesQuery(note)) continue;
+            if (!matchesQuery(note, titleOf.apply(note))) continue;
             result.add(note);
         }
         sortNotes(result);
@@ -195,11 +202,12 @@ public final class NoteFilter {
         return false;
     }
 
-    private boolean matchesQuery(Note note) {
+    private boolean matchesQuery(Note note, String displayedTitle) {
         if (query.isEmpty()) return true;
         // Title first, and always: it is the one field guaranteed to be in memory and current,
-        // which is what makes an unindexed note still findable by name.
-        if (lower(note.title).contains(query)) return true;
+        // which is what makes an unindexed note still findable by name. The displayed one, so an
+        // untitled note answers to the fallback name its row is showing.
+        if (lower(displayedTitle).contains(query)) return true;
         if (fullTextMatches != null) return fullTextMatches.contains(note.id);
         return lower(note.preview).contains(query);
     }
